@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Daniel Wyckoff</title>
-<meta name="description" content="Payments engineer at Shopify. Shopify's seat in the W3C Web Payments Working Group and the FIDO Alliance; co-author of the Universal Commerce Protocol's payment surface.">
+<meta name="description" content="Payments engineer, Shopify. W3C, FIDO Alliance, Universal Commerce Protocol.">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0a1020">
+<meta name="theme-color" content="#05070f">
 <meta property="og:title" content="Daniel Wyckoff">
-<meta property="og:description" content="The payment layer of the open web is being written right now. I'm one of the people writing it.">
+<meta property="og:description" content="Payments engineer, Shopify. W3C, FIDO Alliance, Universal Commerce Protocol.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://danielwyckoff.ca/">
 <meta property="og:image" content="https://danielwyckoff.ca/img/og.png">
@@ -20,144 +20,96 @@
 </head>
 <body>
 
-<ascent-scene></ascent-scene>
-
-<div class="sky" aria-hidden="true">
-  <a class="sky-label" data-star="34,96,-170" href="#ucp">Universal Commerce Protocol</a>
-  <a class="sky-label" data-star="74,112,-150" href="#w3c">W3C Web Payments</a>
-  <a class="sky-label" data-star="104,78,-140" href="#fido">FIDO Alliance</a>
-  <a class="sky-label" data-star="54,62,-190" href="#shopify">Shopify Payments</a>
+<ascent-scene name="DANIEL WYCKOFF"></ascent-scene>
+<svg class="tether" aria-hidden="true"><line x1="0" y1="0" x2="0" y2="0"></line></svg>
+<div class="hits" aria-hidden="true">
+  <button type="button" data-star="0" title="Universal Commerce Protocol"></button>
+  <button type="button" data-star="1" title="W3C Web Payments"></button>
+  <button type="button" data-star="2" title="FIDO Alliance"></button>
+  <button type="button" data-star="3" title="Shopify Payments"></button>
 </div>
 
+<button type="button" class="mode" data-plain="Text version" data-scene="Mountain">Text version</button>
+
 <nav class="rail" aria-label="Sections">
-  <a href="#summit">Summit</a>
-  <a href="#shaping">Shaping</a>
-  <a href="#climb">Climb</a>
-  <a href="#slopes">Slopes</a>
-  <a href="#roots">Roots</a>
+  <a href="#summit" data-band="name">Summit</a>
+  <a href="#ucp" data-band="stars">Shaping</a>
+  <a href="#climb" data-band="climb">Climb</a>
+  <a href="#slopes" data-band="slopes">Slopes</a>
+  <a href="#roots" data-band="roots">Roots</a>
 </nav>
 
-<header id="summit" class="band band-summit">
-  <div class="measure">
-    <p class="who">Daniel Wyckoff<span>Payments engineer, Shopify</span></p>
-    <h1>The payment layer of the open web is being written right now.<br><em>I'm one of the people writing it.</em></h1>
-    <p class="lede">I hold Shopify's seat in the W3C Web Payments Working Group and the FIDO Alliance, and I co-authored the payment surface of the Universal Commerce Protocol: split payments, step-up authentication, payment terms, and the credential model underneath them.</p>
-    <p class="actions">
-      <a class="button" href="#shaping">What I'm shaping</a>
+<main class="story">
+
+  <section class="card card-summit" id="summit" data-kind="name">
+    <h1>Daniel Wyckoff</h1>
+    <p class="tag">Payments engineer, Shopify.</p>
+    <p class="hint">Scroll</p>
+  </section>
+
+  <section class="card card-star" id="ucp" data-kind="star" data-index="0">
+    <h2>Universal Commerce Protocol</h2>
+    <p class="sub">Open standard for agentic commerce, by Google and Shopify.</p>
+    <p>In since week one. Wrote split payments, payment authentication, payment terms, and the credential model. 13 merged PRs, 6th of 72 committers.</p>
+    <a href="https://github.com/Universal-Commerce-Protocol/ucp/pulls?q=is%3Apr+author%3Araginpirate" rel="noopener">The PRs</a>
+  </section>
+
+  <section class="card card-star" id="w3c" data-kind="star" data-index="1">
+    <h2>W3C Web Payments Working Group</h2>
+    <p class="sub">Shopify's seat since August 2025.</p>
+    <p>Secure Payment Confirmation, 3-D Secure, Payment Request. Asked in September how an agent finds a buyer's payment methods. Shipped the answer in UCP by February.</p>
+    <a href="https://www.w3.org/groups/wg/payments/" rel="noopener">The group</a>
+  </section>
+
+  <section class="card card-star" id="fido" data-kind="star" data-index="2">
+    <h2>FIDO Alliance</h2>
+    <p class="sub">Passkeys, applied to checkout.</p>
+    <p>Payment credentials a passkey can back, and what an agent may prove on your behalf.</p>
+    <a href="https://fidoalliance.org/" rel="noopener">FIDO</a>
+  </section>
+
+  <section class="card card-star" id="shopify" data-kind="star" data-index="3">
+    <h2>Shopify Payments</h2>
+    <p class="sub">The day job.</p>
+    <p>Platform engineering under a tenth of US ecommerce. Where the specs above meet real traffic.</p>
+    <a href="https://www.shopify.com/payments" rel="noopener">Shopify Payments</a>
+  </section>
+
+  <section class="card" id="climb" data-kind="climb">
+    <h2>The climb</h2>
+    <gh-pulse snapshot="data/snapshot.json"></gh-pulse>
+  </section>
+
+  <section class="card" id="slopes" data-kind="slope" data-index="0">
+    <time>2021 to 2025</time>
+    <h2>Shopify, Subscriptions</h2>
+    <p>PayPal, Stripe and Apple Pay in recurring billing. Rails and GraphQL.</p>
+  </section>
+
+  <section class="card" id="fera" data-kind="slope" data-index="1">
+    <time>2019 to 2021</time>
+    <h2>Fera</h2>
+    <p>Full stack Rails on Shopify apps. <a href="https://apps.shopify.com/extra-verification-by-fera-ai" rel="noopener">Extra Verification</a>, <a href="https://apps.shopify.com/reserve-in-store-by-fera" rel="noopener">Reserve In-Store</a>, the <a href="https://github.com/feracommerce/magento_extension" rel="noopener">Magento extension</a>.</p>
+  </section>
+
+  <section class="card" id="first" data-kind="slope" data-index="2">
+    <time>2018 to 2019</time>
+    <h2>First commits</h2>
+    <p>A <a href="https://github.com/raginpirate/url-shortener" rel="noopener">URL shortener</a>, first Rails. <a href="https://github.com/raginpirate/sortr.ai" rel="noopener">Sortr.ai</a>, best sorting algorithm at TerribleHack XIII. CprBot, forwards CPR bookings to the Red Cross. <a href="https://github.com/raginpirate/jekyll-reflection" rel="noopener">Jekyll Reflection</a>, the site before this one.</p>
+  </section>
+
+  <section class="card card-roots" id="roots" data-kind="roots">
+    <h2>Roots</h2>
+    <p>Computer science. Concurrency was the course that stuck. Backend by preference.</p>
+    <p>Keyboards, ITX builds, AeroPress.</p>
+    <p class="links">
       <a href="https://github.com/raginpirate" rel="me noopener">GitHub</a>
       <a href="https://www.linkedin.com/in/daniel-wyckoff" rel="me noopener">LinkedIn</a>
     </p>
-  </div>
-</header>
-
-<main>
-
-<section id="shaping" class="band band-shaping">
-  <div class="measure">
-    <h2>What I'm shaping</h2>
-    <p class="intro">Four things I'm spending my time on now. Each one is an open seam in how money moves on the web, and each one is public enough that you can check my work.</p>
-
-    <article class="star" id="ucp">
-      <h3>Universal Commerce Protocol</h3>
-      <p class="role">Open standard for agentic commerce, led by Google and Shopify. In since the first week.</p>
-      <p>Seven days after the repository opened I reorganized payments, services and capabilities into a single hierarchy, and that is still the shape of the spec. Since then I have authored three of its five payment extensions and the instrument model they stand on.</p>
-      <ul class="shipped">
-        <li><a href="https://github.com/Universal-Commerce-Protocol/ucp/pull/409" rel="noopener">Split payments</a> <span>pay with more than one instrument in a checkout; open-amount and fixed-amount modes; business-declared allowed combinations.</span></li>
-        <li><a href="https://github.com/Universal-Commerce-Protocol/ucp/pull/458" rel="noopener">Payment authentication</a> <span>3-D Secure challenges and device-data collection as first-class payment actions, so an agent-driven checkout clears step-up instead of failing it.</span></li>
-        <li><a href="https://github.com/Universal-Commerce-Protocol/ucp/pull/602" rel="noopener">Payment terms</a> <span>deposits, instalments and pay-later as a schema for <em>when</em> money moves, not only how much.</span></li>
-        <li><a href="https://github.com/Universal-Commerce-Protocol/ucp/pull/424" rel="noopener">Credential model</a> <span>split PAN from network-token credentials and expressed instrument requirements as request constraints. A breaking change, shipped cleanly.</span></li>
-        <li><a href="https://github.com/Universal-Commerce-Protocol/ucp/pull/757" rel="noopener"><code>anyOf</code> constraints</a> <span>so a business can say "card or wallet, but a card needs a CVC" in the schema itself.</span></li>
-        <li><a href="https://github.com/Universal-Commerce-Protocol/ucp/pull/187" rel="noopener">Available instruments</a> <span>handlers declare what they can accept up front. See the W3C entry below for where that came from.</span></li>
-      </ul>
-      <dl class="facts">
-        <div><dt>Merged pull requests</dt><dd>13</dd></div>
-        <div><dt>Lines added</dt><dd>7,320</dd></div>
-        <div><dt>Among 72 committers</dt><dd>6th</dd></div>
-      </dl>
-    </article>
-
-    <article class="star" id="w3c">
-      <h3>W3C Web Payments Working Group</h3>
-      <p class="role">Shopify's representative since August 2025, including TPAC 2025.</p>
-      <p>Secure Payment Confirmation, browser-bound keys, 3-D Secure step-up, Payment Request and Payment Handler. I review the SPC UX guidelines and sit in the Web Payment Security Interest Group alongside the card networks, the issuers and the browser vendors.</p>
-      <p>In September 2025 I asked the group how an agent would discover which payment methods a buyer actually has. Nobody had an answer. In February 2026 I shipped one in UCP. At TPAC I argued the privacy line for agentic payments: a merchant or an issuer should never see the conversation you had with your agent, unless a dispute makes it necessary.</p>
-    </article>
-
-    <article class="star" id="fido">
-      <h3>FIDO Alliance</h3>
-      <p class="role">Where passkeys meet checkout.</p>
-      <p>Member work on passkey-backed payment credentials and on what an agent is allowed to prove on your behalf. The aim is biometric, browser-mediated checkout that proves the payer well enough that a 3-D Secure detour is no longer needed.</p>
-    </article>
-
-    <article class="star" id="shopify">
-      <h3>Shopify Payments</h3>
-      <p class="role">The rails under more than a tenth of US ecommerce.</p>
-      <p>The day job, and where the standards work above meets production. I started on Subscriptions, wiring PayPal, Stripe and Apple Pay into recurring billing on Rails and GraphQL. Now I work on the payments platform itself, which is the first place a spec I wrote has to survive real traffic.</p>
-    </article>
-  </div>
-</section>
-
-<section id="climb" class="band band-climb">
-  <div class="measure">
-    <h2>The climb</h2>
-    <p class="intro">Velocity, not a summary. This is my public GitHub activity, read by your browser right now.</p>
-    <gh-activity snapshot="data/snapshot.json"></gh-activity>
-  </div>
-</section>
-
-<section id="slopes" class="band band-slopes">
-  <div class="measure">
-    <h2>Slopes</h2>
-    <p class="intro">How I got up here, newest first.</p>
-    <ol class="path">
-      <li>
-        <time>2025 to now</time>
-        <h3>Shopify, payments and standards</h3>
-        <p>Payments platform engineering plus Shopify's voice in UCP, the W3C and the FIDO Alliance.</p>
-      </li>
-      <li>
-        <time>2021 to 2025</time>
-        <h3>Shopify, Subscriptions</h3>
-        <p>Integrated PayPal, Stripe and Apple Pay into recurring billing. Rails, GraphQL, and a lot of edge cases in how a mandate survives a card reissue.</p>
-      </li>
-      <li>
-        <time>2019 to 2021</time>
-        <h3>Fera</h3>
-        <p>Full-stack Rails on the Shopify app platform. Built <a href="https://apps.shopify.com/extra-verification-by-fera-ai" rel="noopener">Extra Verification</a>, which protects small stores from fraudulent orders and chargebacks, and <a href="https://apps.shopify.com/reserve-in-store-by-fera" rel="noopener">Reserve In-Store</a>. Shipped Fera's <a href="https://github.com/feracommerce/magento_extension" rel="noopener">Magento extension</a>.</p>
-      </li>
-      <li>
-        <time>2019</time>
-        <h3>Two things built fast</h3>
-        <p><a href="https://github.com/raginpirate/sortr.ai" rel="noopener">Sortr.ai</a> took best sorting algorithm at TerribleHack XIII, which is the correct amount of praise for it. CprBot, Python on AWS Lambda, validated SaveALifeCPR's course bookings and forwarded them to the Red Cross.</p>
-      </li>
-      <li>
-        <time>2018</time>
-        <h3>First Rails, first site</h3>
-        <p>A <a href="https://github.com/raginpirate/url-shortener" rel="noopener">URL shortener</a> with click tracking, and <a href="https://github.com/raginpirate/jekyll-reflection" rel="noopener">Jekyll Reflection</a>, the predecessor of this page: runtime responsive image generation, a service worker, a perfect Lighthouse score. This page replaces it with zero dependencies.</p>
-      </li>
-    </ol>
-  </div>
-</section>
-
-<section id="roots" class="band band-roots">
-  <div class="measure">
-    <h2>Roots</h2>
-    <p>Computer science. The course that stuck was operating systems: lock-based data structures, threads talking to each other, the discipline of finding a deadlock and the small joy of removing it. I lean to the backend and I like a system I can hold in my head.</p>
-    <p>Off the clock I build mechanical keyboards, ten and counting, small-form-factor PCs, and an unreasonable amount of pour-over coffee.</p>
-    <p class="contact">
-      <a href="https://github.com/raginpirate" rel="me noopener">github.com/raginpirate</a>
-      <a href="https://www.linkedin.com/in/daniel-wyckoff" rel="me noopener">linkedin.com/in/daniel-wyckoff</a>
-    </p>
-  </div>
-</section>
+    <p class="colophon">No framework, no fonts, no tracker. Hand-written WebGL. <a href="https://github.com/raginpirate/me" rel="noopener">Source</a>.</p>
+  </section>
 
 </main>
-
-<footer class="band band-foot">
-  <div class="measure">
-    <p>No framework, no fonts, no tracker, no CDN. The mountain is hand-written WebGL. <a href="https://github.com/raginpirate/me" rel="noopener">Read the source.</a></p>
-  </div>
-</footer>
 
 </body>
 </html>
