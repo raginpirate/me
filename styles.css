@@ -91,7 +91,7 @@ ascent-scene canvas { display: block; width: 100%; height: 100%; }
 .card p { max-width: 48ch; }
 
 .card-summit {
-  left: 50%; bottom: auto; top: 58%; width: auto; max-width: none;
+  left: 50%; bottom: auto; top: 38%; width: auto; max-width: none;
   transform: translateX(-50%) !important;
   padding: 0; background: none; border: 0; text-align: center;
 }

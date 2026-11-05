@@ -1,13 +1,14 @@
 // <ascent-scene> — a hand-written WebGL night mountain.
 //
-// The camera stands on the summit, then rides a trail down the mountain as
-// the page scrolls, and sinks into the roots at the end. Stars spell the
-// name in the opening, four of them stay bright to carry the current work,
-// and merged commits appear as lights along the trail. No libraries.
+// The camera starts in the sky above the summit and descends straight down:
+// past the face, across the ground, and under the mountain to its roots.
+// The name is already in the stars; on load a line is traced between them,
+// letter by letter. Four stars stay bright to carry the current work, and
+// merged commits are headlamps on the climbing route. No libraries.
 
 import { layout } from './letters.js';
 
-// ---------- shaders (GLSL ES 1.00, runs on WebGL 1 and 2) ----------
+// ---------- shaders ----------
 const V_SKY = `
 attribute vec2 aPos;
 varying vec2 vUv;
@@ -19,10 +20,10 @@ uniform vec3 uTop, uHorizon, uEarth;
 uniform float uUnder, uHorizonY;
 varying vec2 vUv;
 void main() {
-  float h = clamp((vUv.y - uHorizonY) / (1.0 - uHorizonY), 0.0, 1.0);
+  float h = clamp((vUv.y - uHorizonY) / max(1.0 - uHorizonY, 0.001), 0.0, 1.0);
   float below = clamp((uHorizonY - vUv.y) / max(uHorizonY, 0.001), 0.0, 1.0);
-  vec3 sky = mix(uHorizon, uTop, pow(h, 0.7));
-  sky = mix(sky, uHorizon * 0.85, below);
+  vec3 sky = mix(uHorizon, uTop, pow(h, 0.65));
+  sky = mix(sky, uHorizon * 0.8, below);
   gl_FragColor = vec4(mix(sky, uEarth, uUnder), 1.0);
 }`;
 
@@ -32,8 +33,8 @@ uniform mat4 uPV;
 varying vec3 vW;
 void main() { vW = aPos; gl_Position = uPV * vec4(aPos, 1.0); }`;
 
-const F_TERRAIN = (ext) => `
-${ext ? '#extension GL_OES_standard_derivatives : enable' : ''}
+const F_TERRAIN = `
+#extension GL_OES_standard_derivatives : enable
 precision highp float;
 uniform vec3 uEye, uSky, uRockLow, uRockHigh, uSnow, uLight, uContourColor;
 uniform float uSnowLine, uFade, uContour, uWarm;
@@ -43,21 +44,20 @@ void main() {
   if (n.y < 0.0) n = -n;
   float lambert = max(0.0, dot(n, uLight));
   float skyLight = 0.5 + 0.5 * n.y;
-  float snow = smoothstep(uSnowLine - 3.0, uSnowLine + 1.5, vW.y + 5.0 * (n.y - 0.65));
-  float hf = clamp((vW.y + 4.0) / 24.0, 0.0, 1.0);
+  float snow = smoothstep(uSnowLine - 3.0, uSnowLine + 3.0, vW.y + 9.0 * (n.y - 0.72));
+  float hf = clamp((vW.y + 4.0) / 28.0, 0.0, 1.0);
   vec3 rock = mix(uRockLow, uRockHigh, hf);
-  rock = mix(rock, vec3(0.33, 0.25, 0.19), uWarm * (1.0 - hf));
+  rock = mix(rock, vec3(0.3, 0.23, 0.18), uWarm * (1.0 - hf));
   vec3 alb = mix(rock, uSnow, snow);
   vec3 col = alb * (0.22 * skyLight + 1.0 * lambert);
-  // contour lines every two metres, anti-aliased
   float cy = vW.y * 0.5;
   float fw = fwidth(cy);
   float c = fract(cy);
   float line = 1.0 - smoothstep(0.0, fw * 1.6, min(c, 1.0 - c));
   col += uContour * line * uContourColor * (0.35 + 0.65 * lambert) * (1.0 - 0.6 * snow);
   float d = distance(vW, uEye);
-  float fog = 1.0 - exp(-d * d * 0.00013);
-  fog = max(fog, smoothstep(78.0, 104.0, d)); // the mesh ends at 110; never show its edge
+  float fog = 1.0 - exp(-d * d * 0.00009);
+  fog = max(fog, smoothstep(105.0, 136.0, d));
   col = mix(col, uSky, fog);
   gl_FragColor = vec4(col, uFade);
 }`;
@@ -89,7 +89,7 @@ void main() {
 
 const V_HALO = `
 attribute vec3 aPos;
-attribute float aGlow; // 0..1 how lit this one is
+attribute float aGlow;
 uniform mat4 uPV;
 uniform float uDpr, uSize;
 varying float vGlow;
@@ -190,7 +190,6 @@ function makeNoise(seed) {
     for (let i = 0; i < oct; i++) { s += amp * noise(x * f, y * f); n += amp; amp *= 0.5; f *= 2.07; }
     return s / n;
   };
-  // ridged: sharp crests
   const ridged = (x, y, oct = 5) => {
     let s = 0, amp = 0.5, f = 1, n = 0, w = 1;
     for (let i = 0; i < oct; i++) {
@@ -203,34 +202,29 @@ function makeNoise(seed) {
 }
 
 // ---------- the mountain ----------
-const EXTENT = 110;
+// One massif at the origin, a basin around it, a ring of far ridges fogged
+// at the edge. The camera descends at z = CAM_Z, in the basin.
+const EXTENT = 140;
+const PEAK = 24;
+const CAM_Z = 70;
 const { fbm, ridged } = makeNoise(20181105);
 
 function terrainHeight(x, z) {
   const r = Math.hypot(x, z);
-  const peak = 17 * Math.exp(-(r * r) / 150);
-  const mass = 13 * Math.exp(-(r * r) / 1700);
-  const along = clamp(z / 12, 0, 1) * clamp(1 - (z - 8) / 80, 0, 1);
-  const flankL = 8 * Math.exp(-((x + 18) ** 2) / 70) * along;
-  const flankR = 7 * Math.exp(-((x - 17) ** 2) / 80) * along;
-  const far = 15 * ridged(x * 0.022 + 5, z * 0.022 + 9, 4) * smooth(40, 90, r);
-  const alt = clamp((peak + mass) / 22, 0, 1);
-  const crest = ridged(x * 0.07 + 1.3, z * 0.07 + 2.1, 5) * (2.6 + 4.5 * alt);
-  const hills = 3.2 * ridged(x * 0.045 + 2, z * 0.045 + 4, 4) * smooth(22, 48, z) * (1 - 0.7 * Math.exp(-(x * x) / 60));
-  const fine = (fbm(x * 0.28, z * 0.28, 3) - 0.5) * 0.9;
-  const valley = -2.4 * Math.exp(-(x * x) / 90) * clamp(z / 16, 0, 1);
-  const edge = clamp(1 - Math.pow(r / EXTENT, 6), 0, 1);
-  return (-1.5 + peak + mass + flankL + flankR + far + crest + hills + fine + valley) * edge;
-}
-
-// height of the rendered mesh (piecewise linear) at a point, never below it
-let meshN = 0;
-function meshHeightAbove(x, z) {
-  const c = (2 * EXTENT) / (meshN - 1);
-  const i = Math.floor((x + EXTENT) / c), j = Math.floor((z + EXTENT) / c);
-  let h = -Infinity;
-  for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]]) h = Math.max(h, terrainHeight(-EXTENT + (i + di) * c, -EXTENT + (j + dj) * c));
-  return h;
+  const summit = PEAK * Math.exp(-(r * r) / 260);
+  const massif = 15 * Math.exp(-(r * r) / 1500);
+  const alt = clamp((summit + massif) / (PEAK + 6), 0, 1);
+  // radiating ridges: crest noise in polar coordinates so they run downhill
+  const ang = Math.atan2(z, x);
+  const spokes = ridged(ang * 1.6 + 3.3, r * 0.06 + 1.2, 4) * (3 + 9 * alt) * smooth(1, 10, r);
+  const crest = ridged(x * 0.07 + 1.3, z * 0.07 + 2.1, 5) * (1.4 + 3.5 * alt);
+  // a clearing where the camera stands, so the foot of the mountain stays in view
+  const clearing = Math.exp(-(x * x + (z - CAM_Z) ** 2) / 900);
+  const basin = 2.2 * ridged(x * 0.05 + 2, z * 0.05 + 4, 4) * smooth(30, 50, r) * (1 - smooth(85, 100, r)) * (1 - clearing);
+  const far = 17 * ridged(x * 0.02 + 5, z * 0.02 + 9, 4) * smooth(88, 118, r);
+  const fine = (fbm(x * 0.28, z * 0.28, 3) - 0.5) * 0.7 * (1 - clearing);
+  const edge = clamp(1 - Math.pow(r / EXTENT, 8), 0, 1);
+  return (-2 - 1.5 * clearing + summit + massif + spokes + crest + basin + far + fine) * edge;
 }
 
 function buildTerrain(N) {
@@ -250,25 +244,30 @@ function buildTerrain(N) {
   return { pos, tris };
 }
 
-// the trail the camera rides, from the summit down the valley
-function trail(s) {
-  const x = 6.5 * Math.sin(s * 2.7) + 1.8 * Math.sin(s * 7.3 + 1), z = s * 58;
-  return [x, 0, z];
+let meshN = 0;
+function meshHeightAbove(x, z) {
+  const c = (2 * EXTENT) / (meshN - 1);
+  const i = Math.floor((x + EXTENT) / c), j = Math.floor((z + EXTENT) / c);
+  let h = -Infinity;
+  for (const [di, dj] of [[0, 0], [1, 0], [0, 1], [1, 1]]) h = Math.max(h, terrainHeight(-EXTENT + (i + di) * c, -EXTENT + (j + dj) * c));
+  return h;
 }
-function groundSmooth(x, z) {
-  let h = 0;
-  for (const [dx, dz] of [[0, 0], [1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6], [1.1, 1.1], [-1.1, -1.1]]) h += terrainHeight(x + dx, z + dz);
-  return h / 7;
+
+// the climbing route on the face that faces the camera: summit to base
+function route(s) {
+  const z = 2 + s * 40;
+  const x = 4.5 * Math.sin(s * 5.2) + 2 * Math.sin(s * 11.1 + 2);
+  return [x, 0, z];
 }
 
 function buildDome(count, seed) {
   const rnd = mulberry32(seed);
   const pos = new Float32Array(count * 3), attr = new Float32Array(count * 2);
-  const R = 520;
+  const R = 560;
   for (let i = 0; i < count; i++) {
-    const theta = rnd() * Math.PI * 2, phi = Math.acos(1 - rnd() * 1.08);
+    const theta = rnd() * Math.PI * 2, phi = Math.acos(1 - rnd() * 1.1);
     pos[i * 3] = R * Math.sin(phi) * Math.cos(theta);
-    pos[i * 3 + 1] = R * Math.cos(phi) - 30;
+    pos[i * 3 + 1] = R * Math.cos(phi) - 40;
     pos[i * 3 + 2] = R * Math.sin(phi) * Math.sin(theta);
     attr[i * 2] = Math.pow(rnd(), 2.4); attr[i * 2 + 1] = rnd();
   }
@@ -282,21 +281,21 @@ function buildRoots(seed, origin) {
     const segs = 8;
     let px = x, py = y, pz = z;
     for (let s = 0; s < segs; s++) {
-      dx += (rnd() - 0.5) * 0.7; dz += (rnd() - 0.5) * 0.7; dy -= 0.06;
+      dx += (rnd() - 0.5) * 0.7; dz += (rnd() - 0.5) * 0.7; dy -= 0.05;
       const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
       const nx = px + dx * (len / segs), ny = py + dy * (len / segs), nz = pz + dz * (len / segs);
       out.push(px, py, pz, nx, ny, nz);
       px = nx; py = ny; pz = nz;
-      if (depth > 0 && s > 0 && rnd() < 0.62) {
+      if (depth > 0 && s > 0 && rnd() < 0.6) {
         const a = (rnd() - 0.5) * 2.0;
         grow(px, py, pz, dx * Math.cos(a) - dz * Math.sin(a), dy * 0.7, dx * Math.sin(a) + dz * Math.cos(a), len * 0.62, depth - 1);
       }
     }
   }
-  for (let i = 0; i < 16; i++) {
-    const a = (i / 16) * Math.PI * 2 + rnd() * 0.4;
-    const spread = 0.9 + rnd() * 0.5;
-    grow(origin[0] + Math.cos(a) * 1.2, origin[1], origin[2] + Math.sin(a) * 1.2, Math.cos(a) * spread, -0.75, Math.sin(a) * spread, 16 + rnd() * 8, 4);
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2 + rnd() * 0.3;
+    const spread = 1 + rnd() * 0.6;
+    grow(origin[0] + Math.cos(a) * 2, origin[1], origin[2] + Math.sin(a) * 2, Math.cos(a) * spread, -0.7, Math.sin(a) * spread, 26 + rnd() * 12, 4);
   }
   return new Float32Array(out);
 }
@@ -318,7 +317,7 @@ function compile(gl, vs, fs) {
 
 // scroll bands, shared with the page choreography
 export const BANDS = {
-  name: [0, 0.1],       // name holds, then lets go by 0.17
+  name: [0, 0.1],
   stars: [[0.2, 0.3], [0.32, 0.42], [0.44, 0.54], [0.56, 0.66]],
   climb: [0.68, 0.77],
   slopes: [[0.78, 0.835], [0.835, 0.89], [0.89, 0.945]],
@@ -333,56 +332,43 @@ export class AscentScene extends HTMLElement {
     this.canvas.setAttribute('aria-hidden', 'true');
     this.appendChild(this.canvas);
 
-    // WebGL 1 with the two extensions every current device has; the shaders
-    // are written for GLSL ES 1.00, which WebGL 2 would not give derivatives.
-    const opts = { antialias: true, alpha: false, powerPreference: 'high-performance' };
-    const gl = this.canvas.getContext('webgl', opts);
+    const gl = this.canvas.getContext('webgl', { antialias: true, alpha: false, powerPreference: 'high-performance' });
     if (!gl || !gl.getExtension('OES_standard_derivatives') || !gl.getExtension('OES_element_index_uint')) { this.fail(); return; }
-    const ext = true;
     this.gl = gl;
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
     this.P = {
-      skyTop: hex('#05070f'), skyHorizon: hex('#141c33'), earth: hex('#090705'),
-      rockLow: hex('#1a2238'), rockHigh: hex('#4a5878'), snow: hex('#d6e2f0'),
-      contour: hex('#8fb4e8'), star: hex('#e9f0fa'), warm: hex('#f3c86b'), root: hex('#b58a5e'), name: hex('#dbe8f6'),
+      skyTop: hex('#04060d'), skyHorizon: hex('#141c33'), earth: hex('#080604'),
+      rockLow: hex('#171e33'), rockHigh: hex('#4a5878'), snow: hex('#d6e2f0'),
+      contour: hex('#8fb4e8'), star: hex('#e9f0fa'), warm: hex('#f3c86b'), root: hex('#b58a5e'), name: hex('#e4eefb'),
     };
     try {
       this.progs = {
         sky: compile(gl, V_SKY, F_SKY),
-        terrain: compile(gl, V_TERRAIN, F_TERRAIN(ext)),
+        terrain: compile(gl, V_TERRAIN, F_TERRAIN),
         stars: compile(gl, V_STARS, F_STARS),
         halo: compile(gl, V_HALO, F_HALO),
         lines: compile(gl, V_LINES, F_LINES),
       };
     } catch (e) { console.warn('scene shaders failed', e); this.fail(); return; }
 
-    const N = 360;
+    const N = 380;
     meshN = N;
     const terrain = buildTerrain(N);
     this.terrain = { vbo: this.buf(gl.ARRAY_BUFFER, terrain.pos), ibo: this.buf(gl.ELEMENT_ARRAY_BUFFER, terrain.tris), n: terrain.tris.length };
     this.quad = this.buf(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]));
-    const dome = buildDome(2600, 7);
-    this.dome = { vbo: this.buf(gl.ARRAY_BUFFER, dome.pos), attr: this.buf(gl.ARRAY_BUFFER, dome.attr), n: 2600 };
+    const dome = buildDome(2800, 7);
+    this.dome = { vbo: this.buf(gl.ARRAY_BUFFER, dome.pos), attr: this.buf(gl.ARRAY_BUFFER, dome.attr), n: 2800 };
 
-    // the name: letter points become stars that fly in from random homes
     this.nameText = (this.getAttribute('name') || 'DANIEL WYCKOFF').toUpperCase();
-    this.nameRnd = mulberry32(99);
-    this.nameHome = null;
     this.nameVbo = gl.createBuffer(); this.nameAttr = gl.createBuffer(); this.nameLinesVbo = gl.createBuffer();
 
-    // four named stars
     this.named = [0, 1, 2, 3].map(() => ({ pos: [0, 0, 0], glow: 0 }));
     this.haloVbo = gl.createBuffer(); this.haloGlow = gl.createBuffer();
-
-    // trail lights, filled in by setTrailLights()
     this.lights = { vbo: gl.createBuffer(), glow: gl.createBuffer(), n: 0, pos: [] };
-
-    const base = trail(0.985);
-    this.roots = { vbo: this.buf(gl.ARRAY_BUFFER, buildRoots(11, [base[0], -1, base[2]])), n: 0 };
+    this.roots = { vbo: this.buf(gl.ARRAY_BUFFER, buildRoots(11, [0, -3, 4])), n: 0 };
     this.roots.n = gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) / 12;
 
     this.t = 0; this.tTarget = 0; this.mx = 0; this.my = 0; this.mxT = 0; this.myT = 0;
-    this.intro = this.reduced.matches ? 1 : 0;
     this.start = performance.now();
     this.pv = null;
 
@@ -405,8 +391,6 @@ export class AscentScene extends HTMLElement {
   }
 
   fail() { this.classList.add('is-fallback'); this.dispatchEvent(new CustomEvent('fallback')); }
-
-  // the page can park the scene (text mode) and bring it back
   pause() { this.paused = true; }
   resume() { if (!this.paused) return; this.paused = false; this.last = 0; this.onScroll?.(); requestAnimationFrame(this.loop); }
 
@@ -434,26 +418,26 @@ export class AscentScene extends HTMLElement {
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
     this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     this.aspect = w / h; this.portrait = h > w;
-    this.fov = (this.portrait ? 68 : 56) * Math.PI / 180;
+    this.fov = (this.portrait ? 66 : 54) * Math.PI / 180;
   }
 
-  // the camera for a scroll position, before pointer parallax
+  // a straight drop: sky above the summit → the face → the ground → beneath
   camera(t) {
-    const s = smooth(0.1, 0.93, t);
-    const p = trail(s);
-    // stand tall on the summit, then settle to walking height on the trail
-    const eye = [p[0], groundSmooth(p[0], p[2]) + lerp(6.5, 2.6, smooth(0.08, 0.3, t)), p[2]];
-    const ahead = trail(Math.min(1, s + 0.05));
-    const dir = v3.norm([ahead[0] - p[0], 0, ahead[2] - p[2]]);
-    const pitch = lerp(-4, -7, smooth(0.12, 0.66, t)) * Math.PI / 180;
-    const under = smooth(0.93, 1, t);
-    const target = v3.add(eye, [dir[0] * Math.cos(pitch) * 10, Math.sin(pitch) * 10, dir[2] * Math.cos(pitch) * 10]);
-    // underground: pull back and look at the root system from a distance
-    const base = trail(0.985);
-    const ueye = [base[0] + 4, -7, base[2] + 26];
-    const utgt = [base[0], -13, base[2]];
-    const e2 = v3.lerp(eye, ueye, under), t2 = v3.lerp(target, utgt, under);
-    return { eye: e2, target: t2, under, s };
+    const wide = this.portrait ? 1.35 : 1;
+    const dz = CAM_Z * wide;
+    // altitude: hold high while the name is up, descend through the stars
+    // and the climb, reach the ground on the slopes, sink for the roots
+    let y;
+    if (t < 0.12) y = lerp(PEAK + 26, PEAK + 23, t / 0.12);
+    else if (t < 0.68) y = lerp(PEAK + 23, 10, smooth(0.12, 0.68, t));
+    else if (t < 0.78) y = lerp(10, 5.5, smooth(0.68, 0.78, t));
+    else if (t < 0.955) y = lerp(5.5, 1.8, smooth(0.78, 0.955, t));
+    else y = lerp(1.8, -26, smooth(0.955, 1, t));
+    const pitch = (t < 0.68 ? lerp(-12, -3, smooth(0, 0.68, t)) : t < 0.955 ? lerp(-3, 3, smooth(0.68, 0.955, t)) : lerp(3, -10, smooth(0.955, 1, t))) * Math.PI / 180;
+    const under = smooth(0.955, 1, t);
+    const eye = [0, y, dz];
+    const target = [0, y + Math.tan(pitch) * dz, 0];
+    return { eye, target, under };
   }
 
   frame(t) {
@@ -464,48 +448,43 @@ export class AscentScene extends HTMLElement {
     return { eye, f, r, u };
   }
 
-  // put the name and the four bright stars where the camera will be looking
+  // the name and the four bright stars go where the camera will look
   placeSky() {
     const gl = this.gl;
+    const rnd = mulberry32(2026);
     const { eye, f, r, u } = this.frame(0);
-    const D = 240;
+    const D = 260;
     const halfH = D * Math.tan(this.fov / 2), halfW = halfH * this.aspect;
     const lines = this.portrait ? this.nameText.split(' ') : [this.nameText];
-    const L = layout(lines, 0.55);
-    const unit = Math.min((this.portrait ? 0.86 : 0.7) * 2 * halfW / L.width, 0.5 * halfH / L.height);
-    const lift = halfH * (this.portrait ? 0.3 : 0.22);
+    const L = layout(lines, 0.5);
+    const unit = Math.min((this.portrait ? 0.78 : 0.5) * 2 * halfW / L.width, 0.42 * halfH / L.height);
+    const lift = halfH * (this.portrait ? 0.56 : 0.5);
     const centre = v3.add(eye, v3.scale(f, D));
     const n = L.points.length;
-    if (!this.nameHome || this.nameHome.length !== n * 3) {
-      this.nameHome = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) {
-        const th = this.nameRnd() * Math.PI * 2, ph = Math.acos(1 - this.nameRnd() * 0.9);
-        this.nameHome[i * 3] = 520 * Math.sin(ph) * Math.cos(th);
-        this.nameHome[i * 3 + 1] = 520 * Math.cos(ph) - 30;
-        this.nameHome[i * 3 + 2] = 520 * Math.sin(ph) * Math.sin(th);
-      }
-      const attr = new Float32Array(n * 2);
-      for (let i = 0; i < n; i++) { attr[i * 2] = 0.75 + 0.25 * this.nameRnd(); attr[i * 2 + 1] = this.nameRnd(); }
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.nameAttr); gl.bufferData(gl.ARRAY_BUFFER, attr, gl.STATIC_DRAW);
-    }
-    this.nameTarget = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const [x, y] = L.points[i];
-      const p = v3.add(centre, v3.add(v3.scale(r, x * unit), v3.scale(u, y * unit + lift)));
-      this.nameTarget.set(p, i * 3);
-    }
-    this.nameSegments = L.segments;
     this.namePos = new Float32Array(n * 3);
+    const attr = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      const [x, y, anchor] = L.points[i];
+      // a constellation is never on a grid: nudge each star a little
+      const jx = (rnd() - 0.5) * 0.07, jy = (rnd() - 0.5) * 0.07;
+      const p = v3.add(centre, v3.add(v3.scale(r, (x + jx) * unit), v3.scale(u, (y + jy) * unit + lift)));
+      this.namePos.set(p, i * 3);
+      attr[i * 2] = anchor ? 0.78 + 0.22 * rnd() : 0.5 + 0.25 * rnd();
+      attr[i * 2 + 1] = rnd();
+    }
+    this.nameN = n;
+    this.nameSegments = L.segments;
+    this.nameLetters = L.letters;
     this.nameLines = new Float32Array(L.segments.length * 6);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.nameVbo); gl.bufferData(gl.ARRAY_BUFFER, this.namePos, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.nameAttr); gl.bufferData(gl.ARRAY_BUFFER, attr, gl.STATIC_DRAW);
 
-    // named stars: each sits where the camera looks mid-band, offset into the
-    // upper part of the view so the card has room below
     const spots = this.portrait
-      ? [[0.1, 0.5], [-0.3, 0.58], [0.35, 0.54], [-0.1, 0.62]]
-      : [[0.3, 0.45], [-0.42, 0.52], [0.5, 0.6], [0.05, 0.54]];
+      ? [[0.12, 0.62], [-0.34, 0.72], [0.4, 0.68], [-0.08, 0.78]]
+      : [[0.3, 0.5], [-0.44, 0.6], [0.52, 0.68], [0.04, 0.62]];
     BANDS.stars.forEach(([a, b], i) => {
       const fr = this.frame((a + b) / 2);
-      const DD = 300, hH = DD * Math.tan(this.fov / 2), hW = hH * this.aspect;
+      const DD = 320, hH = DD * Math.tan(this.fov / 2), hW = hH * this.aspect;
       const c = v3.add(fr.eye, v3.scale(fr.f, DD));
       this.named[i].pos = v3.add(c, v3.add(v3.scale(fr.r, spots[i][0] * hW), v3.scale(fr.u, spots[i][1] * hH)));
     });
@@ -513,18 +492,17 @@ export class AscentScene extends HTMLElement {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.named.flatMap((s) => s.pos)), gl.STATIC_DRAW);
   }
 
-  // merged commits become lights along the trail
+  // merged commits become headlamps on the route up the face
   setTrailLights(count) {
     const gl = this.gl;
     const n = clamp(count, 0, 60);
     const pos = new Float32Array(n * 3);
     this.lights.pos = [];
     for (let i = 0; i < n; i++) {
-      const s = 0.79 + (0.24 * (i + 0.5)) / n; // ahead of the camera through the climb
-      const p = trail(s);
-      const side = (i % 2 ? 1 : -1) * (1.4 + 0.6 * ((i * 7) % 3));
-      const x = p[0] + side, z = p[2] + 0.4;
-      const y = meshHeightAbove(x, z) + 0.45;
+      const s = (i + 0.5) / n;
+      const p = route(s);
+      const x = p[0] + ((i % 2 ? 1 : -1) * 0.6), z = p[2];
+      const y = meshHeightAbove(x, z) + 0.5;
       pos.set([x, y, z], i * 3);
       this.lights.pos.push([x, y, z]);
     }
@@ -533,7 +511,6 @@ export class AscentScene extends HTMLElement {
     this.lights.n = n;
   }
 
-  // world → screen, for the page to draw connectors
   project(pos) {
     if (!this.pv) return null;
     const c = m4.transform(this.pv, pos);
@@ -541,46 +518,37 @@ export class AscentScene extends HTMLElement {
     return { x: (c[0] / c[3] * 0.5 + 0.5) * innerWidth, y: (-c[1] / c[3] * 0.5 + 0.5) * innerHeight };
   }
 
-  // how formed the name is right now, 0..1
-  get formation() { return this.intro * (1 - smooth(0.1, 0.17, this.t)); }
-
   loop(now) {
     if (this.stopped || this.paused) return;
     const gl = this.gl, P = this.P, reduced = this.reduced.matches;
     const time = (now - this.start) / 1000;
     const dt = Math.min(0.1, (now - (this.last || now)) / 1000); this.last = now;
 
-    // the one page-load moment: the name assembles
-    if (this.intro < 1) this.intro = reduced ? 1 : Math.min(1, (now - this.start) / 2400);
     const k = reduced ? 1 : 1 - Math.exp(-dt * 6), km = 1 - Math.exp(-dt * 4);
     this.t += (this.tTarget - this.t) * k;
     this.mx += (this.mxT - this.mx) * km; this.my += (this.myT - this.my) * km;
     const t = this.t;
 
     const { eye, target, under } = this.camera(t);
-    const drift = reduced ? 0 : 1;
-    const idle = reduced ? 0 : 0.28;
     const fr = this.frame(t);
-    const nudge = v3.add(v3.scale(fr.r, (this.mx * 1.1 + Math.sin(time * 0.1) * idle) * drift), v3.scale(fr.u, (-this.my * 0.6 + Math.cos(time * 0.08) * idle * 0.4) * drift));
+    const drift = reduced ? 0 : 1, idle = reduced ? 0 : 0.25;
+    const nudge = v3.add(v3.scale(fr.r, (this.mx * 1.4 + Math.sin(time * 0.1) * idle) * drift), v3.scale(fr.u, (-this.my * 0.8 + Math.cos(time * 0.08) * idle * 0.4) * drift));
     const tgt = v3.add(target, nudge);
-    const proj = m4.perspective(this.fov, this.aspect, 0.4, 1200);
+    const proj = m4.perspective(this.fov, this.aspect, 0.4, 1400);
     const view = m4.lookAt(eye, tgt, [0, 1, 0]);
     const pv = m4.mul(proj, view);
     this.pv = pv;
 
-    const warm = smooth(0.7, 0.95, t);
-    const horizonY = (() => {
-      // where the horizon lands on screen, for the sky gradient
-      const h = m4.transform(pv, v3.add(eye, v3.scale([fr.f[0], 0, fr.f[2]], 800)));
-      return h[3] > 0 ? clamp(h[1] / h[3] * 0.5 + 0.5, 0.05, 0.95) : 0.4;
-    })();
+    const warm = smooth(0.74, 0.95, t);
+    const skyH = P.skyHorizon.map((c, i) => lerp(c, [0.12, 0.09, 0.07][i], warm * 0.5));
+    const hz = m4.transform(pv, v3.add(eye, [0, 0, -900]));
+    const horizonY = hz[3] > 0 ? clamp(hz[1] / hz[3] * 0.5 + 0.5, 0.02, 0.98) : 0.4;
 
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
-    // sky
     {
       const s = this.progs.sky;
       gl.useProgram(s.p);
-      gl.uniform3fv(s.u.uTop, P.skyTop); gl.uniform3fv(s.u.uHorizon, P.skyHorizon.map((c, i) => lerp(c, [0.13, 0.1, 0.08][i], warm * 0.5)));
+      gl.uniform3fv(s.u.uTop, P.skyTop); gl.uniform3fv(s.u.uHorizon, skyH);
       gl.uniform3fv(s.u.uEarth, P.earth); gl.uniform1f(s.u.uUnder, under); gl.uniform1f(s.u.uHorizonY, horizonY);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
       gl.enableVertexAttribArray(s.a.aPos); gl.vertexAttribPointer(s.a.aPos, 2, gl.FLOAT, false, 0, 0);
@@ -589,8 +557,7 @@ export class AscentScene extends HTMLElement {
     gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const starFade = (1 - smooth(0.62, 0.8, t)) * (1 - under);
-    // --- stars ---
+    const starFade = (1 - smooth(0.66, 0.8, t)) * (1 - under);
     if (starFade > 0.001) {
       const s = this.progs.stars;
       gl.useProgram(s.p);
@@ -601,31 +568,45 @@ export class AscentScene extends HTMLElement {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.dome.attr); gl.enableVertexAttribArray(s.a.aAttr); gl.vertexAttribPointer(s.a.aAttr, 2, gl.FLOAT, false, 0, 0);
       gl.drawArrays(gl.POINTS, 0, this.dome.n);
 
-      // the name
-      const form = this.formation;
-      const n = this.nameTarget.length / 3;
-      const e = form * form * (3 - 2 * form);
-      for (let i = 0; i < n * 3; i++) this.namePos[i] = lerp(this.nameHome[i], this.nameTarget[i], e);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.nameVbo); gl.bufferData(gl.ARRAY_BUFFER, this.namePos, gl.DYNAMIC_DRAW);
-      gl.enableVertexAttribArray(s.a.aPos); gl.vertexAttribPointer(s.a.aPos, 3, gl.FLOAT, false, 0, 0);
+      // the name: its stars are always there; a line is traced between them
+      // on load, letter by letter, and lets go as you scroll
+      const traced = reduced ? 1 : clamp((time - 0.6) / 3.4, 0, 1);
+      const hold = 1 - smooth(0.09, 0.16, t);
+      const lit = (0.35 + 0.65 * smooth(0, 0.25, traced)) * hold + 0.35 * (1 - hold);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.nameVbo); gl.enableVertexAttribArray(s.a.aPos); gl.vertexAttribPointer(s.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.nameAttr); gl.enableVertexAttribArray(s.a.aAttr); gl.vertexAttribPointer(s.a.aAttr, 2, gl.FLOAT, false, 0, 0);
-      gl.uniform1f(s.u.uSize, 3.6 + 1.6 * e); gl.uniform1f(s.u.uTwinkle, reduced ? 0 : 0.5 * (1 - e));
-      gl.uniform3fv(s.u.uColor, P.name);
-      gl.drawArrays(gl.POINTS, 0, n);
+      gl.uniform1f(s.u.uSize, 2.6 + 2.2 * lit); gl.uniform1f(s.u.uTwinkle, reduced ? 0 : 0.6);
+      gl.uniform1f(s.u.uFade, starFade * (0.6 + 0.4 * lit)); gl.uniform3fv(s.u.uColor, P.name);
+      gl.drawArrays(gl.POINTS, 0, this.nameN);
 
-      const lineA = smooth(0.82, 1, form);
+      const lineA = traced > 0 ? hold : 0;
       if (lineA > 0.001) {
-        const l = this.progs.lines;
-        for (let i = 0; i < this.nameSegments.length; i++) {
-          const [a, b] = this.nameSegments[i];
-          this.nameLines.set([this.namePos[a * 3], this.namePos[a * 3 + 1], this.namePos[a * 3 + 2], this.namePos[b * 3], this.namePos[b * 3 + 1], this.namePos[b * 3 + 2]], i * 6);
+        const segs = this.nameSegments, N = segs.length;
+        // trace: each letter takes an equal share of the time, strokes in order
+        let drawn = 0;
+        const perLetter = {};
+        for (const sg of segs) perLetter[sg[2]] = (perLetter[sg[2]] || 0) + 1;
+        const counters = {};
+        for (let i = 0; i < N; i++) {
+          const [a, b, letter] = segs[i];
+          const k0 = counters[letter] || 0; counters[letter] = k0 + 1;
+          const lt = traced * this.nameLetters - letter;          // progress inside this letter, 0..1+
+          const p = clamp(lt * perLetter[letter] - k0, 0, 1);      // progress inside this stroke
+          if (p <= 0) continue;
+          const ax = this.namePos[a * 3], ay = this.namePos[a * 3 + 1], az = this.namePos[a * 3 + 2];
+          const bx = this.namePos[b * 3], by = this.namePos[b * 3 + 1], bz = this.namePos[b * 3 + 2];
+          this.nameLines.set([ax, ay, az, ax + (bx - ax) * p, ay + (by - ay) * p, az + (bz - az) * p], drawn * 6);
+          drawn++;
         }
-        gl.useProgram(l.p);
-        gl.uniformMatrix4fv(l.u.uPV, false, pv);
-        gl.uniform3fv(l.u.uColor, P.name); gl.uniform1f(l.u.uFade, 0.55 * lineA * starFade);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.nameLinesVbo); gl.bufferData(gl.ARRAY_BUFFER, this.nameLines, gl.DYNAMIC_DRAW);
-        gl.enableVertexAttribArray(l.a.aPos); gl.vertexAttribPointer(l.a.aPos, 3, gl.FLOAT, false, 0, 0);
-        gl.drawArrays(gl.LINES, 0, this.nameSegments.length * 2);
+        if (drawn) {
+          const l = this.progs.lines;
+          gl.useProgram(l.p);
+          gl.uniformMatrix4fv(l.u.uPV, false, pv);
+          gl.uniform3fv(l.u.uColor, P.name); gl.uniform1f(l.u.uFade, 0.36 * lineA * starFade);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this.nameLinesVbo); gl.bufferData(gl.ARRAY_BUFFER, this.nameLines.subarray(0, drawn * 6), gl.DYNAMIC_DRAW);
+          gl.enableVertexAttribArray(l.a.aPos); gl.vertexAttribPointer(l.a.aPos, 3, gl.FLOAT, false, 0, 0);
+          gl.drawArrays(gl.LINES, 0, drawn * 2);
+        }
       }
 
       // the four bright stars
@@ -633,7 +614,7 @@ export class AscentScene extends HTMLElement {
       gl.useProgram(h.p);
       gl.uniformMatrix4fv(h.u.uPV, false, pv);
       gl.uniform1f(h.u.uDpr, this.dpr); gl.uniform1f(h.u.uSize, 70);
-      gl.uniform1f(h.u.uFade, starFade * smooth(0.06, 0.18, t) * 0.95 + starFade * 0.35); gl.uniform3fv(h.u.uColor, P.warm);
+      gl.uniform1f(h.u.uFade, starFade * (0.3 + 0.7 * smooth(0.08, 0.18, t))); gl.uniform3fv(h.u.uColor, P.warm);
       const glow = new Float32Array(this.named.map((s, i) => {
         const [a, b] = BANDS.stars[i];
         const on = smooth(a - 0.02, a + 0.02, t) * (1 - smooth(b - 0.02, b + 0.02, t));
@@ -646,36 +627,36 @@ export class AscentScene extends HTMLElement {
       gl.drawArrays(gl.POINTS, 0, this.named.length);
     }
 
-    // --- mountain ---
-    const terrainFade = 1 - under;
+    const terrainFade = 1 - smooth(0.965, 1, t);
     if (terrainFade > 0.001) {
       const m = this.progs.terrain;
       gl.useProgram(m.p);
       gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
       gl.uniformMatrix4fv(m.u.uPV, false, pv);
       gl.uniform3fv(m.u.uEye, eye);
-      gl.uniform3fv(m.u.uSky, P.skyHorizon.map((c, i) => lerp(c, [0.13, 0.1, 0.08][i], warm * 0.5)));
+      gl.uniform3fv(m.u.uSky, skyH);
       gl.uniform3fv(m.u.uRockLow, P.rockLow); gl.uniform3fv(m.u.uRockHigh, P.rockHigh); gl.uniform3fv(m.u.uSnow, P.snow);
-      gl.uniform3fv(m.u.uLight, v3.norm([-0.55, 0.72, 0.42])); gl.uniform3fv(m.u.uContourColor, P.contour);
-      gl.uniform1f(m.u.uSnowLine, 10.5); gl.uniform1f(m.u.uFade, terrainFade); gl.uniform1f(m.u.uContour, 0.22); gl.uniform1f(m.u.uWarm, warm);
+      gl.uniform3fv(m.u.uLight, v3.norm([-0.5, 0.7, 0.5])); gl.uniform3fv(m.u.uContourColor, P.contour);
+      gl.uniform1f(m.u.uSnowLine, 15); gl.uniform1f(m.u.uFade, terrainFade); gl.uniform1f(m.u.uContour, 0.2); gl.uniform1f(m.u.uWarm, warm);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.terrain.vbo); gl.enableVertexAttribArray(m.a.aPos); gl.vertexAttribPointer(m.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.terrain.ibo);
       gl.drawElements(gl.TRIANGLES, this.terrain.n, gl.UNSIGNED_INT, 0);
       gl.disable(gl.DEPTH_TEST);
 
-      // trail lights
-      const lightFade = smooth(BANDS.climb[0] - 0.06, BANDS.climb[0], t) * terrainFade;
+      // headlamps on the route
+      const lightFade = smooth(BANDS.climb[0] - 0.08, BANDS.climb[0] - 0.01, t) * (1 - smooth(0.93, 0.965, t)) * terrainFade;
       if (this.lights.n && lightFade > 0.001) {
         const h = this.progs.halo;
         gl.useProgram(h.p);
         gl.enable(gl.DEPTH_TEST); gl.depthMask(false);
         gl.uniformMatrix4fv(h.u.uPV, false, pv);
-        gl.uniform1f(h.u.uDpr, this.dpr); gl.uniform1f(h.u.uSize, 26); gl.uniform1f(h.u.uFade, lightFade); gl.uniform3fv(h.u.uColor, P.warm);
+        gl.uniform1f(h.u.uDpr, this.dpr); gl.uniform1f(h.u.uSize, 22); gl.uniform1f(h.u.uFade, lightFade); gl.uniform3fv(h.u.uColor, P.warm);
         const g = new Float32Array(this.lights.n);
+        // they light up from the summit down as the camera passes
+        const sweep = smooth(BANDS.climb[0] - 0.02, BANDS.climb[1] + 0.02, t);
         for (let i = 0; i < this.lights.n; i++) {
-          const p = this.lights.pos[i];
-          const d = Math.hypot(p[0] - eye[0], p[2] - eye[2]);
-          g[i] = clamp(1 - d / 14, 0, 1) * (reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 3 + i * 1.7));
+          const s = (i + 0.5) / this.lights.n;
+          g[i] = smooth(s - 0.08, s + 0.02, sweep * 1.1) * (reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 2.6 + i * 1.7));
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, this.lights.vbo); gl.enableVertexAttribArray(h.a.aPos); gl.vertexAttribPointer(h.a.aPos, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.lights.glow); gl.bufferData(gl.ARRAY_BUFFER, g, gl.DYNAMIC_DRAW);
@@ -685,15 +666,14 @@ export class AscentScene extends HTMLElement {
       }
     }
 
-    // --- roots ---
-    const rootFade = smooth(0.9, 0.99, t);
+    const rootFade = smooth(0.94, 0.985, t);
     if (rootFade > 0.001) {
       const l = this.progs.lines;
       gl.useProgram(l.p);
       gl.uniformMatrix4fv(l.u.uPV, false, pv);
-      gl.uniform3fv(l.u.uColor, P.root); gl.uniform1f(l.u.uFade, 0.55 * rootFade);
+      gl.uniform3fv(l.u.uColor, P.root); gl.uniform1f(l.u.uFade, 0.5 * rootFade);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.roots.vbo); gl.enableVertexAttribArray(l.a.aPos); gl.vertexAttribPointer(l.a.aPos, 3, gl.FLOAT, false, 0, 0);
-      gl.drawArrays(gl.LINES, 0, Math.floor(this.roots.n * smooth(0.9, 1, t)));
+      gl.drawArrays(gl.LINES, 0, Math.floor(this.roots.n * smooth(0.94, 1, t)));
     }
 
     this.dispatchEvent(new CustomEvent('frame', { detail: { t } }));
