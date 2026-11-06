@@ -153,7 +153,7 @@ export class AsciiScene extends HTMLElement {
     this.nameLetters = name.letters;
     // lines as cell paths, in drawing order
     const perLetter = {};
-    this.nameLines = name.lines.filter(([, , letter]) => (perLetter[letter] = (perLetter[letter] || 0) + 1) <= 5).map(([i, j, letter]) => {
+    this.nameLines = name.lines.filter(([, , letter]) => (perLetter[letter] = (perLetter[letter] || 0) + 1) <= 8).map(([i, j, letter]) => {
       const a = this.nameStars[i], b = this.nameStars[j];
       const cells = cellsBetween(a.cell[0], a.cell[1], b.cell[0], b.cell[1]);
       const glyph = lineGlyph(b.cell[0] - a.cell[0], -(b.cell[1] - a.cell[1]), this.aspect);
