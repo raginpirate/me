@@ -96,6 +96,6 @@ scene.addEventListener('frame', (e) => {
     const portrait = innerHeight > innerWidth;
     const ax = portrait ? r.left + r.width * 0.5 : (starCard.dataset.side === 'left' ? r.right + 4 : r.left - 4);
     const ay = portrait ? r.top - 4 : r.top + Math.min(r.height * 0.3, 40);
-    scene.drawTether(i, ax, ay, 0.6 * starV);
+    scene.drawTether(i, ax, ay, 0.85 * starV);
   }
 });

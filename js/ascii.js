@@ -217,12 +217,13 @@ export class AsciiScene extends HTMLElement {
     const dir = rnd() < 0.5 ? 1 : -1;
     const ang = (20 + rnd() * 15) * Math.PI / 180;
     const speed = 28;
-    const fromTop = rnd() < 0.6;
+    const bandTop = L.shooting[0] * rows;
+    // always enter from off screen: over the top edge when the band allows
+    // it, otherwise in from the side, heading down and across
     let x, y;
-    if (fromTop) { x = rnd() * this.cols; y = Math.max(L.shooting[0] * rows, top - 2); }
-    else { x = dir > 0 ? -3 : this.cols + 3; y = top + rnd() * rows * 0.5; }
-    if (y < L.shooting[0] * rows) y = L.shooting[0] * rows + 1;
-    return { kind: 'shoot', x, y, vx: dir * speed * Math.cos(ang), vy: speed * Math.sin(ang) * this.aspect, life: 3.2, age: 0, hist: [], tailLen: 6 };
+    if (top - 3 >= bandTop && rnd() < 0.6) { x = rnd() * this.cols; y = top - 3; }
+    else { x = dir > 0 ? -5 : this.cols + 5; y = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
+    return { kind: 'shoot', x, y, vx: dir * speed * Math.cos(ang), vy: speed * Math.sin(ang) * this.aspect, life: 3.6, age: 0, hist: [], tailLen: 6 };
   }
   spawnBird(x, y, dir, rnd) {
     return { kind: 'bird', x, y, vx: dir * 7, vy: 0, baseY: y, phase: rnd() * 6.28, age: 0, life: 14, frame: 0, hist: [], tailLen: 0 };
@@ -304,7 +305,7 @@ export class AsciiScene extends HTMLElement {
             p.vx = sp * Math.cos(a) / this.aspect; p.vy = sp * Math.sin(a);
           }
         }
-        p.vy += shove * dt;
+        p.vy -= shove * dt;
         p.x += p.vx * dt; p.y += p.vy * dt;
         p.hist.push([p.x, p.y]); if (p.hist.length > 40) p.hist.shift();
         if (p.y >= L.birds[0] * rows) { this.toBird(p, rnd); keep.push(p); continue; }
@@ -396,11 +397,15 @@ export class AsciiScene extends HTMLElement {
       const on = smooth(a - 0.01, a + 0.01, this.t) * (1 - smooth(b - 0.01, b + 0.01, this.t));
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       const pulse = reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 2.4 + i);
-      const halo = `rgba(243,200,107,${(0.35 + 0.45 * s.glow * pulse).toFixed(2)})`;
       const cx = Math.round(s.hx), cy = Math.round(s.hy) - top;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put('·', halo, cx + dx, cy + dy);
-      if (s.glow > 0.05) for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) g.put('·', `rgba(243,200,107,${(0.5 * s.glow * pulse).toFixed(2)})`, cx + dx, cy + dy);
-      g.put('✦', P.ember, s.x, s.y - top);
+      const glow = s.glow * pulse;
+      // at rest: four faint neighbours. Lit: a full ring, a second ring, and a brighter star
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put('·', `rgba(243,200,107,${(0.35 + 0.6 * glow).toFixed(2)})`, cx + dx, cy + dy);
+      if (s.glow > 0.03) {
+        for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) g.put('·', `rgba(243,200,107,${(0.75 * glow).toFixed(2)})`, cx + dx, cy + dy);
+        for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 1], [-2, 1], [2, -1], [-2, -1], [1, 2], [-1, 2], [1, -2], [-1, -2]]) g.put('.', `rgba(243,200,107,${(0.4 * glow).toFixed(2)})`, cx + dx, cy + dy);
+      }
+      g.put('✦', s.glow > 0.03 ? '#ffe3a3' : P.ember, s.x, s.y - top);
     });
 
     // headlamps on the route
@@ -440,7 +445,14 @@ export class AsciiScene extends HTMLElement {
     // tether from the lit star to its card, drawn by the page via drawTether()
     if (this.tether) {
       const [x0, y0, x1, y1, alpha] = this.tether;
-      for (const [cx, cy] of cellsBetween(x0, y0, x1, y1)) if ((cx + cy) % 2 === 0) g.put('.', `rgba(127,147,180,${alpha.toFixed(2)})`, cx, cy - top);
+      const cells = cellsBetween(x0, y0, x1, y1);
+      const runner = reduced ? -1 : Math.floor(((time * 0.7) % 1) * (cells.length + 4)) - 2;
+      cells.forEach(([cx, cy], k) => {
+        const near = Math.abs(k - runner);
+        const ch = near === 0 ? '✦' : near === 1 ? '·' : (k % 2 ? '·' : '.');
+        const a = near <= 1 ? alpha * 1.4 : alpha * 0.9;
+        g.put(ch, `rgba(243,200,107,${Math.min(1, a).toFixed(2)})`, cx, cy - top);
+      });
       this.tether = null;
     }
 
