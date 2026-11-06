@@ -187,6 +187,20 @@ export class AsciiScene extends HTMLElement {
       roots: [band([9.15, 10.5])[0], 1],
     };
 
+    // talking points, in world rows: where a glide should come to rest
+    const centreRow = (screen) => (screen - 0.5) * this.screenRows;
+    const portrait = this.viewH > this.viewW;
+    const desk = [[1.1, 1.65], [1.75, 2.3], [2.4, 2.95], [3.05, 3.6]];
+    this.snaps = [
+      0,
+      ...L.stars.map(([screen], i) => portrait ? centreRow(screen + 0.16) : centreRow((desk[i][0] + desk[i][1]) / 2)),
+      centreRow(L.summit + 0.12),
+      centreRow(4.95),
+      centreRow(6.1), centreRow(6.8), centreRow(7.5),
+      this.rows - this.screenRows,
+    ].map((r) => clamp(r, 0, this.rows - this.screenRows));
+    this.dispatchEvent(new CustomEvent('built'));
+
     // static props for reduced motion
     this.movers = []; this.resting = [];
     if (this.reduced.matches) {

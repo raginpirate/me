@@ -1,5 +1,6 @@
 import './ascii.js';
 import './gh-activity.js';
+import { attachGravity } from './gravity.js';
 
 const html = document.documentElement;
 const scene = document.querySelector('ascii-scene');
@@ -43,6 +44,9 @@ function setPlain(on) {
 mode.addEventListener('click', () => setPlain(!plain));
 scene.addEventListener('fallback', () => { setPlain(true); mode.hidden = true; });
 try { if (localStorage.getItem('mode') === 'plain') setPlain(true); } catch { /* ignore */ }
+
+// ---------- touch: gravity at the talking points ----------
+attachGravity(scene, { enabled: () => !plain });
 
 // ---------- jumping ----------
 function scrollToBand([a]) {
