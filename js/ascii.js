@@ -370,6 +370,7 @@ export class AsciiScene extends HTMLElement {
       const N = this.nameLines.length;
       const litLetters = new Set();
       const lineColor = `rgba(190,206,232,${(0.95 * hold).toFixed(2)})`;
+      const lineColorSoft = `rgba(190,206,232,${(0.6 * hold).toFixed(2)})`;
       for (let idx = 0; idx < N; idx++) {
         const line = this.nameLines[idx];
         // each line gets an equal slice of the trace
@@ -384,7 +385,8 @@ export class AsciiScene extends HTMLElement {
         const n = Math.round((steps - 1) * p);
         for (let k = 1; k <= n; k++) {
           const f = k / steps;
-          g.put(k % 2 ? '.' : '·', lineColor, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
+          // one glyph, so every dot sits on the line; the rhythm comes from brightness
+          g.put('·', k % 2 ? lineColor : lineColorSoft, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
       for (const s of this.nameStars) {
