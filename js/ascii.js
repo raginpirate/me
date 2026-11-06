@@ -451,7 +451,8 @@ export class AsciiScene extends HTMLElement {
         const near = Math.abs(k - runner);
         const ch = near === 0 ? '✦' : near === 1 ? '•' : (k % 2 ? '·' : '•');
         const a = near <= 1 ? 1 : alpha;
-        g.put(ch, `rgba(243,200,107,${Math.min(1, a).toFixed(2)})`, cx, cy - top);
+        // a cool white line; only the spark is ember
+        g.put(ch, near === 0 ? P.ember : `rgba(214,226,244,${Math.min(1, a).toFixed(2)})`, cx, cy - top);
       });
       this.tether = null;
     }
