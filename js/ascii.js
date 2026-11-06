@@ -380,15 +380,11 @@ export class AsciiScene extends HTMLElement {
         const ax = a.x, ay = a.y, bx = b.x, by = b.y;
         // the same dotted thread as the star tethers, at twice the density:
         // dots every half cell along the line, alternating mid and small
-        // step every half cell along the longer axis; snap the other axis to
-        // whole cells so a shallow line is one thread, not two
-        const shallow = Math.abs(bx - ax) * this.aspect >= Math.abs(by - ay);
-        const steps = Math.max(1, Math.round(2 * (shallow ? Math.abs(bx - ax) : Math.abs(by - ay))));
+        const steps = Math.max(1, Math.round(2 * Math.max(Math.abs(bx - ax) * this.aspect * 2, Math.abs(by - ay))));
         const n = Math.round((steps - 1) * p);
         for (let k = 1; k <= n; k++) {
           const f = k / steps;
-          const x = ax + (bx - ax) * f, y = ay + (by - ay) * f;
-          g.put(k % 2 ? '.' : '·', lineColor, shallow ? x : Math.round(x), (shallow ? Math.round(y) : y) - top);
+          g.put(k % 2 ? '.' : '·', lineColor, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
       for (const s of this.nameStars) {
