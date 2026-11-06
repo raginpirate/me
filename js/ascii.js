@@ -429,12 +429,12 @@ export class AsciiScene extends HTMLElement {
       const seeds = this.nameSeeds || (this.nameSeeds = (() => { const r = mulberry32(31); return this.nameStars.map(() => r()); })());
       this.nameStars.forEach((s, i) => {
         const always = seeds[i] < 0.34;
-        // once revealed, two thirds of the name's stars twinkle, 40% to 100%
-        const twinkles = !reduced && seeds[i] > 0.3;
-        const tw = twinkles ? 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(time * (1.3 + seeds[i] * 1.5) + seeds[i] * 50)) : 1;
+        // the stars that twinkled in keep twinkling, 25% to 100%; the ones that
+        // were always there stay steady
+        const tw = reduced ? 1 : 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(time * (1.3 + seeds[i] * 1.5) + seeds[i] * 50));
         if (always) {
           const w = reveal; // field colour → white
-          const col = `rgba(${Math.round(201 + (255 - 201) * w)},${Math.round(216 + (255 - 216) * w)},${Math.round(238 + (255 - 238) * w)},${(1 - (1 - tw) * reveal).toFixed(2)})`;
+          const col = `rgb(${Math.round(201 + (255 - 201) * w)},${Math.round(216 + (255 - 216) * w)},${Math.round(238 + (255 - 238) * w)})`;
           g.put(s.anchor && reveal > 0.6 ? '✦' : '*', col, s.x, s.y - top);
         } else {
           const alpha = reveal >= 1 ? tw : clamp(reveal * (0.5 + 0.5 * Math.sin(time * 8 + seeds[i] * 40)) + reveal * reveal * 0.7, 0, 1);
