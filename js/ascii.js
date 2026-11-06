@@ -251,22 +251,32 @@ export class AsciiScene extends HTMLElement {
   spawnShooting(rnd) {
     const L = D.layout, top = this.scrollRows, rows = this.screenRows, g = this.grid;
     const F = this.focal;
-    const dir = rnd() < 0.5 ? 1 : -1;
-    const ang = (18 + rnd() * 18) * Math.PI / 180;
-    // depth: half far, a third mid, the rest close; some far ones come toward you
-    const u = rnd();
-    const Z = (u < 0.5 ? 2.2 + rnd() * 2.3 : u < 0.85 ? 1.1 + rnd() * 1.1 : 0.55 + rnd() * 0.5) * F;
-    const vZ = Z > 2 * F && rnd() < 0.5 ? -(0.35 + rnd() * 0.45) * F : 0;
-    // enter from off screen, in projected terms
-    const bandTop = L.shooting[0] * rows;
-    let sx, sy;
-    if (top - 3 >= bandTop && rnd() < 0.6) { sx = rnd() * this.cols; sy = top - 3; }
-    else { sx = dir > 0 ? -5 : this.cols + 5; sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
     const cxPx = this.viewW / 2, cyPx = (top + rows / 2) * g.cellH; // the centre, in world pixels
+    const bandTop = L.shooting[0] * rows;
+    // a direction with real depth: at least 40% of the motion is along Z
+    const toward = rnd() < 0.65;
+    // approaching ones come more head-on, so they grow in place before sliding past
+    const zc = (toward ? 0.72 + rnd() * 0.22 : 0.55 + rnd() * 0.3) * (toward ? -1 : 1);
+    const lat = Math.sqrt(1 - zc * zc), ang = rnd() * Math.PI * 2;
+    const dir = [lat * Math.cos(ang), lat * Math.sin(ang) * 0.6 + lat * 0.35, zc]; // a little downward bias
+    const speed = (1.1 + rnd() * 0.8) * F;                                           // per second, in world pixels
+    let Z, sx, sy;
+    if (toward) {
+      // born deep in the field, somewhere inside the view, as a speck
+      Z = (2.2 + rnd() * 1.4) * F;
+      sx = 4 + rnd() * (this.cols - 8); sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.6);
+    } else {
+      // born near, off an edge, flying away toward the vanishing point
+      Z = (0.55 + rnd() * 0.35) * F;
+      if (top - 3 >= bandTop && rnd() < 0.6) { sx = rnd() * this.cols; sy = top - 3; }
+      else { sx = rnd() < 0.5 ? -5 : this.cols + 5; sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
+      // aim inward so it crosses the view on its way out
+      dir[0] = (cxPx - sx * g.cellW) / F * 0.6 + (rnd() - 0.5) * 0.3;
+      dir[1] = Math.abs(dir[1]) * 0.6 + (cyPx - sy * g.cellH) / F * 0.4;
+    }
     const X = (sx * g.cellW - cxPx) * Z / F, Y = (sy * g.cellH - cyPx) * Z / F;
-    const speedPx = 28 * g.cellW;                                   // 28 cells/s at the screen plane
-    const vX = dir * speedPx * Math.cos(ang) * (Z / F), vY = speedPx * Math.sin(ang) * (Z / F);
-    const p = { kind: 'shoot', X, Y, Z, vX, vY, vZ, cxPx, cyPx, x: sx, y: sy, vx: 0, vy: 0, life: 3.8 + (Z / F - 1) * 1.6, age: 0, hist: [], tailLen: 6 };
+    const n = Math.hypot(dir[0], dir[1], dir[2]) || 1;
+    const p = { kind: 'shoot', X, Y, Z, vX: speed * dir[0] / n, vY: speed * dir[1] / n, vZ: speed * dir[2] / n, cxPx, cyPx, x: sx, y: sy, vx: 0, vy: 0, life: 6, age: 0, hist: [], tailLen: 6 };
     this.project3(p);
     return p;
   }
@@ -364,7 +374,8 @@ export class AsciiScene extends HTMLElement {
         this.project3(p);
         p.hist.push([p.X, p.Y, p.Z]); if (p.hist.length > 48) p.hist.shift();
         if (p.y >= L.birds[0] * rows) { this.toBird(p, rnd); keep.push(p); continue; }
-        if (p.age < p.life && p.x > -12 && p.x < this.cols + 12 && p.Z > 0.42 * this.focal) keep.push(p);
+        const F = this.focal;
+        if (p.age < p.life && p.x > -20 && p.x < this.cols + 20 && p.Z > 0.28 * F && p.Z < 4.2 * F) keep.push(p);
       } else if (p.kind === 'bird') {
         p.morph = Math.max(0, (p.morph || 0) - dt);
         const [px, py] = push(p, 4, 3);
@@ -547,8 +558,9 @@ export class AsciiScene extends HTMLElement {
     const base = g.size;
     const topPx = top * g.cellH;
     const headK = F / p.Z;
-    const headA = clamp(headK * 1.15, 0.22, 1);
-    g.putSized(G.shootHead, `rgba(242,246,255,${headA.toFixed(2)})`, p.px, p.py - topPx, base * clamp(headK, 0.45, 3.4));
+    const born = clamp(p.age / 0.5, 0, 1);
+    const headA = clamp(headK * 1.15, 0.1, 1) * born;
+    g.putSized(G.shootHead, `rgba(242,246,255,${headA.toFixed(2)})`, p.px, p.py - topPx, base * clamp(headK, 0.35, 3.6));
     // the tail follows the real path through space; spacing is one glyph at each point's own scale
     const tail = G.shootTail;
     let acc = 0, k = 0;
@@ -559,8 +571,8 @@ export class AsciiScene extends HTMLElement {
       const x1 = p.cxPx + X1 * k1, y1 = p.cyPx + Y1 * k1, x0 = p.cxPx + X0 * k0, y0 = p.cyPx + Y0 * k0;
       acc += Math.hypot(x1 - x0, y1 - y0);
       while (acc >= want(k) * Math.max(0.5, k0) && k < tail.length) {
-        const a = (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.22, 1);
-        g.putSized(tail[k], `rgba(201,216,238,${a.toFixed(2)})`, x0, y0 - topPx, base * clamp(k0, 0.45, 3.0));
+        const a = (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.1, 1) * born;
+        g.putSized(tail[k], `rgba(201,216,238,${a.toFixed(2)})`, x0, y0 - topPx, base * clamp(k0, 0.35, 3.2));
         k++;
       }
     }
