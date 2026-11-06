@@ -437,7 +437,10 @@ export class AsciiScene extends HTMLElement {
           const col = `rgb(${Math.round(201 + (255 - 201) * w)},${Math.round(216 + (255 - 216) * w)},${Math.round(238 + (255 - 238) * w)})`;
           g.put(s.anchor && reveal > 0.6 ? '✦' : '*', col, s.x, s.y - top);
         } else {
-          const alpha = reveal >= 1 ? tw : clamp(reveal * (0.5 + 0.5 * Math.sin(time * 8 + seeds[i] * 40)) + reveal * reveal * 0.7, 0, 1);
+          // the fast flicker of the reveal crossfades into the slow twinkle,
+          // so there is no seam when the reveal ends
+          const fast = 0.5 + 0.5 * Math.sin(time * 8 + seeds[i] * 40);
+          const alpha = clamp(reveal * ((1 - reveal) * fast + reveal * tw), 0, 1);
           if (alpha < 0.02) return;
           g.put(s.anchor ? '✦' : '*', `rgba(255,255,255,${alpha.toFixed(2)})`, s.x, s.y - top);
         }
