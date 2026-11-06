@@ -383,10 +383,10 @@ export class AsciiScene extends HTMLElement {
       for (const s of this.field) {
         if (!inView(s)) continue;
         let ch = s.ch, color = s.tier === 0 ? P.starDim : s.tier === 1 ? P.star : P.starBright;
-        // a third of the sky twinkles: brightness breathes between 55% and 100%
+        // a third of the sky twinkles: brightness swings between 20% and 100%
         // on its own rate, and the bright ones also blink between glyphs
         if (tw && s.phase < 2.1) {
-          const b = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(time * (1.4 + s.phase) + s.phase * 7));
+          const b = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(time * (1.4 + s.phase) + s.phase * 7));
           color = `rgba(${rgb[s.tier]},${b.toFixed(2)})`;
           if (s.tier === 2 && Math.sin(time * 1.7 + s.phase * 5) < -0.2) ch = '*';
         } else if (s.tier === 2 && tw && Math.sin(time * 1.7 + s.phase) < -0.3) ch = '*';
