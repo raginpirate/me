@@ -176,7 +176,12 @@ export class AsciiScene extends HTMLElement {
     const band = ([a, b]) => [clamp((a - 0.5) / S, 0, 1), clamp((b - 0.5) / S, 0, 1)];
     this.bands = {
       name: [0, band([0, 0.72])[1]],
-      stars: [[1.1, 1.65], [1.75, 2.3], [2.4, 2.95], [3.05, 3.6]].map(band),
+      // portrait: the card sits at the bottom, so it opens only once its star
+      // has climbed above it (star just past mid-screen) and closes as the
+      // star leaves the top edge. Landscape: the card sits beside the star.
+      stars: this.viewH > this.viewW
+        ? L.stars.map(([screen]) => band([screen - 0.04, screen + 0.44]))
+        : [[1.1, 1.65], [1.75, 2.3], [2.4, 2.95], [3.05, 3.6]].map(band),
       climb: band([4.65, 5.25]),
       slopes: [[5.8, 6.4], [6.5, 7.1], [7.2, 7.8]].map(band),
       roots: [band([9.15, 10.5])[0], 1],
