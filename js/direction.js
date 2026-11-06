@@ -7,7 +7,7 @@ export const D = {
     sky: '#070a14', skyBase: '#0b0907',
     starDim: '#5a6a86', star: '#c9d8ee', starBright: '#f2f6ff',
     ember: '#f3c86b', nameLine: '#7f93b4',
-    rockLight: '#8c9bb8', rock: '#4f5e7c', rockDark: '#36425f', far: 'rgba(42,52,80,0.6)',
+    rockLight: '#8c9bb8', rock: '#4f5e7c', rockDark: '#2f3a56', far: 'rgba(42,52,80,0.6)',
     snow: '#eef3fb', snowShade: 'rgba(238,243,251,0.55)',
     bird: '#b8c6da',
     pine: '#3f7a55', pineDark: '#24513a',

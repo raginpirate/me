@@ -34,20 +34,21 @@ function mulberry32(a) {
 // in letter units, y up, with the per-letter jitter, rotation and baseline
 // shifts the direction asks for. `lines` of text: each word on its own line
 // when `stacked`, else one line with "wyckoff" sitting a little lower.
-export function layoutName(text, { stacked = false, seed = 7 } = {}) {
+export function layoutName(text, { stacked = false, seed = 7, tight = false } = {}) {
+  const adv = (ch) => (tight ? 0.84 * (ADVANCE[ch] || ADVANCE.default) / ADVANCE.default : (ADVANCE[ch] || ADVANCE.default));
   const rnd = mulberry32(seed);
   const words = text.toLowerCase().split(' ');
   const stars = [], lines = [];
   const seen = {};
   let letter = 0;
-  const widths = words.map((w) => [...w].reduce((s, ch, i) => s + (i === w.length - 1 ? 1 : (ADVANCE[ch] || ADVANCE.default)), 0));
+  const widths = words.map((w) => [...w].reduce((s, ch, i) => s + (i === w.length - 1 ? 0.75 : adv(ch)), 0));
   let penX = 0;
   words.forEach((word, wi) => {
-    let x = stacked ? -widths[wi] / 2 + (wi === 1 ? 1.4 : 0) : penX;
+    let x = stacked ? -widths[wi] / 2 + (wi === 1 ? (tight ? 0.4 : 1.0) : 0) : penX;
     const baseY = stacked ? (wi === 0 ? 0.62 : -0.78) : (wi === 1 ? -0.18 : 0);
     for (const ch of word) {
       const def = LETTERS[ch];
-      if (!def) { x += ADVANCE.default; continue; }
+      if (!def) { x += adv(ch); continue; }
       const use = (seen[ch] = (seen[ch] || 0) + 1);
       // repeated letters: start the point list from a different star
       const shift = (use - 1) % def.stars.length;
@@ -68,7 +69,7 @@ export function layoutName(text, { stacked = false, seed = 7 } = {}) {
       stars[base + remap(def.stars.length - 1)][2] = 1;
       for (const [i, j] of def.lines) lines.push([base + remap(i), base + remap(j), letter]);
       letter++;
-      x += ADVANCE[ch] || ADVANCE.default;
+      x += adv(ch);
     }
     penX = x - (ADVANCE.default - 1) + SPACE;
   });

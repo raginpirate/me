@@ -29,13 +29,12 @@ body {
   overflow-x: hidden;
 }
 
-a { color: var(--ember); text-decoration: none; }
-a:hover { text-decoration: underline; text-underline-offset: 0.2em; }
+a { color: var(--ember); text-decoration: underline; text-decoration-color: rgba(243, 200, 107, 0.45); text-underline-offset: 0.2em; }
+a:hover { text-decoration-color: var(--ember); }
 :focus-visible { outline: 1px solid var(--ember); outline-offset: 3px; }
 
 h1, h2 { font: inherit; font-weight: 700; margin: 0; }
 h2 { font-size: 1rem; margin-bottom: 0.3rem; color: #f2f6ff; }
-h2::before { content: "# "; color: var(--rule); font-weight: 400; }
 p { margin: 0 0 0.7rem; }
 p:last-child { margin-bottom: 0; }
 time { display: block; color: var(--dim); font-size: 0.82rem; }
@@ -57,8 +56,6 @@ ascii-scene canvas { display: block; width: 100%; height: 100%; }
   padding: 0.3rem 0.6rem; border: 1px solid var(--dim);
   background: var(--wash); color: var(--muted); font: inherit; font-size: 0.78rem; cursor: pointer;
 }
-.mode::before { content: "[ "; color: var(--dim); }
-.mode::after { content: " ]"; color: var(--dim); }
 .mode:hover { color: var(--ink); border-color: var(--rule); }
 
 .rail {
@@ -66,9 +63,9 @@ ascii-scene canvas { display: block; width: 100%; height: 100%; }
   display: flex; flex-direction: column; gap: 0.7rem; font-size: 0.78rem;
 }
 .rail a { color: var(--dim); }
-.rail a::before { content: "- "; }
+.rail a::before { content: "  "; white-space: pre; }
 .rail a.is-here { color: var(--ember); }
-.rail a.is-here::before { content: "> "; }
+.rail a.is-here::before { content: "· "; }
 .rail a:hover { text-decoration: none; color: var(--ink); }
 @media (max-width: 900px) { .rail { display: none; } }
 
@@ -111,7 +108,6 @@ ascii-scene canvas { display: block; width: 100%; height: 100%; }
 
 .card-star { border-color: rgba(243, 200, 107, 0.45); }
 .card-star::before, .card-star::after { color: var(--ember); }
-.card-star > a::before { content: "> "; }
 
 .card-base { border-color: rgba(208, 138, 58, 0.45); }
 .card-base::before, .card-base::after { color: var(--leaf); }
@@ -135,7 +131,6 @@ ascii-scene canvas { display: block; width: 100%; height: 100%; }
 .gh-pulse i { position: absolute; top: 100%; left: 0; right: 0; text-align: center; font-style: normal; font-size: 0.62rem; color: var(--dim); padding-top: 3px; }
 .gh-latest { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
 .gh-latest li { padding: 0.25rem 0; border-top: 1px dashed rgba(127, 147, 180, 0.35); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gh-latest li::before { content: "* "; color: var(--dim); }
 .gh-latest a { color: var(--ink); }
 
 /* ---------- text mode ---------- */
@@ -148,7 +143,6 @@ ascii-scene canvas { display: block; width: 100%; height: 100%; }
 .is-plain .card::before, .is-plain .card::after { display: none; }
 .is-plain .card-summit { text-align: left; border-top: 0; padding-top: 0; }
 .is-plain .card-summit h1 { position: static; width: auto; height: auto; clip: auto; white-space: normal; font-size: 1.6rem; margin-bottom: 0.5rem; }
-.is-plain .card-summit h1::before { content: "# "; color: var(--rule); font-weight: 400; }
 .is-plain .card-summit .tag, .is-plain .card-summit .hint { animation: none; }
 .is-plain .card-summit .hint { display: none; }
 .is-plain .card p { max-width: 64ch; }

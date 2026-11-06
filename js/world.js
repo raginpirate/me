@@ -94,8 +94,8 @@ export function buildWorld(cols, rows, screenRows, D) {
     let drift = dir ? 1 : -1;
     for (let step = 0; step < H * 1.6 && r < groundRow - 2; step++) {
       const n = noise(c * 0.11 + step * 0.03, r * 0.05 + dir * 7);
-      if (n < 0.3) drift = -1; else if (n > 0.7) drift = 1; else if (n > 0.45 && n < 0.55) drift = 0;
-      const dc = drift * (rnd() < 0.55 ? 1 : 0);
+      if (n < 0.42) drift = -1; else if (n > 0.58) drift = 1; else drift = 0;
+      const dc = drift * (rnd() < 0.7 ? 1 : 0);
       const glyph = dc < 0 ? '/' : dc > 0 ? '\\' : '|';
       const nr = r + 1, nc = clamp(c + dc, 0, cols - 1);
       if (nr < peak[nc] + 1) break; // off the mountain
@@ -120,8 +120,11 @@ export function buildWorld(cols, rows, screenRows, D) {
         const n = noise(c * 0.37 + 1, r * 0.61 + 2);
         const edge = Math.min(c, cols - 1 - c) / cols; // trunks crowd the edges
         if (edge < 0.12 && noise(c * 1.3, 0.5) > 0.74 && r < rows - 8) { cells[r][c] = ['|', P.pineDark]; continue; }
-        const ch = n < 0.55 ? ' ' : g[(r + c) % g.length];
-        if (ch !== ' ') cells[r][c] = [ch, bottom ? P.groundDark : (n > 0.8 ? P.ground : P.groundDark)];
+        // leaves piled at the foot of the slope: dense on the ground line, thinning below
+        const foot = Math.max(0, 0.6 - (r - groundRow) * 0.085);
+        if (rnd() < foot) { cells[r][c] = [[',', "'", '~'][Math.floor(rnd() * 3)], rnd() < 0.55 ? P.leaf : P.leafOlive]; continue; }
+        const ch = n < 0.5 ? ' ' : g[(r + c) % g.length];
+        if (ch !== ' ') cells[r][c] = [ch, bottom ? P.groundDark : (n > 0.78 ? P.ground : P.groundDark)];
         // the slope's last rows blend into the ground
         continue;
       }
@@ -168,7 +171,7 @@ export function buildWorld(cols, rows, screenRows, D) {
         const toGround = smooth(groundRow - 12, groundRow, r);
         if (toGround > 0 && rnd() < toGround) { ch = G.ground[(r + c) % G.ground.length]; color = P.ground; }
         // shadows are airy: the darker the cell, the more often it is left blank
-        else if (rnd() < (1 - light) * 0.55 - 0.1) ch = ' ';
+        else if (rnd() < 0.22 + (1 - light) * 0.4) ch = ' ';
       }
       if (ch !== ' ') cells[r][c] = [ch, color];
     }
@@ -180,7 +183,7 @@ export function buildWorld(cols, rows, screenRows, D) {
   let lastShape = -1;
   for (let c = 1; c < cols - 8;) {
     const pk = peak[c];
-    const gentle = Math.abs(slopeS[c]) < 3.4;
+    const gentle = Math.abs(slopeS[c]) * 0.5 < 0.7;
     const below = pk > treelineRow;
     if (!(gentle && below) || pk >= groundRow - 1) { c++; continue; }
     const density = smooth(treelineRow, treelineRow + screenRows * 1.6, pk);
@@ -210,23 +213,14 @@ export function buildWorld(cols, rows, screenRows, D) {
     c += w - 1 + 3 + Math.floor(rnd() * 4);
   }
 
-  // a forest across the lower face, thickening toward the base
-  for (let n = 0; n < cols * 3; n++) {
-    const c = Math.floor(rnd() * (cols - 7));
-    const r = Math.floor(treelineRow + rnd() * (groundRow - treelineRow));
-    if (r < peak[c + 3] + 2 || r >= groundRow - 1 || r >= rows) continue;
-    const density = smooth(treelineRow, groundRow - 10, r);
-    if (rnd() > density * 0.9) continue;
-    const small = rnd() < 0.55;
-    const shape = small ? [' ^ ', '/|\\'] : shapes[Math.floor(rnd() * shapes.length)];
+  // a forest across the lower face: clusters of 3–6 pines with small gaps,
+  // standing on rock, thickening toward the base
+  const stamp = (c, r, shape, shadow) => {
     const h = shape.length;
-    let clash = false;
-    for (let i = 0; i < h && !clash; i++) for (let j = 0; j < shape[i].length; j++) {
+    for (let i = 0; i < h; i++) for (let j = 0; j < shape[i].length; j++) {
       const cell = cells[r - (h - 1 - i)]?.[c + j];
-      if (cell && (cell[1] === P.pine || cell[1] === P.pineDark)) { clash = true; break; }
+      if (cell && (cell[1] === P.pine || cell[1] === P.pineDark)) return false;
     }
-    if (clash) continue;
-    const shadow = c > topCol;
     let k = 0;
     for (let i = 0; i < h; i++) for (let j = 0; j < shape[i].length; j++) {
       const ch = shape[i][j];
@@ -234,7 +228,27 @@ export function buildWorld(cols, rows, screenRows, D) {
       const rr = r - (h - 1 - i), cc = c + j;
       if (rr < 0 || rr >= rows || cc >= cols) continue;
       const trunk = ch === '|' && i === h - 1;
-      cells[rr][cc] = [ch, trunk || (shadow && k++ % 3 === 0) || k++ % 4 === 3 ? P.pineDark : P.pine];
+      cells[rr][cc] = [ch, trunk || (shadow && (j === 0 || j === shape[i].length - 1)) || k++ % 4 === 3 ? P.pineDark : P.pine];
+    }
+    return true;
+  };
+  const clusters = Math.floor(cols * 0.9);
+  for (let n = 0; n < clusters; n++) {
+    const c0 = Math.floor(rnd() * (cols - 24));
+    const r0 = Math.floor(treelineRow + Math.pow(rnd(), 0.7) * (groundRow - treelineRow - 2));
+    if (r0 < peak[c0 + 6] + 3) continue;
+    const size = 3 + Math.floor(rnd() * 4);
+    let c = c0;
+    for (let i = 0; i < size; i++) {
+      const shape = rnd() < 0.3 ? [' ^ ', '/|\\'] : shapes[Math.floor(rnd() * shapes.length)];
+      const w = Math.max(...shape.map((x) => x.length));
+      const r = r0 + Math.floor((rnd() - 0.5) * 3);
+      if (r < peak[Math.min(cols - 1, c + 2)] + 2 || r >= groundRow - 1 || r >= rows) { c += w; continue; }
+      // the bottom row must sit on something
+      const below = cells[r + 1]?.[c + Math.floor(w / 2)];
+      if (!below && r + 1 < groundRow) { c += w; continue; }
+      stamp(c, r, shape, c > topCol);
+      c += w + 1 + Math.floor(rnd() * 2);
     }
   }
 

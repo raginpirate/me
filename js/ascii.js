@@ -118,10 +118,11 @@ export class AsciiScene extends HTMLElement {
     }
 
     // the name
-    const stacked = true;
-    const name = layoutName(this.getAttribute('name') || 'daniel wyckoff', { stacked, seed: 7 });
-    const wordWidth = 7.3;
-    const unitPx = Math.min((innerWidth < 600 ? 3.0 : 4.7) * g.cellH / 0.58, (innerWidth < 600 ? 0.92 : 0.8) * innerWidth / wordWidth);
+    const phone = innerWidth < 600;
+    const name = layoutName(this.getAttribute('name') || 'daniel wyckoff', { stacked: true, seed: 7, tight: phone });
+    const wordWidth = phone ? 5.9 : 7.3;
+    const unitPx = Math.min((phone ? 3.4 : 4.4) * g.cellH / 0.58, (phone ? 0.94 : 0.7) * innerWidth / wordWidth);
+    this.nameDense = true;
     const ux = unitPx / g.cellW, uy = unitPx / g.cellH;
     const cx = this.cols * 0.5, cy = L.name * this.screenRows;
     this.nameStars = name.stars.map(([x, y, anchor, letter]) => {
@@ -130,7 +131,8 @@ export class AsciiScene extends HTMLElement {
     });
     this.nameLetters = name.letters;
     // lines as cell paths, in drawing order
-    this.nameLines = name.lines.map(([i, j, letter]) => {
+    const perLetter = {};
+    this.nameLines = name.lines.filter(([, , letter]) => (perLetter[letter] = (perLetter[letter] || 0) + 1) <= 5).map(([i, j, letter]) => {
       const a = this.nameStars[i], b = this.nameStars[j];
       const cells = cellsBetween(a.cell[0], a.cell[1], b.cell[0], b.cell[1]);
       const glyph = lineGlyph(b.cell[0] - a.cell[0], -(b.cell[1] - a.cell[1]), this.aspect);
@@ -166,7 +168,7 @@ export class AsciiScene extends HTMLElement {
       for (let i = 0; i < 40; i++) { const f = this.spawnFlake(rnd() * this.cols, (L.leavesFrom + rnd() * (L.groundFrom - L.leavesFrom)) * this.screenRows, rnd); this.toLeaf(f, rnd); this.movers.push(f); }
       for (let i = 0; i < 5; i++) this.movers.push(this.spawnBird(rnd() * this.cols, (L.birds[0] + rnd() * (L.birds[1] - L.birds[0])) * this.screenRows, rnd() < 0.5 ? 1 : -1, rnd));
     }
-    this.nextShoot = 2 + rnd() * 5; this.nextBird = 1; this.flakeAcc = 0; this.leafAcc = 0;
+    this.nextShoot = 1.5 + rnd() * 2; this.nextBird = 1; this.flakeAcc = 0; this.leafAcc = 0;
   }
 
   placeLamps(n) {
@@ -343,8 +345,9 @@ export class AsciiScene extends HTMLElement {
         litLetters.add(line.letter);
         const n = Math.min(line.cells.length, Math.floor(budget));
         for (let k = 0; k < n; k++) {
+          if (!this.nameDense && k % 2 === 1) continue;
           const [cx, cy] = line.cells[k];
-          g.put(k % 3 === 2 ? '.' : line.glyph, `rgba(159,178,210,${(0.85 * hold).toFixed(2)})`, cx, cy - top);
+          g.put(k % 3 === 2 ? '.' : line.glyph, `rgba(159,178,210,${(0.62 * hold).toFixed(2)})`, cx, cy - top);
         }
         budget -= line.cells.length + 1;
       }
@@ -443,7 +446,7 @@ export class AsciiScene extends HTMLElement {
     // shooting stars
     if (cs > L.shooting[0] && cs < L.shooting[1]) {
       this.nextShoot -= dt;
-      if (this.nextShoot <= 0) { this.movers.push(this.spawnShooting(rnd)); this.nextShoot = 7 + rnd() * 4; }
+      if (this.nextShoot <= 0) { this.movers.push(this.spawnShooting(rnd)); this.nextShoot = 3.5 + rnd() * 2.5; }
     }
     // birds from the edges
     if (bottom > L.birds[0] * rows && top < L.birds[1] * rows) {
