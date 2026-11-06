@@ -384,8 +384,12 @@ export class AsciiScene extends HTMLElement {
     const hold = 1 - smooth(0.05, 0.1, this.t);
     if (hold > 0.001 && skyVisible) {
       const N = this.nameLines.length;
-      // during the reveal a dot's brightness flickers; once revealed it is steady
-      const flicker = (phase) => reveal >= 1 ? 1 : clamp(reveal * (0.55 + 0.45 * Math.sin(time * 9 + phase)) + (reveal * reveal) * 0.6, 0, 1);
+      // the thread flickers up over the reveal, then keeps a faint twinkle for good
+      const flicker = (phase) => {
+        const steady = 0.86 + 0.14 * Math.sin(time * 2.6 + phase);
+        if (reveal >= 1) return reduced ? 1 : steady;
+        return clamp(reveal * (0.55 + 0.45 * Math.sin(time * 9 + phase)) + (reveal * reveal) * 0.6, 0, 1) * (1 - reveal) + steady * reveal;
+      };
       for (let idx = 0; idx < N; idx++) {
         const line = this.nameLines[idx];
         const a = this.nameStars[line.i], b = this.nameStars[line.j];
@@ -400,11 +404,8 @@ export class AsciiScene extends HTMLElement {
           g.put('·', `rgba(190,206,232,${alpha.toFixed(2)})`, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
-      this.nameStars.forEach((s, i) => {
-        const alpha = flicker(i * 3.1);
-        if (alpha < 0.02) return;
-        g.put(s.anchor ? '✦' : '*', `rgba(255,255,255,${alpha.toFixed(2)})`, s.x, s.y - top);
-      });
+      // the stars themselves are simply there, steady
+      for (const s of this.nameStars) g.put(s.anchor ? '✦' : '*', '#ffffff', s.x, s.y - top);
     } else if (skyVisible) {
       for (const s of this.nameStars) g.put('*', P.star, s.x, s.y - top);
     }
