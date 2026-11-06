@@ -378,36 +378,33 @@ export class AsciiScene extends HTMLElement {
     // the name: traced on load, let go on scroll. The lines are recomputed
     // every frame from where the stars are now, so a pushed star drags its
     // lines with it and they spring back together.
-    const traced = reduced ? 1 : clamp((time - 0.5) / 2.8, 0, 1);
+    // the name twinkles in all at once over three seconds: every star and
+    // every thread dot flickers up from nothing on its own rhythm
+    const reveal = reduced ? 1 : clamp((time - 0.4) / 3, 0, 1);
     const hold = 1 - smooth(0.05, 0.1, this.t);
     if (hold > 0.001 && skyVisible) {
       const N = this.nameLines.length;
-      const litLetters = new Set();
-      const lineColor = `rgba(190,206,232,${(0.95 * hold).toFixed(2)})`;
-      const lineColorSoft = `rgba(190,206,232,${(0.6 * hold).toFixed(2)})`;
+      // during the reveal a dot's brightness flickers; once revealed it is steady
+      const flicker = (phase) => reveal >= 1 ? 1 : clamp(reveal * (0.55 + 0.45 * Math.sin(time * 9 + phase)) + (reveal * reveal) * 0.6, 0, 1);
       for (let idx = 0; idx < N; idx++) {
         const line = this.nameLines[idx];
-        // each line gets an equal slice of the trace
-        const p = clamp(traced * N - idx, 0, 1);
-        if (p <= 0) break;
-        litLetters.add(line.letter);
         const a = this.nameStars[line.i], b = this.nameStars[line.j];
         const ax = a.x, ay = a.y, bx = b.x, by = b.y;
-        // the same dotted thread as the star tethers, at twice the density:
-        // dots every half cell along the line, alternating mid and small
+        // the same dotted thread as the star tethers, at twice the density
         const steps = Math.max(1, Math.round(2 * Math.max(Math.abs(bx - ax) * this.aspect * 2, Math.abs(by - ay))));
-        const n = Math.round((steps - 1) * p);
-        for (let k = 1; k <= n; k++) {
+        for (let k = 1; k < steps; k++) {
           const f = k / steps;
-          // one glyph, so every dot sits on the line; the rhythm comes from brightness
-          g.put('·', k % 2 ? lineColor : lineColorSoft, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
+          const base = k % 2 ? 0.95 : 0.6;
+          const alpha = base * hold * flicker(idx * 1.7 + k * 2.3);
+          if (alpha < 0.02) continue;
+          g.put('·', `rgba(190,206,232,${alpha.toFixed(2)})`, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
-      for (const s of this.nameStars) {
-        const lit = litLetters.has(s.letter);
-        const ch = lit && (s.anchor || time < this.nameLitUntil(s.letter)) ? '✦' : '*';
-        g.put(ch, lit ? '#ffffff' : P.starBright, s.x, s.y - top);
-      }
+      this.nameStars.forEach((s, i) => {
+        const alpha = flicker(i * 3.1);
+        if (alpha < 0.02) return;
+        g.put(s.anchor ? '✦' : '*', `rgba(255,255,255,${alpha.toFixed(2)})`, s.x, s.y - top);
+      });
     } else if (skyVisible) {
       for (const s of this.nameStars) g.put('*', P.star, s.x, s.y - top);
     }
@@ -479,11 +476,6 @@ export class AsciiScene extends HTMLElement {
 
     this.dispatchEvent(new CustomEvent('frame', { detail: { t: this.t } }));
     requestAnimationFrame(this.loop);
-  }
-
-  nameLitUntil(letter) {
-    // a letter's stars stay bright for 2 s after its tracing starts
-    return 0.5 + 2.8 * (letter / this.nameLetters) + 2;
   }
 
   drawTail(p, top, len) {
