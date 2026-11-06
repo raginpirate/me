@@ -82,7 +82,7 @@ export class GhPulse extends HTMLElement {
     const note = data ? 'Live from GitHub.' : `Snapshot, ${new Date(snap.fetched).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}.`;
 
     this.innerHTML = `
-      <p class="gh-sum"><strong>${total}</strong> merged commits in twelve months, ${repos} ${repos === 1 ? 'repo' : 'repos'}.</p>
+      <p class="gh-sum"><strong>${total}</strong> merged commits in twelve months.</p>
       <div class="gh-pulse" role="img" aria-label="${total} commits by month">
         ${months.map((m) => `<span style="--v:${(m.n / max).toFixed(3)}" title="${m.label}: ${m.n}"><i>${m.label[0]}</i></span>`).join('')}
       </div>
@@ -91,7 +91,7 @@ export class GhPulse extends HTMLElement {
       </ul>
       <p class="gh-status">${note} <a href="https://github.com/${USER}" rel="noopener">All of it.</a></p>`;
 
-    document.querySelector('ascent-scene')?.setTrailLights?.(total);
+    document.querySelector('ascii-scene')?.setTrailLights?.(total);
   }
 }
 
