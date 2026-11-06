@@ -56,7 +56,9 @@ export class AsciiScene extends HTMLElement {
     this.named = [];
 
     try {
+      this.viewW = innerWidth; this.viewH = this.largeViewportHeight();
       this.grid = new Grid(this.canvas, { size: this.fontSize() });
+      this.grid.resize(this.viewW, this.viewH);
       this.build();
     } catch (e) { console.warn('ascii scene failed', e); this.classList.add('is-fallback'); this.dispatchEvent(new CustomEvent('fallback')); return; }
 
@@ -66,7 +68,14 @@ export class AsciiScene extends HTMLElement {
       this.pointer = [e.clientX / this.grid.cellW, e.clientY / this.grid.cellH]; this.pointerAt = performance.now();
     };
     this.onLeave = () => { this.pointer = null; };
-    this.onResize = () => { this.grid.size = this.fontSize(); this.grid.resize(); this.build(); };
+    this.onResize = () => {
+      // a mobile URL bar showing or hiding only changes the height a little:
+      // ignore that. Rebuild for a width change or an orientation change.
+      const h = this.largeViewportHeight();
+      if (innerWidth === this.viewW && Math.abs(h - this.viewH) < this.viewH * 0.2) return;
+      this.viewW = innerWidth; this.viewH = h;
+      this.grid.size = this.fontSize(); this.grid.resize(this.viewW, this.viewH); this.build();
+    };
     addEventListener('scroll', this.onScroll, { passive: true });
     addEventListener('pointermove', this.onPointer, { passive: true });
     addEventListener('pointerleave', this.onLeave);
@@ -88,10 +97,21 @@ export class AsciiScene extends HTMLElement {
 
   fontSize() { return innerWidth < 600 ? 11 : innerWidth < 1100 ? 13 : 14; }
 
+  // the viewport height with the browser's bars hidden (100lvh), so the
+  // painting is laid out once and the bars just cover its bottom rows
+  largeViewportHeight() {
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;height:100lvh;width:0;pointer-events:none;visibility:hidden';
+    document.body.appendChild(probe);
+    const h = probe.getBoundingClientRect().height;
+    probe.remove();
+    return h > 0 ? Math.max(h, innerHeight) : innerHeight;
+  }
+
   // ---------- build the world and everything that lives in it ----------
   build() {
     const g = this.grid, L = D.layout, P = D.palette, G = D.glyphs;
-    this.screenRows = innerHeight / g.cellH;
+    this.screenRows = this.viewH / g.cellH;
     this.cols = g.cols;
     this.rows = Math.ceil(L.screens * this.screenRows) + 2;
     this.world = buildWorld(this.cols, this.rows, this.screenRows, D);
@@ -101,8 +121,9 @@ export class AsciiScene extends HTMLElement {
     this.aspect = g.cellW / g.cellH; // a column is this many rows wide
     const rnd = mulberry32(2026);
 
-    // page height follows the world
-    document.documentElement.style.setProperty('--screens', String(L.screens));
+    // page height follows the world, in pixels, so the scroll range does not
+    // move when a browser bar comes and goes
+    document.documentElement.style.setProperty('--world-height', `${Math.round(this.rows * g.cellH)}px`);
 
     // field stars: everywhere above the mountain, three tiers
     this.field = [];
@@ -118,10 +139,10 @@ export class AsciiScene extends HTMLElement {
     }
 
     // the name
-    const phone = innerWidth < 600;
+    const phone = this.viewW < 600;
     const name = layoutName(this.getAttribute('name') || 'daniel wyckoff', { stacked: true, seed: 7, tight: phone });
     const wordWidth = phone ? 5.9 : 7.3;
-    const unitPx = Math.min((phone ? 3.4 : 4.4) * g.cellH / 0.58, (phone ? 0.94 : 0.7) * innerWidth / wordWidth);
+    const unitPx = Math.min((phone ? 3.4 : 4.4) * g.cellH / 0.58, (phone ? 0.94 : 0.7) * this.viewW / wordWidth);
     this.nameDense = true;
     const ux = unitPx / g.cellW, uy = unitPx / g.cellH;
     const cx = this.cols * 0.5, cy = L.name * this.screenRows;

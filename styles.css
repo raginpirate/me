@@ -41,8 +41,8 @@ time { display: block; color: var(--dim); font-size: 0.82rem; }
 .sub { color: var(--muted); }
 
 /* ---------- scene ---------- */
-ascii-scene { position: fixed; inset: 0; z-index: 0; display: block; pointer-events: none; background: var(--sky); }
-ascii-scene canvas { display: block; width: 100%; height: 100%; }
+ascii-scene { position: fixed; top: 0; left: 0; width: 100%; height: 100vh; height: 100lvh; z-index: 0; display: block; pointer-events: none; background: var(--sky); overflow: hidden; }
+ascii-scene canvas { display: block; }
 
 .hits { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
 .hits button {
@@ -70,7 +70,7 @@ ascii-scene canvas { display: block; width: 100%; height: 100%; }
 @media (max-width: 900px) { .rail { display: none; } }
 
 /* ---------- cards ---------- */
-.story { position: relative; z-index: 3; height: calc(var(--screens) * 100vh); height: calc(var(--screens) * 100svh); }
+.story { position: relative; z-index: 3; height: var(--world-height, calc(var(--screens) * 100vh)); }
 
 .card {
   position: fixed; top: 50%; transform: translateY(-50%);

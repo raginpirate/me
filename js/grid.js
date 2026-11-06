@@ -12,10 +12,12 @@ export class Grid {
     this.resize();
   }
 
-  resize() {
+  // size to an explicit box; the scene passes the large viewport so a
+  // collapsing mobile URL bar never changes the painting
+  resize(w = innerWidth, h = innerHeight) {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     this.dpr = dpr;
-    const w = innerWidth, h = innerHeight;
+    this.w = w; this.h = h;
     this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
     const ctx = this.ctx;
@@ -51,14 +53,14 @@ export class Grid {
 
   clear(color) {
     this.ctx.fillStyle = color;
-    this.ctx.fillRect(0, 0, innerWidth, innerHeight);
+    this.ctx.fillRect(0, 0, this.w, this.h);
   }
 
   // draw a glyph at a fractional cell position (x cols, y rows)
   put(ch, color, x, y) {
     if (!ch || ch === ' ') return;
     const px = x * this.cellW, py = y * this.cellH;
-    if (px < -this.cellW || py < -this.cellH || px > innerWidth || py > innerHeight) return;
+    if (px < -this.cellW || py < -this.cellH || px > this.w || py > this.h) return;
     this.ctx.drawImage(this.sprite(ch, color), px, py, this.cellW + 2 / this.dpr, this.cellH + 2 / this.dpr);
   }
 
