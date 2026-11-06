@@ -411,7 +411,8 @@ export class AsciiScene extends HTMLElement {
         const a = `rgba(243,200,107,${(0.85 * s.glow * pulse).toFixed(2)})`;
         for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) g.put('·', a, cx + dx, cy + dy);
         // one more dot out along each cardinal, so it points like a star
-        for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) g.put('·', a, cx + dx, cy + dy);
+        const faint = `rgba(243,200,107,${(0.22 * s.glow * pulse).toFixed(2)})`;
+        for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2]]) g.put('·', faint, cx + dx, cy + dy);
       }
       g.put('✦', P.ember, s.x, s.y - top);
     });
