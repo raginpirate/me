@@ -115,6 +115,7 @@ ascii-scene canvas { display: block; }
 .card-base a { color: var(--leaf); }
 .links { display: flex; gap: 1.4rem; margin-top: 0.9rem; }
 .colophon { margin-top: 1rem; font-size: 0.8rem; color: var(--muted); }
+.version { color: var(--dim); }
 
 @media (max-width: 600px) {
   .card, .card[data-side="left"], .card[data-side="right"], .card[data-side="centre"] {
