@@ -397,15 +397,13 @@ export class AsciiScene extends HTMLElement {
       const on = smooth(a - 0.01, a + 0.01, this.t) * (1 - smooth(b - 0.01, b + 0.01, this.t));
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       const pulse = reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 2.4 + i);
+      // the original: four faint neighbours, eight when lit. Same shape,
+      // a touch more contrast so it reads on a phone.
+      const halo = `rgba(243,200,107,${(0.45 + 0.55 * s.glow * pulse).toFixed(2)})`;
       const cx = Math.round(s.hx), cy = Math.round(s.hy) - top;
-      const glow = s.glow * pulse;
-      // at rest: four faint neighbours. Lit: two rings of dots, heavier than before
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put(s.glow > 0.03 ? '•' : '·', `rgba(243,200,107,${(0.35 + 0.65 * glow).toFixed(2)})`, cx + dx, cy + dy);
-      if (s.glow > 0.03) {
-        for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) g.put('•', `rgba(243,200,107,${(0.85 * glow).toFixed(2)})`, cx + dx, cy + dy);
-        for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 1], [-2, 1], [2, -1], [-2, -1], [1, 2], [-1, 2], [1, -2], [-1, -2], [3, 0], [-3, 0]]) g.put('·', `rgba(243,200,107,${(0.7 * glow).toFixed(2)})`, cx + dx, cy + dy);
-      }
-      g.put('✦', s.glow > 0.03 ? '#ffe3a3' : P.ember, s.x, s.y - top);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put('·', halo, cx + dx, cy + dy);
+      if (s.glow > 0.05) for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) g.put('·', `rgba(243,200,107,${(0.85 * s.glow * pulse).toFixed(2)})`, cx + dx, cy + dy);
+      g.put('✦', P.ember, s.x, s.y - top);
     });
 
     // headlamps on the route
@@ -444,16 +442,9 @@ export class AsciiScene extends HTMLElement {
 
     // tether from the lit star to its card, drawn by the page via drawTether()
     if (this.tether) {
+      // the original: a dot on every other cell. White-blue, brighter than before.
       const [x0, y0, x1, y1, alpha] = this.tether;
-      const cells = cellsBetween(x0, y0, x1, y1);
-      const runner = reduced ? -1 : Math.floor(((time * 0.7) % 1) * (cells.length + 4)) - 2;
-      cells.forEach(([cx, cy], k) => {
-        const near = Math.abs(k - runner);
-        const ch = near === 0 ? '✦' : near === 1 ? '•' : (k % 2 ? '·' : '•');
-        const a = near <= 1 ? 1 : alpha;
-        // a cool white line; only the spark is ember
-        g.put(ch, near === 0 ? P.ember : `rgba(214,226,244,${Math.min(1, a).toFixed(2)})`, cx, cy - top);
-      });
+      for (const [cx, cy] of cellsBetween(x0, y0, x1, y1)) if ((cx + cy) % 2 === 0) g.put('.', `rgba(190,206,232,${alpha.toFixed(2)})`, cx, cy - top);
       this.tether = null;
     }
 
