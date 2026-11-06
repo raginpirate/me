@@ -383,9 +383,9 @@ export class AsciiScene extends HTMLElement {
       for (const s of this.field) {
         if (!inView(s)) continue;
         let ch = s.ch, color = s.tier === 0 ? P.starDim : s.tier === 1 ? P.star : P.starBright;
-        // two thirds of the sky twinkle: brightness swings between 20% and 100%
+        // a third of the sky twinkles: brightness swings between 20% and 100%
         // on its own rate, and the bright ones also blink between glyphs
-        if (tw && s.phase < 4.2) {
+        if (tw && s.phase < 2.1) {
           const b = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(time * (1.4 + s.phase) + s.phase * 7));
           color = `rgba(${rgb[s.tier]},${b.toFixed(2)})`;
           if (s.tier === 2 && Math.sin(time * 1.7 + s.phase * 5) < -0.2) ch = '*';
@@ -429,12 +429,15 @@ export class AsciiScene extends HTMLElement {
       const seeds = this.nameSeeds || (this.nameSeeds = (() => { const r = mulberry32(31); return this.nameStars.map(() => r()); })());
       this.nameStars.forEach((s, i) => {
         const always = seeds[i] < 0.34;
+        // once revealed, two thirds of the name's stars twinkle, 40% to 100%
+        const twinkles = !reduced && seeds[i] > 0.3;
+        const tw = twinkles ? 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(time * (1.3 + seeds[i] * 1.5) + seeds[i] * 50)) : 1;
         if (always) {
           const w = reveal; // field colour → white
-          const col = `rgb(${Math.round(201 + (255 - 201) * w)},${Math.round(216 + (255 - 216) * w)},${Math.round(238 + (255 - 238) * w)})`;
+          const col = `rgba(${Math.round(201 + (255 - 201) * w)},${Math.round(216 + (255 - 216) * w)},${Math.round(238 + (255 - 238) * w)},${(1 - (1 - tw) * reveal).toFixed(2)})`;
           g.put(s.anchor && reveal > 0.6 ? '✦' : '*', col, s.x, s.y - top);
         } else {
-          const alpha = reveal >= 1 ? 1 : clamp(reveal * (0.5 + 0.5 * Math.sin(time * 8 + seeds[i] * 40)) + reveal * reveal * 0.7, 0, 1);
+          const alpha = reveal >= 1 ? tw : clamp(reveal * (0.5 + 0.5 * Math.sin(time * 8 + seeds[i] * 40)) + reveal * reveal * 0.7, 0, 1);
           if (alpha < 0.02) return;
           g.put(s.anchor ? '✦' : '*', `rgba(255,255,255,${alpha.toFixed(2)})`, s.x, s.y - top);
         }
