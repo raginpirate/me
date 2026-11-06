@@ -369,7 +369,7 @@ export class AsciiScene extends HTMLElement {
     if (hold > 0.001 && skyVisible) {
       const N = this.nameLines.length;
       const litLetters = new Set();
-      const lineColor = `rgba(196,210,232,${(0.9 * hold).toFixed(2)})`;
+      const lineColor = `rgba(190,206,232,${(0.95 * hold).toFixed(2)})`;
       for (let idx = 0; idx < N; idx++) {
         const line = this.nameLines[idx];
         // each line gets an equal slice of the trace
@@ -378,12 +378,12 @@ export class AsciiScene extends HTMLElement {
         litLetters.add(line.letter);
         const a = this.nameStars[line.i], b = this.nameStars[line.j];
         const ax = Math.round(a.x), ay = Math.round(a.y), bx = Math.round(b.x), by = Math.round(b.y);
+        // the same dotted thread as the star tethers: a dot on every cell
         const cells = cellsBetween(ax, ay, bx, by);
-        const glyph = lineGlyph(bx - ax, -(by - ay), this.aspect);
         const n = Math.round(cells.length * p);
         for (let k = 0; k < n; k++) {
           const [cx, cy] = cells[k];
-          g.put(k % 3 === 2 ? '.' : glyph, lineColor, cx, cy - top);
+          g.put(k % 2 ? '.' : '·', lineColor, cx, cy - top);
         }
       }
       for (const s of this.nameStars) {
