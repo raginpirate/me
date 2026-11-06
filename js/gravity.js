@@ -26,46 +26,37 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
   function startGlide(v0) {
     stopGlide();
     const H = innerHeight;
-    const R = H * 0.7;           // a well's reach
-    const omega = 6;             // how firmly a well holds
+    const R = H * 0.6;           // how far out a talking point starts braking
     const friction = 1.7;        // per second, the ordinary glide
-    const brake = 9;             // extra, inside a well you cannot escape
-    let pos = scrollY, v = v0, last = performance.now(), captured = null;
+    const escape = H * 3.2;      // px/s: faster than this and you sail through
+    let pos = scrollY, v = v0, last = performance.now(), target = null;
 
     const step = (now) => {
       const dt = Math.min(0.04, (now - last) / 1000) || 0.016; last = now;
       const max = maxScroll();
-      // the point ahead in the direction of travel, or the one that holds us
-      let p = captured;
-      if (p === null) {
-        const ahead = points.filter((q) => v > 0 ? q > pos - 1 : q < pos + 1);
-        p = v > 0 ? Math.min(...ahead) : Math.max(...ahead);
-        if (!isFinite(p)) p = null;
-      }
-      const d = p === null ? Infinity : p - pos;  // signed distance to it
-      const dist = Math.abs(d);
-      const toward = p !== null && Math.sign(d) === Math.sign(v);
+      // the point ahead in the direction of travel
+      const ahead = points.filter((q) => v > 0 ? q > pos + 0.5 : q < pos - 0.5);
+      const p = ahead.length ? (v > 0 ? Math.min(...ahead) : Math.max(...ahead)) : null;
+      const dist = p === null ? Infinity : Math.abs(p - pos);
+      const u = Math.abs(v);
 
-      if (captured !== null) {
-        // critically damped spring onto the point: no overshoot by construction
-        const x = pos - captured;
-        v += (-omega * omega * x - 2 * omega * v) * dt;
-      } else if (p !== null && dist < R && toward) {
-        const u = Math.abs(v);
-        const escape = omega * dist * 3 + 400;    // truly flying: sail through
-        if (u > escape) v *= Math.exp(-friction * dt);
-        else if (u > omega * dist) v *= Math.exp(-(friction + brake) * dt); // gravity bleeds speed
-        else captured = p;
-      } else {
-        v *= Math.exp(-friction * dt);
-      }
+      let k = friction;
+      if (p !== null && dist < R && u < escape) {
+        // brake so the glide runs out exactly at the point: never a push,
+        // only ever less speed than ordinary friction would leave
+        k = Math.max(friction, u / Math.max(dist, 1));
+        target = p;
+      } else target = null;
+      v *= Math.exp(-k * dt);
 
       pos += v * dt;
       if (pos <= 0 || pos >= max) { pos = clamp(pos, 0, max); v = 0; }
       scrollTo(0, pos);
 
-      const settled = captured !== null ? Math.abs(pos - captured) < 0.5 && Math.abs(v) < 8 : Math.abs(v) < 6;
-      if (settled) { if (captured !== null) scrollTo(0, captured); glide = null; return; }
+      if (u < 6) {
+        if (target !== null && Math.abs(target - pos) < 3) scrollTo(0, target);
+        glide = null; return;
+      }
       glide.raf = requestAnimationFrame(step);
     };
     glide = { raf: requestAnimationFrame(step) };
