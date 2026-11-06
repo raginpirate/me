@@ -64,6 +64,34 @@ export class Grid {
     this.ctx.drawImage(this.sprite(ch, color), px, py, this.cellW + 2 / this.dpr, this.cellH + 2 / this.dpr);
   }
 
+  // a glyph at any size, centred on a pixel position: the 3D elements use
+  // this, with size set by distance from the camera
+  sizedSprite(ch, color, size) {
+    const key = ch + '\0' + color + '\0' + size;
+    let s = this.atlas.get(key);
+    if (s) return s;
+    const dpr = this.dpr;
+    const w = Math.ceil(size * 1.3), h = Math.ceil(size * 1.3);
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
+    const x = c.getContext('2d');
+    x.scale(dpr, dpr);
+    x.font = `${size}px ${this.font}`;
+    x.textBaseline = 'middle'; x.textAlign = 'center';
+    x.fillStyle = color;
+    x.fillText(ch, w / 2, h / 2);
+    s = { canvas: c, w, h };
+    this.atlas.set(key, s);
+    return s;
+  }
+  putSized(ch, color, px, py, size) {
+    if (!ch || ch === ' ') return;
+    const q = Math.max(4, Math.round(size * 2) / 2); // quantise so the cache stays small
+    if (px < -q * 2 || py < -q * 2 || px > this.w + q * 2 || py > this.h + q * 2) return;
+    const s = this.sizedSprite(ch, color, q);
+    this.ctx.drawImage(s.canvas, px - s.w / 2, py - s.h / 2, s.w, s.h);
+  }
+
   // a run of text starting at a cell
   text(str, color, x, y) {
     for (let i = 0; i < str.length; i++) this.put(str[i], color, x + i, y);

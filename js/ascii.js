@@ -243,38 +243,46 @@ export class AsciiScene extends HTMLElement {
   setTrailLights(n) { this.placeLamps(clamp(n, 0, 40)); }
 
   // ---------- particles ----------
-  // shooting stars live in three dimensions: z = 1 is the screen plane,
-  // larger is farther. Position is projected toward the viewport's centre,
-  // so far ones are small, slow and faint; near ones are big, fast and bright.
+  // Shooting stars are points in front of a camera. The camera sits at the
+  // origin looking down +Z; the screen plane is at Z = F (pixels), centred
+  // on the viewport. A point (X, Y, Z) lands at (X, Y) * F / Z from the
+  // centre, and its glyph is drawn F / Z times the base size.
+  get focal() { return this.viewW; }
   spawnShooting(rnd) {
-    const L = D.layout, top = this.scrollRows, rows = this.screenRows;
+    const L = D.layout, top = this.scrollRows, rows = this.screenRows, g = this.grid;
+    const F = this.focal;
     const dir = rnd() < 0.5 ? 1 : -1;
-    const ang = (20 + rnd() * 15) * Math.PI / 180;
-    const speed = 28;
-    const bandTop = L.shooting[0] * rows;
-    // depth: half far, a third mid, the rest close; some of the far ones come toward you
+    const ang = (18 + rnd() * 18) * Math.PI / 180;
+    // depth: half far, a third mid, the rest close; some far ones come toward you
     const u = rnd();
-    const z = u < 0.5 ? 2 + rnd() * 1.6 : u < 0.85 ? 1.2 + rnd() * 0.8 : 0.7 + rnd() * 0.5;
-    const vz = z > 2 && rnd() < 0.45 ? -(0.25 + rnd() * 0.3) : 0;
-    // always enter from off screen (in projected terms), heading down and across
+    const Z = (u < 0.5 ? 2.2 + rnd() * 2.3 : u < 0.85 ? 1.1 + rnd() * 1.1 : 0.55 + rnd() * 0.5) * F;
+    const vZ = Z > 2 * F && rnd() < 0.5 ? -(0.35 + rnd() * 0.45) * F : 0;
+    // enter from off screen, in projected terms
+    const bandTop = L.shooting[0] * rows;
     let sx, sy;
     if (top - 3 >= bandTop && rnd() < 0.6) { sx = rnd() * this.cols; sy = top - 3; }
     else { sx = dir > 0 ? -5 : this.cols + 5; sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
-    const cx = this.cols / 2, cy = top + rows / 2;
-    const p = { kind: 'shoot', z, vz, wx: cx + (sx - cx) * z, wy: cy + (sy - cy) * z, x: sx, y: sy, vx: dir * speed * Math.cos(ang), vy: speed * Math.sin(ang) * this.aspect, life: 3.6 + (z - 1) * 1.5, age: 0, hist: [], tailLen: 6 };
+    const cxPx = this.viewW / 2, cyPx = (top + rows / 2) * g.cellH; // the centre, in world pixels
+    const X = (sx * g.cellW - cxPx) * Z / F, Y = (sy * g.cellH - cyPx) * Z / F;
+    const speedPx = 28 * g.cellW;                                   // 28 cells/s at the screen plane
+    const vX = dir * speedPx * Math.cos(ang) * (Z / F), vY = speedPx * Math.sin(ang) * (Z / F);
+    const p = { kind: 'shoot', X, Y, Z, vX, vY, vZ, cxPx, cyPx, x: sx, y: sy, vx: 0, vy: 0, life: 3.8 + (Z / F - 1) * 1.6, age: 0, hist: [], tailLen: 6 };
+    this.project3(p);
     return p;
   }
-  // project a 3D mover onto the page
-  project3(p, top) {
-    const cx = this.cols / 2, cy = top + this.screenRows / 2;
-    p.x = cx + (p.wx - cx) / p.z;
-    p.y = cy + (p.wy - cy) / p.z;
+  // world pixels → the page's cell coordinates, plus the on-screen scale
+  project3(p) {
+    const F = this.focal, g = this.grid;
+    const k = F / p.Z;
+    p.px = p.cxPx + p.X * k; p.py = p.cyPx + p.Y * k;   // world pixels
+    p.x = p.px / g.cellW; p.y = p.py / g.cellH;         // world cells, for everything else
+    p.scale = k;
   }
   spawnBird(x, y, dir, rnd) {
     return { kind: 'bird', x, y, vx: dir * 7, vy: 0, baseY: y, phase: rnd() * 6.28, age: 0, life: 14, frame: 0, hist: [], tailLen: 0 };
   }
   toBird(p, rnd) {
-    p.kind = 'bird'; p.vx = Math.sign(p.vx || 1) * 7; p.vy = 0; p.baseY = p.y; p.phase = rnd() * 6.28; p.age = 0; p.life = 14; p.frame = 0; p.morph = 0.4;
+    p.kind = 'bird'; p.hist = []; p.vx = Math.sign(p.vx || 1) * 7; p.vy = 0; p.baseY = p.y; p.phase = rnd() * 6.28; p.age = 0; p.life = 14; p.frame = 0; p.morph = 0.4;
   }
   spawnFlake(x, y, rnd) {
     const u = rnd();
@@ -339,24 +347,24 @@ export class AsciiScene extends HTMLElement {
     for (const p of this.movers) {
       p.age += dt;
       if (p.kind === 'shoot') {
-        // bend away from the pointer
+        // bend away from the pointer: the lateral velocity turns, in 3D
         if (ptr) {
           const dx = (p.x - ptr[0]) * this.aspect, dy = p.y - ptr[1], d = Math.hypot(dx, dy);
-          if (d < 6 && d > 0.01) {
-            const want = Math.atan2(dy, dx), have = Math.atan2(p.vy, p.vx * this.aspect);
+          const reach = 6 * Math.max(0.6, p.scale);
+          if (d < reach && d > 0.01) {
+            const want = Math.atan2(dy, dx), have = Math.atan2(p.vY, p.vX);
             let diff = want - have; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
-            const turn = clamp(diff, -0.7, 0.7) * (1 - d / 6) * dt * 6;
-            const sp = Math.hypot(p.vx * this.aspect, p.vy), a = have + turn;
-            p.vx = sp * Math.cos(a) / this.aspect; p.vy = sp * Math.sin(a);
+            const turn = clamp(diff, -0.7, 0.7) * (1 - d / reach) * dt * 6;
+            const sp = Math.hypot(p.vX, p.vY), a = have + turn;
+            p.vX = sp * Math.cos(a); p.vY = sp * Math.sin(a);
           }
         }
-        p.vy -= shove * dt;
-        p.wx += p.vx * dt; p.wy += p.vy * dt;
-        p.z = Math.max(0.55, p.z + p.vz * dt);
-        this.project3(p, top);
-        p.hist.push([p.x, p.y]); if (p.hist.length > 40) p.hist.shift();
+        p.vY -= shove * this.grid.cellH * (p.Z / this.focal) * dt;
+        p.X += p.vX * dt; p.Y += p.vY * dt; p.Z += p.vZ * dt;
+        this.project3(p);
+        p.hist.push([p.X, p.Y, p.Z]); if (p.hist.length > 48) p.hist.shift();
         if (p.y >= L.birds[0] * rows) { this.toBird(p, rnd); keep.push(p); continue; }
-        if (p.age < p.life && p.x > -8 && p.x < this.cols + 8 && p.z > 0.56) keep.push(p);
+        if (p.age < p.life && p.x > -12 && p.x < this.cols + 12 && p.Z > 0.42 * this.focal) keep.push(p);
       } else if (p.kind === 'bird') {
         p.morph = Math.max(0, (p.morph || 0) - dt);
         const [px, py] = push(p, 4, 3);
@@ -504,11 +512,7 @@ export class AsciiScene extends HTMLElement {
     for (const p of this.movers) {
       if (!inView(p, 2)) continue;
       if (p.kind === 'shoot') {
-        // depth decides glyph, brightness and tail length
-        const z = p.z, a = clamp(1.25 / z, 0.22, 1);
-        const head = z < 1.25 ? G.shootHead : z < 2.2 ? '*' : '·';
-        g.put(head, `rgba(242,246,255,${a.toFixed(2)})`, p.x, p.y - top);
-        this.drawTail(p, top, Math.max(1, Math.round(6 / Math.pow(z, 0.8))), a);
+        this.drawShooting(p, top);
       } else if (p.kind === 'bird') {
         if (p.morph > 0) this.drawTail(p, top, Math.ceil(p.morph * 15));
         const frames = G.bird;
@@ -535,6 +539,31 @@ export class AsciiScene extends HTMLElement {
 
     this.dispatchEvent(new CustomEvent('frame', { detail: { t: this.t } }));
     requestAnimationFrame(this.loop);
+  }
+
+  // a shooting star and its tail, every glyph sized by its own distance
+  drawShooting(p, top) {
+    const g = this.grid, F = this.focal, G = D.glyphs;
+    const base = g.size;
+    const topPx = top * g.cellH;
+    const headK = F / p.Z;
+    const headA = clamp(headK * 1.15, 0.22, 1);
+    g.putSized(G.shootHead, `rgba(242,246,255,${headA.toFixed(2)})`, p.px, p.py - topPx, base * clamp(headK, 0.45, 3.4));
+    // the tail follows the real path through space; spacing is one glyph at each point's own scale
+    const tail = G.shootTail;
+    let acc = 0, k = 0;
+    const want = (kk) => (kk + 1) * base * 0.9;
+    for (let i = p.hist.length - 2; i >= 0 && k < tail.length; i--) {
+      const [X1, Y1, Z1] = p.hist[i + 1], [X0, Y0, Z0] = p.hist[i];
+      const k1 = F / Z1, k0 = F / Z0;
+      const x1 = p.cxPx + X1 * k1, y1 = p.cyPx + Y1 * k1, x0 = p.cxPx + X0 * k0, y0 = p.cyPx + Y0 * k0;
+      acc += Math.hypot(x1 - x0, y1 - y0);
+      while (acc >= want(k) * Math.max(0.5, k0) && k < tail.length) {
+        const a = (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.22, 1);
+        g.putSized(tail[k], `rgba(201,216,238,${a.toFixed(2)})`, x0, y0 - topPx, base * clamp(k0, 0.45, 3.0));
+        k++;
+      }
+    }
   }
 
   drawTail(p, top, len, alpha = 1) {
