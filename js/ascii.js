@@ -377,13 +377,14 @@ export class AsciiScene extends HTMLElement {
         if (p <= 0) break;
         litLetters.add(line.letter);
         const a = this.nameStars[line.i], b = this.nameStars[line.j];
-        const ax = Math.round(a.x), ay = Math.round(a.y), bx = Math.round(b.x), by = Math.round(b.y);
-        // the same dotted thread as the star tethers: a dot on every cell
-        const cells = cellsBetween(ax, ay, bx, by);
-        const n = Math.round(cells.length * p);
-        for (let k = 0; k < n; k++) {
-          const [cx, cy] = cells[k];
-          g.put(k % 2 ? '.' : '·', lineColor, cx, cy - top);
+        const ax = a.x, ay = a.y, bx = b.x, by = b.y;
+        // the same dotted thread as the star tethers, at twice the density:
+        // dots every half cell along the line, alternating mid and small
+        const steps = Math.max(1, Math.round(2 * Math.max(Math.abs(bx - ax) * this.aspect * 2, Math.abs(by - ay))));
+        const n = Math.round((steps - 1) * p);
+        for (let k = 1; k <= n; k++) {
+          const f = k / steps;
+          g.put(k % 2 ? '.' : '·', lineColor, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
       for (const s of this.nameStars) {
