@@ -404,8 +404,22 @@ export class AsciiScene extends HTMLElement {
           g.put('·', `rgba(190,206,232,${alpha.toFixed(2)})`, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
-      // the stars themselves are simply there, steady
-      for (const s of this.nameStars) g.put(s.anchor ? '✦' : '*', '#ffffff', s.x, s.y - top);
+      // about a third of the name's stars were always there, indistinguishable
+      // from the field; they brighten to white over the reveal. The rest
+      // twinkle in from nothing.
+      const seeds = this.nameSeeds || (this.nameSeeds = (() => { const r = mulberry32(31); return this.nameStars.map(() => r()); })());
+      this.nameStars.forEach((s, i) => {
+        const always = seeds[i] < 0.34;
+        if (always) {
+          const w = reveal; // field colour → white
+          const col = `rgb(${Math.round(201 + (255 - 201) * w)},${Math.round(216 + (255 - 216) * w)},${Math.round(238 + (255 - 238) * w)})`;
+          g.put(s.anchor && reveal > 0.6 ? '✦' : '*', col, s.x, s.y - top);
+        } else {
+          const alpha = reveal >= 1 ? 1 : clamp(reveal * (0.5 + 0.5 * Math.sin(time * 8 + seeds[i] * 40)) + reveal * reveal * 0.7, 0, 1);
+          if (alpha < 0.02) return;
+          g.put(s.anchor ? '✦' : '*', `rgba(255,255,255,${alpha.toFixed(2)})`, s.x, s.y - top);
+        }
+      });
     } else if (skyVisible) {
       for (const s of this.nameStars) g.put('*', P.star, s.x, s.y - top);
     }
