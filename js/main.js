@@ -44,21 +44,6 @@ mode.addEventListener('click', () => setPlain(!plain));
 scene.addEventListener('fallback', () => { setPlain(true); mode.hidden = true; });
 try { if (localStorage.getItem('mode') === 'plain') setPlain(true); } catch { /* ignore */ }
 
-// ---------- talking points: a fling settles on the next one, never past it ----------
-const story = document.querySelector('.story');
-function placeSnaps() {
-  story.querySelectorAll('.snap').forEach((el) => el.remove());
-  if (!scene.snaps) return;
-  for (const row of scene.snaps) {
-    const el = document.createElement('div');
-    el.className = 'snap';
-    el.style.top = `${Math.round(row * scene.grid.cellH)}px`;
-    story.appendChild(el);
-  }
-}
-scene.addEventListener('built', placeSnaps);
-if (scene.snaps) placeSnaps();
-
 // ---------- jumping ----------
 function scrollToBand([a]) {
   const max = html.scrollHeight - innerHeight;

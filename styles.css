@@ -17,9 +17,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { background: var(--sky); scroll-snap-type: y mandatory; }
-html.is-plain { scroll-snap-type: none; }
-.snap { position: absolute; left: 0; width: 1px; height: 1px; scroll-snap-align: start; scroll-snap-stop: always; pointer-events: none; }
+html { background: var(--sky); }
 body {
   margin: 0;
   background: var(--sky);
