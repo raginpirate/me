@@ -243,18 +243,32 @@ export class AsciiScene extends HTMLElement {
   setTrailLights(n) { this.placeLamps(clamp(n, 0, 40)); }
 
   // ---------- particles ----------
+  // shooting stars live in three dimensions: z = 1 is the screen plane,
+  // larger is farther. Position is projected toward the viewport's centre,
+  // so far ones are small, slow and faint; near ones are big, fast and bright.
   spawnShooting(rnd) {
     const L = D.layout, top = this.scrollRows, rows = this.screenRows;
     const dir = rnd() < 0.5 ? 1 : -1;
     const ang = (20 + rnd() * 15) * Math.PI / 180;
     const speed = 28;
     const bandTop = L.shooting[0] * rows;
-    // always enter from off screen: over the top edge when the band allows
-    // it, otherwise in from the side, heading down and across
-    let x, y;
-    if (top - 3 >= bandTop && rnd() < 0.6) { x = rnd() * this.cols; y = top - 3; }
-    else { x = dir > 0 ? -5 : this.cols + 5; y = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
-    return { kind: 'shoot', x, y, vx: dir * speed * Math.cos(ang), vy: speed * Math.sin(ang) * this.aspect, life: 3.6, age: 0, hist: [], tailLen: 6 };
+    // depth: half far, a third mid, the rest close; some of the far ones come toward you
+    const u = rnd();
+    const z = u < 0.5 ? 2 + rnd() * 1.6 : u < 0.85 ? 1.2 + rnd() * 0.8 : 0.7 + rnd() * 0.5;
+    const vz = z > 2 && rnd() < 0.45 ? -(0.25 + rnd() * 0.3) : 0;
+    // always enter from off screen (in projected terms), heading down and across
+    let sx, sy;
+    if (top - 3 >= bandTop && rnd() < 0.6) { sx = rnd() * this.cols; sy = top - 3; }
+    else { sx = dir > 0 ? -5 : this.cols + 5; sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
+    const cx = this.cols / 2, cy = top + rows / 2;
+    const p = { kind: 'shoot', z, vz, wx: cx + (sx - cx) * z, wy: cy + (sy - cy) * z, x: sx, y: sy, vx: dir * speed * Math.cos(ang), vy: speed * Math.sin(ang) * this.aspect, life: 3.6 + (z - 1) * 1.5, age: 0, hist: [], tailLen: 6 };
+    return p;
+  }
+  // project a 3D mover onto the page
+  project3(p, top) {
+    const cx = this.cols / 2, cy = top + this.screenRows / 2;
+    p.x = cx + (p.wx - cx) / p.z;
+    p.y = cy + (p.wy - cy) / p.z;
   }
   spawnBird(x, y, dir, rnd) {
     return { kind: 'bird', x, y, vx: dir * 7, vy: 0, baseY: y, phase: rnd() * 6.28, age: 0, life: 14, frame: 0, hist: [], tailLen: 0 };
@@ -337,10 +351,12 @@ export class AsciiScene extends HTMLElement {
           }
         }
         p.vy -= shove * dt;
-        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.wx += p.vx * dt; p.wy += p.vy * dt;
+        p.z = Math.max(0.55, p.z + p.vz * dt);
+        this.project3(p, top);
         p.hist.push([p.x, p.y]); if (p.hist.length > 40) p.hist.shift();
         if (p.y >= L.birds[0] * rows) { this.toBird(p, rnd); keep.push(p); continue; }
-        if (p.age < p.life && p.x > -8 && p.x < this.cols + 8) keep.push(p);
+        if (p.age < p.life && p.x > -8 && p.x < this.cols + 8 && p.z > 0.56) keep.push(p);
       } else if (p.kind === 'bird') {
         p.morph = Math.max(0, (p.morph || 0) - dt);
         const [px, py] = push(p, 4, 3);
@@ -488,8 +504,11 @@ export class AsciiScene extends HTMLElement {
     for (const p of this.movers) {
       if (!inView(p, 2)) continue;
       if (p.kind === 'shoot') {
-        g.put(G.shootHead, P.starBright, p.x, p.y - top);
-        this.drawTail(p, top, 6);
+        // depth decides glyph, brightness and tail length
+        const z = p.z, a = clamp(1.25 / z, 0.22, 1);
+        const head = z < 1.25 ? G.shootHead : z < 2.2 ? '*' : '·';
+        g.put(head, `rgba(242,246,255,${a.toFixed(2)})`, p.x, p.y - top);
+        this.drawTail(p, top, Math.max(1, Math.round(6 / Math.pow(z, 0.8))), a);
       } else if (p.kind === 'bird') {
         if (p.morph > 0) this.drawTail(p, top, Math.ceil(p.morph * 15));
         const frames = G.bird;
@@ -518,17 +537,18 @@ export class AsciiScene extends HTMLElement {
     requestAnimationFrame(this.loop);
   }
 
-  drawTail(p, top, len) {
-    const G = D.glyphs, P = D.palette;
+  drawTail(p, top, len, alpha = 1) {
+    const G = D.glyphs;
     const tail = G.shootTail;
+    const far = (p.z || 1) > 2.2;
     let acc = 0, k = 0;
     for (let i = p.hist.length - 2; i >= 0 && k < len; i--) {
       const [x1, y1] = p.hist[i + 1], [x0, y0] = p.hist[i];
       acc += Math.hypot((x1 - x0), (y1 - y0) / this.aspect);
       while (acc >= k + 1 && k < len) {
-        const ch = tail[Math.min(tail.length - 1, k)];
-        const color = k < 2 ? P.star : k < 4 ? `rgba(201,216,238,0.6)` : P.starDim;
-        this.grid.put(ch, color, x0, y0 - top);
+        const ch = far ? '.' : tail[Math.min(tail.length - 1, k)];
+        const a = (k < 2 ? 0.95 : k < 4 ? 0.6 : 0.4) * alpha;
+        this.grid.put(ch, `rgba(201,216,238,${a.toFixed(2)})`, x0, y0 - top);
         k++;
       }
     }
