@@ -138,6 +138,18 @@ export class AsciiScene extends HTMLElement {
       this.field.push({ x, y, hx: x, hy: y, vx: 0, vy: 0, tier, ch, phase: rnd() * 6.28 });
     }
 
+    // the sky above the name is what you see first: a little denser there,
+    // with a few bright ones, so the name is not alone up top
+    const nameTop = L.name * this.screenRows - 7 * (this.viewW < 600 ? 1 : 1.4);
+    const extra = Math.floor(this.cols * Math.max(nameTop, 6) / 30);
+    for (let i = 0; i < extra; i++) {
+      const x = rnd() * this.cols, y = rnd() * Math.max(nameTop, 6);
+      const u = rnd();
+      const tier = u < 0.5 ? 0 : u < 0.85 ? 1 : 2;
+      const ch = tier === 0 ? (rnd() < 0.2 ? '·' : '.') : tier === 1 ? (rnd() < 0.15 ? '+' : '*') : '✦';
+      this.field.push({ x, y, hx: x, hy: y, vx: 0, vy: 0, tier, ch, phase: rnd() * 6.28 });
+    }
+
     // the name
     const phone = this.viewW < 600;
     const name = layoutName(this.getAttribute('name') || 'daniel wyckoff', { stacked: true, seed: 7, tight: phone });
