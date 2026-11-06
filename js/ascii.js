@@ -399,14 +399,11 @@ export class AsciiScene extends HTMLElement {
       const pulse = reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 2.4 + i);
       const cx = Math.round(s.hx), cy = Math.round(s.hy) - top;
       const glow = s.glow * pulse;
-      // at rest: four faint neighbours. Lit: a burst of rays that reads at any cell size
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put('·', `rgba(243,200,107,${(0.35 + 0.6 * glow).toFixed(2)})`, cx + dx, cy + dy);
+      // at rest: four faint neighbours. Lit: two rings of dots, heavier than before
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put(s.glow > 0.03 ? '•' : '·', `rgba(243,200,107,${(0.35 + 0.65 * glow).toFixed(2)})`, cx + dx, cy + dy);
       if (s.glow > 0.03) {
-        const ray = (ch, dx, dy, a) => g.put(ch, `rgba(243,200,107,${Math.min(1, a * glow).toFixed(2)})`, cx + dx, cy + dy);
-        ray('-', 1, 0, 1); ray('-', -1, 0, 1); ray('-', 2, 0, 0.9); ray('-', -2, 0, 0.9); ray('-', 3, 0, 0.5); ray('-', -3, 0, 0.5);
-        ray('|', 0, 1, 1); ray('|', 0, -1, 1); ray('|', 0, 2, 0.5);  ray('|', 0, -2, 0.5);
-        ray('\\', 1, 1, 0.9); ray('\\', -1, -1, 0.9); ray('/', 1, -1, 0.9); ray('/', -1, 1, 0.9);
-        ray('\\', 2, 2, 0.4); ray('\\', -2, -2, 0.4); ray('/', 2, -2, 0.4); ray('/', -2, 2, 0.4);
+        for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) g.put('•', `rgba(243,200,107,${(0.85 * glow).toFixed(2)})`, cx + dx, cy + dy);
+        for (const [dx, dy] of [[2, 0], [-2, 0], [0, 2], [0, -2], [2, 1], [-2, 1], [2, -1], [-2, -1], [1, 2], [-1, 2], [1, -2], [-1, -2], [3, 0], [-3, 0]]) g.put('·', `rgba(243,200,107,${(0.7 * glow).toFixed(2)})`, cx + dx, cy + dy);
       }
       g.put('✦', s.glow > 0.03 ? '#ffe3a3' : P.ember, s.x, s.y - top);
     });
@@ -450,11 +447,10 @@ export class AsciiScene extends HTMLElement {
       const [x0, y0, x1, y1, alpha] = this.tether;
       const cells = cellsBetween(x0, y0, x1, y1);
       const runner = reduced ? -1 : Math.floor(((time * 0.7) % 1) * (cells.length + 4)) - 2;
-      const glyph = lineGlyph(x1 - x0, -(y1 - y0), this.aspect);
       cells.forEach(([cx, cy], k) => {
         const near = Math.abs(k - runner);
-        const ch = near === 0 ? '✦' : near === 1 ? '*' : (k % 3 === 2 ? '·' : glyph);
-        const a = near <= 1 ? alpha * 1.3 : alpha;
+        const ch = near === 0 ? '✦' : near === 1 ? '•' : (k % 2 ? '·' : '•');
+        const a = near <= 1 ? 1 : alpha;
         g.put(ch, `rgba(243,200,107,${Math.min(1, a).toFixed(2)})`, cx, cy - top);
       });
       this.tether = null;
