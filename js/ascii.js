@@ -423,12 +423,12 @@ export class AsciiScene extends HTMLElement {
           g.put('·', `rgba(190,206,232,${alpha.toFixed(2)})`, a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f - top);
         }
       }
-      // about a third of the name's stars were always there, indistinguishable
+      // half of the name's stars were always there, indistinguishable
       // from the field; they brighten to white over the reveal. The rest
       // twinkle in from nothing.
       const seeds = this.nameSeeds || (this.nameSeeds = (() => { const r = mulberry32(31); return this.nameStars.map(() => r()); })());
       this.nameStars.forEach((s, i) => {
-        const always = seeds[i] < 0.34;
+        const always = seeds[i] < 0.5;
         // the stars that twinkled in keep twinkling, 25% to 100%; the ones that
         // were always there stay steady
         const tw = reduced ? 1 : 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(time * (1.3 + seeds[i] * 1.5) + seeds[i] * 50));
