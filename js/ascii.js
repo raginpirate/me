@@ -334,27 +334,35 @@ export class AsciiScene extends HTMLElement {
       }
     }
 
-    // the name: traced on load, let go on scroll
+    // the name: traced on load, let go on scroll. The lines are recomputed
+    // every frame from where the stars are now, so a pushed star drags its
+    // lines with it and they spring back together.
     const traced = reduced ? 1 : clamp((time - 0.5) / 2.8, 0, 1);
     const hold = 1 - smooth(0.05, 0.1, this.t);
     if (hold > 0.001 && skyVisible) {
-      let budget = traced * this.nameTotal;
+      const N = this.nameLines.length;
       const litLetters = new Set();
-      for (const line of this.nameLines) {
-        if (budget <= 0) break;
+      const lineColor = `rgba(196,210,232,${(0.9 * hold).toFixed(2)})`;
+      for (let idx = 0; idx < N; idx++) {
+        const line = this.nameLines[idx];
+        // each line gets an equal slice of the trace
+        const p = clamp(traced * N - idx, 0, 1);
+        if (p <= 0) break;
         litLetters.add(line.letter);
-        const n = Math.min(line.cells.length, Math.floor(budget));
+        const a = this.nameStars[line.i], b = this.nameStars[line.j];
+        const ax = Math.round(a.x), ay = Math.round(a.y), bx = Math.round(b.x), by = Math.round(b.y);
+        const cells = cellsBetween(ax, ay, bx, by);
+        const glyph = lineGlyph(bx - ax, -(by - ay), this.aspect);
+        const n = Math.round(cells.length * p);
         for (let k = 0; k < n; k++) {
-          if (!this.nameDense && k % 2 === 1) continue;
-          const [cx, cy] = line.cells[k];
-          g.put(k % 3 === 2 ? '.' : line.glyph, `rgba(159,178,210,${(0.62 * hold).toFixed(2)})`, cx, cy - top);
+          const [cx, cy] = cells[k];
+          g.put(k % 3 === 2 ? '.' : glyph, lineColor, cx, cy - top);
         }
-        budget -= line.cells.length + 1;
       }
       for (const s of this.nameStars) {
         const lit = litLetters.has(s.letter);
         const ch = lit && (s.anchor || time < this.nameLitUntil(s.letter)) ? '✦' : '*';
-        g.put(ch, lit ? P.starBright : P.star, s.x, s.y - top);
+        g.put(ch, lit ? '#ffffff' : P.starBright, s.x, s.y - top);
       }
     } else if (skyVisible) {
       for (const s of this.nameStars) g.put('*', P.star, s.x, s.y - top);
