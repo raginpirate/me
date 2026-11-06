@@ -444,7 +444,9 @@ export class AsciiScene extends HTMLElement {
     if (this.tether) {
       // the original: a dot on every other cell. White-blue, brighter than before.
       const [x0, y0, x1, y1, alpha] = this.tether;
-      for (const [cx, cy] of cellsBetween(x0, y0, x1, y1)) if ((cx + cy) % 2 === 0) g.put('.', `rgba(190,206,232,${alpha.toFixed(2)})`, cx, cy - top);
+      // every cell carries a dot now, alternating a mid dot and a small one,
+      // so the line is continuous but still a line of dots
+      cellsBetween(x0, y0, x1, y1).forEach(([cx, cy], k) => g.put(k % 2 ? '.' : '·', `rgba(190,206,232,${alpha.toFixed(2)})`, cx, cy - top));
       this.tether = null;
     }
 
