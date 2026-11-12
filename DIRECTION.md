@@ -57,7 +57,7 @@ Field stars, three tiers (random, weighted 70 / 24 / 6):
 
 Name stars: `*` in `star` at rest; `✦` in `star-bright` while traced and for 2s after. Anchor stars (first and last of a letter) are `✦` permanently once traced.
 
-The four bright stars: `✦` in `ember`, with a one-cell halo of `·` in `ember` at 35% alpha on the four orthogonal neighbours. When lit: the halo grows to the 8 neighbours and pulses.
+The four bright stars: `✦` in `ember`, larger than any field star, over a soft bloom (the same glyph, bigger, at 15% alpha) with a halo of `·` in `ember` at 45% alpha on the four sides. The halo is placed in pixels at one even pitch both ways, not on the cell grid, and every glyph is centred on its own ink. When lit: the four brighten, the corners and four outer points fill in, the star grows and warms, and the halo pulses. The thread to the card starts just outside the outer points.
 
 Constellation lines, chosen by segment slope (dy/dx in cell units, y down):
 - |dx| ≥ 3|dy|: `-`
@@ -220,7 +220,7 @@ Units: one cell. Time: seconds. All springs are critically damped-ish: overshoot
 
 - **Field stars and name stars** have a home. Pointer within 5 cells pushes a star away along the pointer→star direction by up to 2.5 cells (full push at 0 distance, zero at 5). Release: returns to home in about 0.9 s with one overshoot of ~0.4 cells. A star never moves more than 3 cells from home.
 - **Scroll shove**: scroll velocity v (cells/s) adds −0.012·v cells/s to every particle's vertical velocity each frame (scrolling down shoves the sky up). Clamp the effect to ±2 cells of displacement. Settles in ~0.8 s. Birds, flakes and leaves get the same shove at half strength.
-- **The four bright stars** have a stiffer spring: max 1.2 cells of push, settle in 0.5 s. Their halo does not move with them; it re-centres each frame.
+- **The four bright stars** have a stiffer spring: max 1.2 cells of push, settle in 0.5 s. Star, bloom and halo move as one.
 - **Shooting stars**: one every 7–11 s while the viewer is in the 0.35–3.40 band, none above it. Speed 28 cells/s, life 2.2 s, spawn just off the top or side edge. Pointer within 6 cells bends the velocity toward the away-direction by up to 40°; the bent tail shows the kink. Scroll shove applies at full strength, so a hard scroll visibly kicks a streak.
 - **Birds**: a shooting star that reaches 3.30 screens converts: its tail collapses to 1 cell over 0.4 s while its glyph goes `✦` → `v` → `~v~`, velocity drops to 7 cells/s horizontal with a 1 cell/s vertical sine. Flap at 6 fps. Birds also spawn from the side edges at 1 every 4 s in the 3.30–4.40 band, max 6 on screen. Pointer within 4 cells makes a bird veer 3 cells and return.
 - **Birds to snow**: reaching 4.10 a bird scatters into 3 flakes at its position with ±1 cell/s drift; no fade, the `~v~` becomes `* . +` in one frame.

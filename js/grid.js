@@ -9,6 +9,7 @@ export class Grid {
     this.font = font;
     this.size = size;
     this.atlas = new Map();
+    this.inkBox = new Map();
     this.resize();
   }
 
@@ -90,6 +91,24 @@ export class Grid {
     if (px < -q * 2 || py < -q * 2 || px > this.w + q * 2 || py > this.h + q * 2) return;
     const s = this.sizedSprite(ch, color, q);
     this.ctx.drawImage(s.canvas, px - s.w / 2, py - s.h / 2, s.w, s.h);
+  }
+
+  // a glyph at any size, centred on its own ink rather than its text box:
+  // whichever font supplies the glyph, it lands exactly on the pixel asked
+  // for. The bright stars and their halos are placed with this.
+  ink(ch, color, px, py, size) {
+    const c = this.ctx;
+    let m = this.inkBox.get(ch);
+    if (!m) {
+      c.font = `64px ${this.font}`;
+      const t = c.measureText(ch);
+      m = [(t.actualBoundingBoxRight - t.actualBoundingBoxLeft) / 128, (t.actualBoundingBoxAscent - t.actualBoundingBoxDescent) / 128];
+      this.inkBox.set(ch, m);
+    }
+    c.font = `${size}px ${this.font}`;
+    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.fillStyle = color;
+    c.fillText(ch, px - m[0] * size, py + m[1] * size);
   }
 
   // a run of text starting at a cell

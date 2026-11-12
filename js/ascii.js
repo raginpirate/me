@@ -484,25 +484,32 @@ export class AsciiScene extends HTMLElement {
       for (const s of this.nameStars) g.put('*', P.star, s.x, s.y - top);
     }
 
-    // the four bright stars with halos
+    // the four bright stars. Each is one object placed in pixels, not cells
+    // (a cell is twice as tall as it is wide): a soft bloom of the glyph
+    // itself, an even ring of dots, and the star centred on its own ink.
+    // At rest: bloom and four dots. Lit: the four brighten, the corners and
+    // four outer points fill in, the star grows and warms.
+    const u = g.size / 11; // every measure below is in phone pixels
+    const ember = (al) => `rgba(243,200,107,${al.toFixed(2)})`;
     this.named.forEach((s, i) => {
       if (!inView(s, 4)) return;
       const [a, b] = this.bands.stars[i];
       const on = smooth(a - 0.01, a + 0.01, this.t) * (1 - smooth(b - 0.01, b + 0.01, this.t));
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       const pulse = reduced ? 1 : 0.8 + 0.2 * Math.sin(time * 2.4 + i);
-      // the original: four faint neighbours, eight when lit. Same shape,
-      // a touch more contrast so it reads on a phone.
-      const rest = 0.45; // the resting ring level
-      const halo = `rgba(243,200,107,${(rest + (1 - rest) * s.glow * pulse).toFixed(2)})`;
-      const cx = Math.round(s.hx), cy = Math.round(s.hy) - top;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.put('·', halo, cx + dx, cy + dy);
-      if (s.glow > 0.05) {
+      const lit = s.glow, live = lit * pulse;
+      const x = (s.x + 0.5) * g.cellW, y = (s.y - top + 0.5) * g.cellH;
+      const p = 11 * u;   // one pitch, the same both ways
+      const rest = 0.45;  // the resting ring level
+      g.ink('✦', ember(0.15 + 0.07 * live), x, y, (25 + 6 * lit) * u);
+      const ring = ember(rest + (1 - rest) * live);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.ink('·', ring, x + dx * p, y + dy * p, g.size);
+      if (lit > 0.05) {
         // the corners and the four points come in at the ring's resting level
-        const a = `rgba(243,200,107,${(rest * s.glow * pulse).toFixed(2)})`;
-        for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) g.put('·', a, cx + dx, cy + dy);
+        const outer = ember(rest * live);
+        for (const [dx, dy] of [[1, 1], [-1, 1], [1, -1], [-1, -1], [2, 0], [-2, 0], [0, 2], [0, -2]]) g.ink('·', outer, x + dx * p, y + dy * p, g.size);
       }
-      g.put('✦', P.ember, s.x, s.y - top);
+      g.ink('✦', `rgb(${Math.round(243 + 12 * lit)},${Math.round(200 + 25 * lit)},${Math.round(107 + 43 * lit)})`, x, y, (15 + 2 * lit) * u);
     });
 
     // headlamps on the route
@@ -542,9 +549,13 @@ export class AsciiScene extends HTMLElement {
     if (this.tether) {
       // the original: a dot on every other cell. White-blue, brighter than before.
       const [x0, y0, x1, y1, alpha] = this.tether;
+      const clear = 27 * u; // px: the thread starts just outside the star's outer points
       // every cell carries a dot now, alternating a mid dot and a small one,
       // so the line is continuous but still a line of dots
-      cellsBetween(x0, y0, x1, y1).forEach(([cx, cy], k) => g.put(k % 2 ? '.' : '·', `rgba(190,206,232,${alpha.toFixed(2)})`, cx, cy - top));
+      cellsBetween(x0, y0, x1, y1).forEach(([cx, cy], k) => {
+        if (Math.hypot((cx - x0) * g.cellW, (cy - y0) * g.cellH) < clear) return;
+        g.put(k % 2 ? '.' : '·', `rgba(190,206,232,${alpha.toFixed(2)})`, cx, cy - top);
+      });
       this.tether = null;
     }
 
