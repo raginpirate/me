@@ -312,7 +312,11 @@ export class AsciiScene extends HTMLElement {
     this.t = this.maxScroll > 0 ? clamp(this.scrollRows / this.maxScroll, 0, 1) : 0;
     const top = this.scrollRows, rows = this.screenRows, bottom = top + rows;
     const centre = top + rows / 2;
-    const shove = reduced ? 0 : -0.9 * this.scrollVel;
+    // The scroll's shove on everything: with the scroll's speed, but levelling
+    // off, so a fast scroll leans the world further without ever pinning it
+    // against a limit.
+    const [lean, most] = D.shove;
+    const shove = reduced ? 0 : -most * Math.tanh(lean * this.scrollVel / most);
 
     // `active`: something on screen is moving, so this frame must be drawn.
     // Set by anything below that moves.
@@ -331,13 +335,14 @@ export class AsciiScene extends HTMLElement {
       const f = (1 - d / radius) * max * smooth(0, D.push.core, d);
       return [(dx / d) * f / this.aspect, (dy / d) * f];
     };
-    const spring = (p, [stiff, zeta, maxDisp, pushR, pushMax, shoveK]) => {
+    // `held` scales the shove for a thing tied to something else: 0 is held fast, 1 is free
+    const spring = (p, [stiff, zeta, maxDisp, pushR, pushMax, shoveK], held = 1) => {
       const [px, py] = push(p, pushR, pushMax);
       const tx = p.hx + px, ty = p.hy + py;
       // the push is quick, the return is slow
       const omega = px || py ? stiff * 2.2 : stiff;
       p.vx += (-omega * omega * (p.x - tx) - 2 * zeta * omega * p.vx) * dt;
-      p.vy += (-omega * omega * (p.y - ty) - 2 * zeta * omega * p.vy + shove * shoveK) * dt;
+      p.vy += (-omega * omega * (p.y - ty) - 2 * zeta * omega * p.vy + shove * shoveK * held) * dt;
       p.x += p.vx * dt; p.y += p.vy * dt;
       const dx = p.x - p.hx, dy = p.y - p.hy, d = Math.hypot(dx * this.aspect, dy);
       if (d > maxDisp) { const k = maxDisp / d; p.x = p.hx + dx * k; p.y = p.hy + dy * k; p.vx *= 0.5; p.vy *= 0.5; }
@@ -356,7 +361,7 @@ export class AsciiScene extends HTMLElement {
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       if (s.glow > 0.02 && inView(s, 4)) litInView = true;
       // its tether: strung fresh each time the card opens, gone when it closes
-      if (on >= 0.02 && s.card) { if (!s.dots.length) this.string(s); this.tether(s, top, spring); }
+      if (on >= 0.02 && s.card) { if (!s.dots.length) this.string(s); this.tether(s, top, spring, dt); }
       else if (s.dots.length) s.dots = [];
     }
 
@@ -603,11 +608,16 @@ export class AsciiScene extends HTMLElement {
   // stand, so it stretches as they part and gathers as they close: slack
   // and wavier when short, taut and straighter when long. That gives each
   // star a home, and the star goes there on the sky's own spring, shoved by
-  // a swipe and pushed by a pointer like any other star. The ends are held
-  // (a star by the light stays by the light, a star at the card stays at
-  // the card); toward the middle the stars hang free, are carried with the
-  // page, and swing back to the string.
-  tether(s, top, spring) {
+  // a swipe and pushed by a pointer like any other star.
+  //
+  // The ends are held: a star by the light stays by the light, a star at
+  // the card stays at the card. Toward the middle the stars hang free: they
+  // are carried with the page and swing back to the string, and they take
+  // the scroll's shove. Both are kept in one smooth bow however fast the
+  // page moves: the whole string is left behind by the same share, and that
+  // share shrinks as the speed climbs, so no part of it is ever thrown
+  // against a limit while the rest is not.
+  tether(s, top, spring, dt) {
     const g = this.grid, T = D.tether, u = this.u;
     const [ax, ay] = this.anchor(s);
     const lx = (s.x + 0.5) * g.cellW, ly = (s.y - top + 0.5) * g.cellH; // the light, in viewport pixels
@@ -615,15 +625,22 @@ export class AsciiScene extends HTMLElement {
     const clear = (D.light.clear + 2) * u, len = Math.max(0, full - clear - 3 * u);
     const slack = clamp((s.rest / Math.max(len, 1)) ** 0.8, T.slack[0], T.slack[1]) * u;
     const [[far1, many1, from1], [far2, many2, from2]] = s.sway;
+    // where each star belongs now, and the fastest any of them is being left behind
+    let fastest = 0;
     for (const p of s.dots) {
-      const free = Math.sin(Math.PI * p.f); // 0 at either end, 1 in the middle
-      const along = clear + p.f * len, off = (Math.sin(p.f * many1 + from1) * far1 + Math.sin(p.f * many2 + from2) * far2) * free * slack;
-      const hx = (lx + ux * along - uy * off) / g.cellW - 0.5, hy = (ly + uy * along + ux * off) / g.cellH - 0.5 + top;
-      if (p.fresh) { p.x = p.hx = hx; p.y = p.hy = hy; p.fresh = false; }
-      // held stars move with their home; free ones are left where the page carries them
-      p.x += (hx - p.hx) * (1 - free); p.y += (hy - p.hy) * (1 - free);
-      p.hx = hx; p.hy = hy;
-      if (p.a) spring(p, D.spring.star);
+      p.free = Math.sin(Math.PI * p.f); // 0 at either end, 1 in the middle
+      const along = clear + p.f * len, off = (Math.sin(p.f * many1 + from1) * far1 + Math.sin(p.f * many2 + from2) * far2) * p.free * slack;
+      p.nx = (lx + ux * along - uy * off) / g.cellW - 0.5; p.ny = (ly + uy * along + ux * off) / g.cellH - 0.5 + top;
+      if (p.fresh) { p.x = p.hx = p.nx; p.y = p.hy = p.ny; p.fresh = false; }
+      fastest = Math.max(fastest, p.free * Math.hypot((p.nx - p.hx) * this.aspect, p.ny - p.hy) / dt);
+    }
+    const share = fastest > 0.01 ? T.lag * Math.tanh(fastest / T.lag) / fastest : 1; // 1 when slow, less as it speeds up
+    for (const p of s.dots) {
+      // a held star moves with its home; a free one is left where the page carries it, by that share
+      const follow = 1 - p.free * share;
+      p.x += (p.nx - p.hx) * follow; p.y += (p.ny - p.hy) * follow;
+      p.hx = p.nx; p.hy = p.ny;
+      if (p.a) spring(p, D.spring.tether, p.free);
     }
   }
 

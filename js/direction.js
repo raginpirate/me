@@ -69,14 +69,19 @@ export const D = {
   // jitter: how unevenly they sit. miss: share left out. wander: two waves off the
   // straight path, each [how far, fewest, most waves along the string].
   // slack: how much wavier it may get when short, how much straighter when long.
-  tether: { step: [6, 9], jitter: 0.9, miss: 0.08, alpha: [0.45, 0.95], wander: [[4.5, 1.1, 2.4], [2, 3, 5.5]], slack: [0.55, 1.7] },
+  // lag: the most of the page's speed, rows a second, that its middle is left behind by.
+  tether: { step: [6, 9], jitter: 0.9, miss: 0.08, alpha: [0.45, 0.95], wander: [[4.5, 1.1, 2.4], [2, 3, 5.5]], slack: [0.55, 1.7], lag: 14 },
 
   // twinkles: [darkest, rate]
   twinkle: { field: [0.2, 1.4], name: [0.25, 1.3], thread: [0.24, 2.6], light: [0.6, 2.4], lamp: [0.4, 3.1] },
 
   // springs: [stiffness, damping, furthest, push radius, push strength, scroll shove]
   // A light only leans from a pointer (a small push), so it can be pointed at and tapped.
-  spring: { star: [7, 0.5, 3, 5, 2.5, 1], light: [12, 0.6, 1.2, 5, 0.5, 0.6] },
+  // A tether's stars use the sky's spring with more room, so the string bows instead of flattening.
+  spring: { star: [7, 0.5, 3, 5, 2.5, 1], light: [12, 0.6, 1.2, 5, 0.5, 0.6], tether: [7, 0.5, 5, 5, 2.5, 1] },
+  // the scroll's shove: [how hard per row a second of scroll, the most it ever pushes].
+  // The most keeps a star's lean (most / stiffness squared = 2.5 rows) inside its furthest.
+  shove: [0.9, 122],
   // pointer push on things that fall or fly: [radius, strength]
   // core: rows around the pointer where the push fades to nothing, so a thing
   // right under it rests instead of snapping from one side to the other
