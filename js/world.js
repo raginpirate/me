@@ -1,20 +1,11 @@
 // The tall ASCII painting: a sky, a snow-topped peak in front of a fogged
 // far ridge, ridges running downhill, a treeline, the base. Built once per
-// resize into a row/column buffer of [glyph, colour].
+// resize into a row/column buffer of [glyph, colour] or [glyph, colour,
+// strength]. P is the page's palette.
 
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const smooth = (a, b, t) => { t = clamp((t - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+import { clamp, smooth, mulberry32 } from './util.js';
 
-export function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function makeNoise(seed) {
+function makeNoise(seed) {
   const rnd = mulberry32(seed);
   const S = 256, perm = new Uint8Array(S * 2), grid = new Float32Array(S);
   for (let i = 0; i < S; i++) { perm[i] = i; grid[i] = rnd(); }
@@ -40,10 +31,10 @@ export function makeNoise(seed) {
   return { noise, fbm, ridged };
 }
 
-export function buildWorld(cols, rows, screenRows, D) {
+export function buildWorld(cols, rows, screenRows, D, P) {
   const { noise, fbm, ridged } = makeNoise(20181105);
   const rnd = mulberry32(42);
-  const P = D.palette, G = D.glyphs, L = D.layout;
+  const G = D.glyphs, L = D.layout;
   const cells = new Array(rows);
   for (let r = 0; r < rows; r++) cells[r] = new Array(cols).fill(null);
 
@@ -122,7 +113,7 @@ export function buildWorld(cols, rows, screenRows, D) {
         if (edge < 0.12 && noise(c * 1.3, 0.5) > 0.74 && r < rows - 8) { cells[r][c] = ['|', P.pineDark]; continue; }
         // leaves piled at the foot of the slope: dense on the ground line, thinning below
         const foot = Math.max(0, 0.6 - (r - groundRow) * 0.085);
-        if (rnd() < foot) { cells[r][c] = [[',', "'", '~'][Math.floor(rnd() * 3)], rnd() < 0.55 ? P.leaf : P.leafOlive]; continue; }
+        if (rnd() < foot) { cells[r][c] = [G.leaves[Math.floor(rnd() * 3)], rnd() < 0.55 ? P.leaf : P.leafOlive]; continue; }
         const ch = n < 0.5 ? ' ' : g[(r + c) % g.length];
         if (ch !== ' ') cells[r][c] = [ch, bottom ? P.groundDark : (n > 0.78 ? P.ground : P.groundDark)];
         // the slope's last rows blend into the ground
@@ -132,7 +123,7 @@ export function buildWorld(cols, rows, screenRows, D) {
         // sky, maybe the fogged far ridge
         if (r >= fr) {
           const n = noise(c * 0.15, r * 0.2);
-          if (n > 0.42) cells[r][c] = [n > 0.75 ? '-' : '.', P.far];
+          if (n > 0.42) cells[r][c] = [n > 0.75 ? '-' : '.', P.far, 0.6];
         }
         continue;
       }
@@ -155,7 +146,7 @@ export function buildWorld(cols, rows, screenRows, D) {
           const s = light + 0.25;
           ch = s > 0.85 ? '#' : s > 0.65 ? '%' : s > 0.45 ? ':' : s > 0.3 ? '.' : ' ';
         }
-        if (ch !== ' ') cells[r][c] = [ch, light > 0.45 || isEdge ? P.snow : P.snowShade];
+        if (ch !== ' ') cells[r][c] = light > 0.45 || isEdge ? [ch, P.snow] : [ch, P.snow, 0.55];
         continue;
       }
       // rock

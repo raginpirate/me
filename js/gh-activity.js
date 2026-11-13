@@ -1,6 +1,6 @@
 // <gh-pulse> — merged commits in the last twelve months, read in the
-// visitor's browser from api.github.com. Falls back to a committed snapshot.
-// Tells the scene how many lights to put on the trail.
+// visitor's browser from api.github.com, with a committed snapshot behind
+// it. Tells the scene how many lamps to put on the route.
 
 const USER = 'raginpirate';
 const TRACKED = ['Universal-Commerce-Protocol/ucp'];
@@ -61,15 +61,17 @@ export class GhPulse extends HTMLElement {
     let total = 0;
     for (const c of commits) { const d = new Date(c.at); const k = `${d.getFullYear()}-${d.getMonth()}`; if (k in idx) { months[idx[k]].n++; total++; } }
     const max = Math.max(1, ...months.map((m) => m.n));
-    const repos = new Set(commits.map((c) => c.repo)).size;
     const latest = commits.slice(0, 3);
     const note = data ? 'Live from GitHub.' : `Snapshot, ${new Date(snap.fetched).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}.`;
 
+    // the months as a chart set in type: a column of # per month, a dot for none
+    const ROWS = 4, tall = months.map((m) => Math.ceil((m.n / max) * ROWS));
+    let bars = '';
+    for (let r = ROWS; r >= 1; r--) bars += tall.map((h) => (h >= r ? '#' : r === 1 ? '.' : ' ')).join(' ') + '\n';
+
     this.innerHTML = `
       <p class="gh-sum"><strong>${total}</strong> merged commits in twelve months.</p>
-      <div class="gh-pulse" role="img" aria-label="${total} commits by month">
-        ${months.map((m) => `<span style="--v:${(m.n / max).toFixed(3)}" title="${m.label}: ${m.n}"><i>${m.label[0]}</i></span>`).join('')}
-      </div>
+      <pre class="gh-bars" role="img" aria-label="${months.map((m) => `${m.label} ${m.n}`).join(', ')}">${bars}<span>${months.map((m) => m.label[0]).join(' ')}</span></pre>
       <ul class="gh-latest">
         ${latest.map((c) => `<li><a href="${esc(c.url)}" rel="noopener">${esc(c.detail || c.sha.slice(0, 7))}</a></li>`).join('')}
       </ul>

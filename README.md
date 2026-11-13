@@ -1,11 +1,14 @@
 # me
 
-[danielwyckoff.ca](https://danielwyckoff.ca). A static page with no build step and no dependencies.
+[danielwyckoff.ca](https://danielwyckoff.ca). A static page: no build step, no dependencies, served as it is.
 
-- `index.html`, `styles.css`, `js/` are the whole site.
-- `js/scene.js` is the WebGL mountain. Stars spell the name, the camera rides a trail from the summit to the roots as you scroll, merged commits light the trail.
-- `js/letters.js` is the stroke alphabet the constellation uses.
-- `js/gh-activity.js` reads public GitHub activity in the visitor's browser; `data/snapshot.json` is the fallback.
-- `.nojekyll` tells GitHub Pages to serve the files as they are.
+The page is a text document. With script it becomes a night mountain drawn in type, and the text floats over it one card at a time.
 
-Run it locally with any static server, e.g. `python3 -m http.server`.
+- `index.html` is the content. Each card's `id` is a stop.
+- `styles.css` is the document, the mountain layout, and the one palette. The scene reads its colours from here.
+- `js/direction.js` is the art direction: glyphs, composition, the list of stops, how things move.
+- `js/ascii.js` is the scene, `<ascii-scene>`. `js/grid.js` draws every glyph, `js/world.js` paints the mountain, `js/asterism.js` lays out the name.
+- `js/main.js` ties cards to stops. `js/gravity.js` is the touch glide that brakes at them.
+- `js/gh-activity.js` is `<gh-pulse>`: merged commits read in the visitor's browser, with `data/snapshot.json` behind it.
+
+Run it with any static server, e.g. `python3 -m http.server`.

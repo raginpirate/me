@@ -1,12 +1,12 @@
-// Touch scrolling with gravity at the talking points.
+// Touch scrolling that brakes at the stops.
 //
 // While a finger is down the page follows it 1:1. On release the glide
-// keeps the finger's speed and ordinary friction, but each talking point
-// ahead pulls on it: approach slowly enough and it catches you and settles
-// you there, critically damped, no bounce. Approach fast and you sail
+// keeps the finger's speed and ordinary friction. Near a stop it brakes
+// harder, just enough to run out there instead of sailing past; it never
+// speeds the page up and never pulls. Flick hard enough and it goes
 // through to the next one. Mouse wheel and trackpad are left native.
 
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+import { clamp } from './util.js';
 
 export function attachGravity(scene, { enabled = () => true } = {}) {
   const html = document.documentElement;
@@ -15,9 +15,7 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
   let glide = null;       // rAF momentum
   let moved = false;
 
-  const refresh = () => { points = (scene.snaps || []).map((r) => r * scene.grid.cellH).sort((a, b) => a - b); };
-  scene.addEventListener('built', refresh);
-  refresh();
+  scene.addEventListener('built', () => { points = scene.stops.map((p) => p.snap * scene.grid.cellH).sort((a, b) => a - b); });
 
   const maxScroll = () => html.scrollHeight - innerHeight;
 
@@ -26,7 +24,7 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
   function startGlide(v0) {
     stopGlide();
     const H = innerHeight;
-    const R = H * 0.6;           // how far out a talking point starts braking
+    const R = H * 0.6;           // how far out a stop starts braking
     const friction = 1.7;        // per second, the ordinary glide
     const escape = H * 3.2;      // px/s: faster than this and you sail through
     let pos = scrollY, v = v0, last = performance.now(), target = null;

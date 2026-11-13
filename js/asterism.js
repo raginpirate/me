@@ -3,7 +3,9 @@
 // you draw the handle and the bowl, not the ladle.
 // Coordinates in a 0..1 box, y up. lines are index pairs into stars.
 
-export const LETTERS = {
+import { mulberry32 } from './util.js';
+
+const LETTERS = {
   d: { stars: [[0.72, 0.98], [0.66, 0.42], [0.74, 0.03], [0.30, 0.52], [0.06, 0.18], [0.36, 0.04]], lines: [[0, 1], [1, 2], [1, 3], [3, 4], [4, 5], [5, 2]] },
   a: { stars: [[0.58, 0.55], [0.14, 0.44], [0.10, 0.08], [0.56, 0.12], [0.68, 0.00]], lines: [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4]] },
   n: { stars: [[0.08, 0.60], [0.12, 0.02], [0.30, 0.56], [0.62, 0.52], [0.70, 0.04]], lines: [[0, 1], [0, 2], [2, 3], [3, 4]] },
@@ -19,33 +21,21 @@ export const LETTERS = {
 };
 
 const ADVANCE = { default: 1.12, i: 0.72, l: 0.84 };
-const SPACE = 0.9;
 
-function mulberry32(a) {
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// Lay out words. Returns stars [[x, y, anchor, letter]] and lines [[i, j, letter]]
-// in letter units, y up, with the per-letter jitter, rotation and baseline
-// shifts the direction asks for. `lines` of text: each word on its own line
-// when `stacked`, else one line with "wyckoff" sitting a little lower.
-export function layoutName(text, { stacked = false, seed = 7, tight = false } = {}) {
+// Lay the words out, one above the other. Returns stars [[x, y, anchor]] and
+// lines [[i, j]] in letter units, y up, with a different hand per letter:
+// its own jitter, tilt and baseline. `tight` closes the letters up for a
+// narrow screen.
+export function layoutName(text, { seed = 7, tight = false } = {}) {
   const adv = (ch) => (tight ? 0.84 * (ADVANCE[ch] || ADVANCE.default) / ADVANCE.default : (ADVANCE[ch] || ADVANCE.default));
   const rnd = mulberry32(seed);
   const words = text.toLowerCase().split(' ');
   const stars = [], lines = [];
   const seen = {};
-  let letter = 0;
   const widths = words.map((w) => [...w].reduce((s, ch, i) => s + (i === w.length - 1 ? 0.75 : adv(ch)), 0));
-  let penX = 0;
   words.forEach((word, wi) => {
-    let x = stacked ? -widths[wi] / 2 + (wi === 1 ? (tight ? 0.4 : 1.0) : 0) : penX;
-    const baseY = stacked ? (wi === 0 ? 0.62 : -0.78) : (wi === 1 ? -0.18 : 0);
+    let x = -widths[wi] / 2 + (wi === 1 ? (tight ? 0.4 : 1.0) : 0);
+    const baseY = wi === 0 ? 0.62 : -0.78;
     for (const ch of word) {
       const def = LETTERS[ch];
       if (!def) { x += adv(ch); continue; }
@@ -58,25 +48,21 @@ export function layoutName(text, { stacked = false, seed = 7, tight = false } = 
       const rot = (rnd() - 0.5) * (10 * Math.PI / 180);
       const cx = x + 0.4, cy = bl + 0.3;
       const base = stars.length;
-      pts.forEach(([px, py], i) => {
+      pts.forEach(([px, py]) => {
         const jx = (rnd() - 0.5) * 0.09, jy = (rnd() - 0.5) * 0.09;
         const lx = x + px + jx - cx, ly = bl + py + jy - cy;
-        const rx = cx + lx * Math.cos(rot) - ly * Math.sin(rot), ry = cy + lx * Math.sin(rot) + ly * Math.cos(rot);
-        stars.push([rx, ry, 0, letter]);
+        stars.push([cx + lx * Math.cos(rot) - ly * Math.sin(rot), cy + lx * Math.sin(rot) + ly * Math.cos(rot), 0]);
       });
       // anchors: first and last star of the original definition
       stars[base + remap(0)][2] = 1;
       stars[base + remap(def.stars.length - 1)][2] = 1;
-      for (const [i, j] of def.lines) lines.push([base + remap(i), base + remap(j), letter]);
-      letter++;
+      for (const [i, j] of def.lines) lines.push([base + remap(i), base + remap(j)]);
       x += adv(ch);
     }
-    penX = x - (ADVANCE.default - 1) + SPACE;
   });
   // centre horizontally
   const xs = stars.map((s) => s[0]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const off = (minX + maxX) / 2;
+  const off = (Math.min(...xs) + Math.max(...xs)) / 2;
   for (const s of stars) s[0] -= off;
-  return { stars, lines, letters: letter, width: maxX - minX };
+  return { stars, lines };
 }

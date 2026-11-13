@@ -1,15 +1,20 @@
-// A character grid on a canvas: one monospace glyph per cell, each with its
-// own colour. Glyphs are cached as sprites so a full screen is a few
-// thousand drawImage calls.
+// A character grid on a canvas.
+//
+// Every glyph on the page is drawn the same way: one sprite per glyph,
+// colour and size, cached, and stamped with a brightness. Brightness is a
+// number at draw time, never part of the colour, so a star that twinkles
+// is one sprite, not a hundred.
+//
+// There are two placements. put() sets a glyph in a cell the way type sits
+// on a line. ink() centres a glyph on its own ink at a pixel, whichever
+// font supplied it; things that are objects rather than text use that.
 
 export class Grid {
-  constructor(canvas, { font = 'ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace', size = 14 } = {}) {
+  constructor(canvas, { font, size = 14 } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
     this.font = font;
     this.size = size;
-    this.atlas = new Map();
-    this.inkBox = new Map();
     this.resize();
   }
 
@@ -24,95 +29,78 @@ export class Grid {
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.font = `${this.size}px ${this.font}`;
-    ctx.textBaseline = 'alphabetic';
-    const m = ctx.measureText('M');
-    this.cellW = m.width;
+    this.cellW = ctx.measureText('M').width;
     this.cellH = Math.round(this.size * 1.2);
     this.ascent = Math.round(this.size * 0.9);
     this.cols = Math.ceil(w / this.cellW) + 1;
     this.rows = Math.ceil(h / this.cellH) + 1;
-    this.atlas.clear();
+    this.atlas = new Map(); this.sprites = 0;
+    this.alpha = 1;
   }
 
-  sprite(ch, color) {
-    const key = ch + '\0' + color;
-    let s = this.atlas.get(key);
+  // The sprite for a glyph: a canvas just big enough for its ink, with the
+  // text origin on a whole device pixel. bx, by: sprite corner → origin.
+  // ix, iy: origin → centre of the ink (iy is upward from the baseline).
+  sprite(ch, color, size) {
+    let bySize = this.atlas.get(size); if (!bySize) this.atlas.set(size, bySize = new Map());
+    let byColor = bySize.get(color); if (!byColor) bySize.set(color, byColor = new Map());
+    let s = byColor.get(ch);
     if (s) return s;
-    const dpr = this.dpr;
+    const dpr = this.dpr, font = `${size}px ${this.font}`;
+    this.ctx.font = font;
+    const t = this.ctx.measureText(ch);
+    const L = Math.ceil(Math.max(0, t.actualBoundingBoxLeft) * dpr) + 1, R = Math.ceil(Math.max(0, t.actualBoundingBoxRight) * dpr) + 1;
+    const A = Math.ceil(Math.max(0, t.actualBoundingBoxAscent) * dpr) + 1, B = Math.ceil(Math.max(0, t.actualBoundingBoxDescent) * dpr) + 1;
     const c = document.createElement('canvas');
-    c.width = Math.ceil(this.cellW * dpr) + 2; c.height = Math.ceil(this.cellH * dpr) + 2;
+    c.width = L + R; c.height = A + B;
     const x = c.getContext('2d');
     x.scale(dpr, dpr);
-    x.font = `${this.size}px ${this.font}`;
-    x.textBaseline = 'alphabetic';
-    x.fillStyle = color;
-    x.fillText(ch, 0, this.ascent);
-    s = c;
-    this.atlas.set(key, s);
+    x.font = font; x.textBaseline = 'alphabetic'; x.fillStyle = color;
+    x.fillText(ch, L / dpr, A / dpr);
+    s = {
+      canvas: c, w: c.width / dpr, h: c.height / dpr, bx: L / dpr, by: A / dpr,
+      ix: (t.actualBoundingBoxRight - t.actualBoundingBoxLeft) / 2, iy: (t.actualBoundingBoxAscent - t.actualBoundingBoxDescent) / 2,
+    };
+    byColor.set(ch, s); this.sprites++;
     return s;
+  }
+
+  stamp(ctx, s, x, y, alpha) {
+    if (ctx !== this.ctx) ctx.globalAlpha = alpha;
+    else if (alpha !== this.alpha) ctx.globalAlpha = this.alpha = alpha;
+    ctx.drawImage(s.canvas, x, y, s.w, s.h);
+  }
+
+  // a glyph set in a cell (col, row may be fractional), like type on a line
+  put(ch, color, col, row, alpha = 1, ctx = this.ctx) {
+    if (!ch || ch === ' ' || alpha < 0.01) return;
+    const x = col * this.cellW, y = row * this.cellH;
+    if (ctx === this.ctx && (x < -this.cellW || y < -this.cellH || x > this.w || y > this.h)) return;
+    const s = this.sprite(ch, color, this.size);
+    this.stamp(ctx, s, x - s.bx, y + this.ascent - s.by, alpha);
+  }
+
+  // a glyph at any size, centred on its own ink at a pixel
+  ink(ch, color, px, py, size = this.size, alpha = 1) {
+    if (alpha < 0.01) return;
+    // a few sizes, not every size: half pixels when small, coarser as it grows
+    const q = size <= 20 ? Math.max(4, Math.round(size * 2) / 2) : size <= 40 ? Math.round(size) : Math.round(size / 2) * 2;
+    if (px < -q || py < -q || px > this.w + q || py > this.h + q) return;
+    const s = this.sprite(ch, color, q);
+    this.stamp(this.ctx, s, px - s.ix - s.bx, py + s.iy - s.by, alpha);
   }
 
   clear(color) {
-    this.ctx.fillStyle = color;
-    this.ctx.fillRect(0, 0, this.w, this.h);
-  }
-
-  // draw a glyph at a fractional cell position (x cols, y rows)
-  put(ch, color, x, y) {
-    if (!ch || ch === ' ') return;
-    const px = x * this.cellW, py = y * this.cellH;
-    if (px < -this.cellW || py < -this.cellH || px > this.w || py > this.h) return;
-    this.ctx.drawImage(this.sprite(ch, color), px, py, this.cellW + 2 / this.dpr, this.cellH + 2 / this.dpr);
-  }
-
-  // a glyph at any size, centred on a pixel position: the 3D elements use
-  // this, with size set by distance from the camera
-  sizedSprite(ch, color, size) {
-    const key = ch + '\0' + color + '\0' + size;
-    let s = this.atlas.get(key);
-    if (s) return s;
-    const dpr = this.dpr;
-    const w = Math.ceil(size * 1.3), h = Math.ceil(size * 1.3);
-    const c = document.createElement('canvas');
-    c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
-    const x = c.getContext('2d');
-    x.scale(dpr, dpr);
-    x.font = `${size}px ${this.font}`;
-    x.textBaseline = 'middle'; x.textAlign = 'center';
-    x.fillStyle = color;
-    x.fillText(ch, w / 2, h / 2);
-    s = { canvas: c, w, h };
-    this.atlas.set(key, s);
-    return s;
-  }
-  putSized(ch, color, px, py, size) {
-    if (!ch || ch === ' ') return;
-    const q = Math.max(4, Math.round(size * 2) / 2); // quantise so the cache stays small
-    if (px < -q * 2 || py < -q * 2 || px > this.w + q * 2 || py > this.h + q * 2) return;
-    const s = this.sizedSprite(ch, color, q);
-    this.ctx.drawImage(s.canvas, px - s.w / 2, py - s.h / 2, s.w, s.h);
-  }
-
-  // a glyph at any size, centred on its own ink rather than its text box:
-  // whichever font supplies the glyph, it lands exactly on the pixel asked
-  // for. The bright stars and their halos are placed with this.
-  ink(ch, color, px, py, size) {
     const c = this.ctx;
-    let m = this.inkBox.get(ch);
-    if (!m) {
-      c.font = `64px ${this.font}`;
-      const t = c.measureText(ch);
-      m = [(t.actualBoundingBoxRight - t.actualBoundingBoxLeft) / 128, (t.actualBoundingBoxAscent - t.actualBoundingBoxDescent) / 128];
-      this.inkBox.set(ch, m);
-    }
-    c.font = `${size}px ${this.font}`;
-    c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    if (this.alpha !== 1) c.globalAlpha = this.alpha = 1;
     c.fillStyle = color;
-    c.fillText(ch, px - m[0] * size, py + m[1] * size);
+    c.fillRect(0, 0, this.w, this.h);
   }
 
-  // a run of text starting at a cell
-  text(str, color, x, y) {
-    for (let i = 0; i < str.length; i++) this.put(str[i], color, x + i, y);
+  // a whole pre-painted canvas, at full strength
+  blit(canvas, y) {
+    const c = this.ctx;
+    if (this.alpha !== 1) c.globalAlpha = this.alpha = 1;
+    c.drawImage(canvas, 0, y, canvas.width / this.dpr, canvas.height / this.dpr);
   }
 }
