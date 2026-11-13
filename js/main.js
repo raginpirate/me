@@ -62,14 +62,10 @@ scene.addEventListener('built', () => {
   measure();
 });
 
-// where each thread ends: the top of a stacked card, the near side of a side card
+// tell the scene where each card sits, so it can hang that stop's tether to suit
 function measure() {
   if (plain || !scene.lights) return;
-  for (const s of scene.lights) {
-    const r = cards.get(s.id).getBoundingClientRect();
-    s.target = scene.stack ? [r.left + r.width / 2, r.top - 4] : [s.side === 'left' ? r.right + 4 : r.left - 4, r.top + Math.min(r.height * 0.3, 40)];
-  }
-  scene.dirty = true;
+  for (const s of scene.lights) scene.attach(s, cards.get(s.id).getBoundingClientRect());
 }
 const watch = new ResizeObserver(measure);
 for (const c of cards.values()) watch.observe(c);
