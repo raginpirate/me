@@ -549,12 +549,13 @@ export class AsciiScene extends HTMLElement {
     }
 
     // the tethers. Their stars come in one by one as the card opens, each
-    // at its own moment, and leave the same way.
+    // at its own moment, and leave the same way. While they are there they
+    // twinkle exactly as the name's thread does.
     for (const s of this.lights) {
       if (!s.dots.length) continue;
       const on = this.presence(s);
       const edge = this.stack ? (s.card.top - 2) / g.cellH - 0.5 + top : Infinity; // nothing is drawn over a stacked card
-      for (const p of s.dots) if (p.a && p.y < edge) g.put('·', P.thread, p.x, p.y - top, p.a * 0.95 * smooth(p.late * 0.55, p.late * 0.55 + 0.45, on));
+      for (const p of s.dots) if (p.a && p.y < edge) g.put('·', P.thread, p.x, p.y - top, p.a * 0.95 * smooth(p.late * 0.55, p.late * 0.55 + 0.45, on) * this.flicker(p.tw));
     }
   }
 
@@ -601,7 +602,7 @@ export class AsciiScene extends HTMLElement {
     // its wander: two waves across the string, each [how far, how many, where it starts]
     s.sway = T.wander.map(([far, fewest, most]) => [far * (0.7 + 0.6 * R()), mix([fewest, most], R()) * 2 * Math.PI, R() * 2 * Math.PI]);
     s.dots = [];
-    for (let k = 0; k < n; k++) s.dots.push({ f: (k + 0.5 + (R() - 0.5) * T.jitter) / n, a: R() > T.miss ? mix(T.alpha, R()) : 0, late: R(), fresh: true, x: 0, y: 0, hx: 0, hy: 0, vx: 0, vy: 0 });
+    for (let k = 0; k < n; k++) s.dots.push({ f: (k + 0.5 + (R() - 0.5) * T.jitter) / n, a: R() > T.miss ? mix(T.alpha, R()) : 0, late: R(), tw: R() * 2 * Math.PI, fresh: true, x: 0, y: 0, hx: 0, hy: 0, vx: 0, vy: 0 });
   }
 
   // Every frame the string is laid from the light to the card as they now
@@ -644,7 +645,7 @@ export class AsciiScene extends HTMLElement {
     }
   }
 
-  // a thread dot's brightness: it flickers up over the reveal, then keeps a faint twinkle for good
+  // a thread dot's brightness, for the name's thread and the tethers alike: it flickers up over the name's reveal, then keeps a faint twinkle for good
   flicker(phase) {
     if (this.reduced.matches) return 1;
     const steady = twinkle(this.time, phase, ...D.twinkle.thread), r = this.reveal;
