@@ -64,9 +64,12 @@ export const D = {
 
   // the name's thread: straight, a dot every half cell, alternating bright and dim
   thread: { perCell: 2, bright: 0.95, dim: 0.6 },
-  // a card's tether: the same dots drawn by hand. Pixels at the stack type size.
-  // step: gap between dots. miss: share of dots left out. wander: [how far, how quickly] off the straight path, twice over.
-  tether: { step: [5, 10], miss: 0.08, alpha: [0.45, 0.95], wander: [[4.5, 0.045], [2, 0.11]] },
+  // a card's tether: a string of the same dots, strung by hand and never the same twice.
+  // Pixels at the stack type size. step: gap between stars at the stop's resting place.
+  // jitter: how unevenly they sit. miss: share left out. wander: two waves off the
+  // straight path, each [how far, fewest, most waves along the string].
+  // slack: how much wavier it may get when short, how much straighter when long.
+  tether: { step: [6, 9], jitter: 0.9, miss: 0.08, alpha: [0.45, 0.95], wander: [[4.5, 1.1, 2.4], [2, 3, 5.5]], slack: [0.55, 1.7] },
 
   // twinkles: [darkest, rate]
   twinkle: { field: [0.2, 1.4], name: [0.25, 1.3], thread: [0.24, 2.6], light: [0.6, 2.4], lamp: [0.4, 3.1] },

@@ -339,8 +339,9 @@ export class AsciiScene extends HTMLElement {
       if (Math.abs(on - s.glow) > 0.003) active = true;
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       if (s.glow > 0.02 && inView(s, 4)) litInView = true;
-      // its tether is made of stars like any others: the same spring
-      if (on >= 0.02) for (const p of s.dots) if (p.a && inView(p, 6)) spring(p, D.spring.star);
+      // its tether: strung fresh each time the card opens, gone when it closes
+      if (on >= 0.02 && s.card) { if (!s.dots.length) this.string(s); this.tether(s, top, spring); }
+      else if (s.dots.length) s.dots = [];
     }
 
     // --- spawn and update the living things ---
@@ -515,19 +516,13 @@ export class AsciiScene extends HTMLElement {
       else g.put(p.rest ? ',' : G.leaves[(p.frame + Math.floor(time * 3)) % 3], p.color, p.x, y);
     }
 
-    // the tethers: each a trail of stars with fixed places in the sky, shown
-    // while its card is open, as far as the card's edge
+    // the tethers. Their stars come in one by one as the card opens, each
+    // at its own moment, and leave the same way.
     for (const s of this.lights) {
-      const c = s.card;
-      let level = Math.min(1, 0.95 * this.presence(s));
-      if (!c || level < 0.02) continue;
-      if (!this.stack) {
-        // a card beside the light: only while the light is level with it
-        const y = (s.y - top + 0.5) * g.cellH;
-        level *= smooth(c.top - 24, c.top + 6, y) * (1 - smooth(c.bottom - 6, c.bottom + 24, y));
-      }
-      const edge = (c.top - 4) / g.cellH - 0.5 + top; // the top of a stacked card, as a row of the painting
-      for (const p of s.dots) if (p.a && (!this.stack || p.y < edge)) g.put('·', P.thread, p.x, p.y - top, p.a * level);
+      if (!s.dots.length) continue;
+      const on = this.presence(s);
+      const edge = this.stack ? (s.card.top - 2) / g.cellH - 0.5 + top : Infinity; // nothing is drawn over a stacked card
+      for (const p of s.dots) if (p.a && p.y < edge) g.put('·', P.thread, p.x, p.y - top, p.a * 0.95 * smooth(p.late * 0.55, p.late * 0.55 + 0.45, on));
     }
   }
 
@@ -545,51 +540,66 @@ export class AsciiScene extends HTMLElement {
   }
 
   // The page tells the scene where a stop's card sits on screen (its box,
-  // in viewport pixels), and the scene hangs the stop's tether to suit.
+  // in viewport pixels), so the stop's tether knows where to end.
   attach(s, box) {
-    const c = s.card;
-    if (c && Math.abs(c.left - box.left) + Math.abs(c.top - box.top) + Math.abs(c.right - box.right) + Math.abs(c.bottom - box.bottom) < 1) return;
     s.card = { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
-    this.hang(s);
     this.dirty = true;
   }
+  // where a tether meets its card, in viewport pixels: the top of a stacked
+  // card, the near side of a card beside the light
+  anchor(s) {
+    const c = s.card;
+    return this.stack ? [(c.left + c.right) / 2, c.top - 4] : [s.side === 'left' ? c.right + 4 : c.left - 4, c.top + Math.min((c.bottom - c.top) * 0.3, 40)];
+  }
 
-  // A stop's tether: a trail of stars from its light toward its card, drawn
-  // by hand. It wanders a little off the straight path, the dots are
-  // unevenly spaced and unevenly bright, and the odd one is missing. It
-  // starts clear of the halo.
-  //
-  // The trail is part of the sky. Its stars have fixed places in the
-  // painting and ride the page, the scroll's shove and a pointer's push on
-  // the same spring as every other star; nothing re-aims it as you scroll.
-  // The card is fixed on screen, so it simply covers the trail's far end:
-  // the trail is laid long enough to reach the card wherever the card is
-  // open, and drawn only as far as the card's edge.
-  hang(s) {
-    const g = this.grid, T = D.tether, u = this.u, c = s.card, was = s.dots;
+  // A stop's tether is a string of stars tied between its light and its
+  // card. string() makes a new one every time the card opens, and no two
+  // are alike: how many stars, where each sits along the string, how bright,
+  // which are missing, how the string wanders, and the order they appear in
+  // are all drawn fresh. Each star only knows how far along the string it is
+  // (f, 0 at the light to 1 at the card), so the string has no length of its
+  // own: it is as long as the gap it spans.
+  string(s) {
+    const g = this.grid, T = D.tether, u = this.u, R = Math.random;
+    // enough stars to fill it at the stop's resting place
+    const [ax, ay] = this.anchor(s);
+    const gap = Math.hypot(ax - (s.hx + 0.5) * g.cellW, ay - (s.hy - s.snap + 0.5) * g.cellH);
+    s.rest = Math.max(20 * u, gap - (D.light.clear + 5) * u);
+    const n = Math.max(6, Math.round(s.rest / (mix(T.step, R()) * u)));
+    // its wander: two waves across the string, each [how far, how many, where it starts]
+    s.sway = T.wander.map(([far, fewest, most]) => [far * (0.7 + 0.6 * R()), mix([fewest, most], R()) * 2 * Math.PI, R() * 2 * Math.PI]);
     s.dots = [];
-    // Where it leads. A stacked card: its top centre as it stands when the
-    // card closes, which is the furthest the two get. A card beside the
-    // light: its near edge, level with the light.
-    let bx, by;
-    if (this.stack) { bx = (c.left + c.right) / 2 / g.cellW - 0.5; by = (c.top - 4) / g.cellH - 0.5 + s.band[1] * this.maxScroll; }
-    else { bx = (s.side === 'left' ? c.right + 4 : c.left - 4) / g.cellW - 0.5; by = s.hy; }
-    const dx = bx - s.hx, dy = by - s.hy;
-    if (this.stack ? dy <= 0 : (s.side === 'left') === (dx > 0)) return; // the card is over the light: nothing to hang
-    const px = dx * g.cellW, py = dy * g.cellH, len = Math.hypot(px, py);
-    const nx = -py / len / g.cellW, ny = px / len / g.cellH; // one pixel sideways, in cells
-    const rnd = mulberry32(40 + s.n);
-    const [[far1, quick1], [far2, quick2]] = T.wander, p1 = rnd() * 6.28, p2 = rnd() * 6.28;
-    for (let d = (D.light.clear + 2) * u; d < len - 3 * u;) {
-      const f = d / len, ease = Math.sin(Math.PI * f); // the wander dies out at both ends
-      const w = (Math.sin(d / u * quick1 + p1) * far1 + Math.sin(d / u * quick2 + p2) * far2) * ease * u;
-      const hx = s.hx + dx * f + nx * w, hy = s.hy + dy * f + ny * w;
-      const a = rnd() > T.miss ? mix(T.alpha, rnd()) : 0; // a missed dot keeps its place in the pattern
-      const o = was[s.dots.length];                       // re-measured mid-swipe: keep the push it was carrying
-      s.dots.push({ x: hx + (o ? o.x - o.hx : 0), y: hy + (o ? o.y - o.hy : 0), hx, hy, vx: o ? o.vx : 0, vy: o ? o.vy : 0, a });
-      d += mix(T.step, rnd()) * u;
+    for (let k = 0; k < n; k++) s.dots.push({ f: (k + 0.5 + (R() - 0.5) * T.jitter) / n, a: R() > T.miss ? mix(T.alpha, R()) : 0, late: R(), fresh: true, x: 0, y: 0, hx: 0, hy: 0, vx: 0, vy: 0 });
+  }
+
+  // Every frame the string is laid from the light to the card as they now
+  // stand, so it stretches as they part and gathers as they close: slack
+  // and wavier when short, taut and straighter when long. That gives each
+  // star a home, and the star goes there on the sky's own spring, shoved by
+  // a swipe and pushed by a pointer like any other star. The ends are held
+  // (a star by the light stays by the light, a star at the card stays at
+  // the card); toward the middle the stars hang free, are carried with the
+  // page, and swing back to the string.
+  tether(s, top, spring) {
+    const g = this.grid, T = D.tether, u = this.u;
+    const [ax, ay] = this.anchor(s);
+    const lx = (s.x + 0.5) * g.cellW, ly = (s.y - top + 0.5) * g.cellH; // the light, in viewport pixels
+    const full = Math.hypot(ax - lx, ay - ly) || 1, ux = (ax - lx) / full, uy = (ay - ly) / full;
+    const clear = (D.light.clear + 2) * u, len = Math.max(0, full - clear - 3 * u);
+    const slack = clamp((s.rest / Math.max(len, 1)) ** 0.8, T.slack[0], T.slack[1]) * u;
+    const [[far1, many1, from1], [far2, many2, from2]] = s.sway;
+    for (const p of s.dots) {
+      const free = Math.sin(Math.PI * p.f); // 0 at either end, 1 in the middle
+      const along = clear + p.f * len, off = (Math.sin(p.f * many1 + from1) * far1 + Math.sin(p.f * many2 + from2) * far2) * free * slack;
+      const hx = (lx + ux * along - uy * off) / g.cellW - 0.5, hy = (ly + uy * along + ux * off) / g.cellH - 0.5 + top;
+      if (p.fresh) { p.x = p.hx = hx; p.y = p.hy = hy; p.fresh = false; }
+      // held stars move with their home; free ones are left where the page carries them
+      p.x += (hx - p.hx) * (1 - free); p.y += (hy - p.hy) * (1 - free);
+      p.hx = hx; p.hy = hy;
+      if (p.a) spring(p, D.spring.star);
     }
   }
+
   // a thread dot's brightness: it flickers up over the reveal, then keeps a faint twinkle for good
   flicker(phase) {
     if (this.reduced.matches) return 1;
