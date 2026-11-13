@@ -35,6 +35,7 @@ export class AsciiScene extends HTMLElement {
     this.t0 = performance.now();
     this.t = 0; this.scrollRows = 0; this.scrollVel = 0;
     this.pointer = null;
+    this.quiet = [];
     this.lampCount = this.lampCount || 0;
     try {
       this.canvas = document.createElement('canvas');
@@ -143,6 +144,19 @@ export class AsciiScene extends HTMLElement {
       return { x: X, y: Y, hx: X, hy: Y, vx: 0, vy: 0, anchor };
     });
     this.nameLines = name.lines;
+    // keep the sky clear around the name, so no stray star sits against it or reads as part of a letter
+    const [byStar, byLine] = D.clear.name.map((v) => v * this.u);
+    const at = (p) => [(p.x + 0.5) * g.cellW, (p.y + 0.5) * g.cellH];
+    const marks = this.nameStars.map(at), runs = this.nameLines.map(([i, j]) => [...marks[i], ...marks[j]]);
+    this.field = this.field.filter((p) => {
+      const [x, y] = at(p);
+      for (const [mx, my] of marks) if (Math.hypot(x - mx, y - my) < byStar) return false;
+      for (const [x0, y0, x1, y1] of runs) {
+        const dx = x1 - x0, dy = y1 - y0, t = clamp(((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+        if (Math.hypot(x - x0 - dx * t, y - y0 - dy * t) < byLine) return false;
+      }
+      return true;
+    });
     // half of the name's stars were always there; the rest twinkle in
     const seeded = mulberry32(31);
     this.nameSeeds = this.nameStars.map(() => seeded());
@@ -309,10 +323,12 @@ export class AsciiScene extends HTMLElement {
     const ptr = this.pointer && now - this.pointerAt < 2500 ? [this.pointer[0], this.pointer[1] + this.scrollRows] : null;
     const push = (p, radius, max) => {
       if (!ptr) return [0, 0];
-      const dx = (p.x - ptr[0]) * this.aspect, dy = p.y - ptr[1];
+      const dx = (p.x + 0.5 - ptr[0]) * this.aspect, dy = p.y + 0.5 - ptr[1]; // from the pointer to the glyph's centre
       const d = Math.hypot(dx, dy);
       if (d >= radius || d < 1e-4) return [0, 0];
-      const f = (1 - d / radius) * max;
+      // strongest a little way off, nothing right under the pointer: a thing
+      // you point at rests there instead of snapping from side to side
+      const f = (1 - d / radius) * max * smooth(0, D.push.core, d);
       return [(dx / d) * f / this.aspect, (dy / d) * f];
     };
     const spring = (p, [stiff, zeta, maxDisp, pushR, pushMax, shoveK]) => {
@@ -429,13 +445,24 @@ export class AsciiScene extends HTMLElement {
     // field stars
     if (skyVisible) {
       const [floor, rate] = D.twinkle.field;
+      // The lines under the name stay readable: while they are showing, a
+      // star fades out as it comes up to them and back in once it is past.
+      // The page says where they are (quiet: boxes in viewport pixels).
+      const hush = this.quiet.length ? this.presence(this.stops[0]) : 0, [gone, back] = D.clear.text.map((v) => v * this.u);
       for (const s of this.field) {
         if (!inView(s)) continue;
         let ch = s.ch, a = 1;
+        if (hush > 0.01) {
+          const x = (s.x + 0.5) * g.cellW, y = (s.y - top + 0.5) * g.cellH;
+          let d = Infinity;
+          for (const [l, t, r, b] of this.quiet) d = Math.min(d, Math.hypot(Math.max(l - x, 0, x - r), Math.max(t - y, 0, y - b)));
+          a = 1 - hush * (1 - smooth(gone, back, d));
+          if (a < 0.01) continue;
+        }
         // a third of the sky twinkles, each on its own rate, and the bright
         // ones also blink between glyphs
         if (!reduced && s.phase < 2.1) {
-          a = twinkle(time, s.phase * 7, floor, rate + s.phase);
+          a *= twinkle(time, s.phase * 7, floor, rate + s.phase);
           if (s.tier === 2 && Math.sin(time * 1.7 + s.phase * 5) < -0.2) ch = '*';
         } else if (!reduced && s.tier === 2 && Math.sin(time * 1.7 + s.phase) < -0.3) ch = '*';
         g.put(ch, s.tier === 0 ? P.dim : s.tier === 1 ? P.star : P.starBright, s.x, s.y - top, a);

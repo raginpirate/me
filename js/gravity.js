@@ -1,68 +1,88 @@
-// Touch scrolling that brakes at the stops.
+// Gliding between the stops.
 //
-// While a finger is down the page follows it 1:1. On release the glide
-// keeps the finger's speed and ordinary friction. Near a stop it brakes
-// harder, just enough to run out there instead of sailing past; it never
-// speeds the page up and never pulls. Flick hard enough and it goes
-// through to the next one. Mouse wheel and trackpad are left native.
+// One glide serves every way of scrolling.
+//  - A finger drags the page 1:1. On release the glide keeps its speed.
+//  - A wheel or trackpad feeds the same glide, so a desktop scroll runs out
+//    smoothly like a swipe instead of stepping. Over a whole gesture the
+//    page still travels as far as the wheel asked.
+//
+// Once a gesture has let go, the glide never passes the first stop ahead of
+// it. Out of reach of that stop it slows with ordinary friction; within
+// reach it brakes harder, just enough to run out exactly there. It only
+// ever takes speed away: nothing pulls the page toward a stop it would not
+// have reached, and nothing slows a scroll that is still being held.
 
 import { clamp } from './util.js';
+import { D } from './direction.js';
 
 export function attachGravity(scene, { enabled = () => true } = {}) {
-  const html = document.documentElement;
+  const html = document.documentElement, G = D.glide;
   let points = [];
-  let touch = null;       // active drag
-  let glide = null;       // rAF momentum
-  let moved = false;
-
   scene.addEventListener('built', () => { points = scene.stops.map((p) => p.snap * scene.grid.cellH).sort((a, b) => a - b); });
-
   const maxScroll = () => html.scrollHeight - innerHeight;
 
-  function stopGlide() { if (glide) { cancelAnimationFrame(glide.raf); glide = null; } }
-
-  function startGlide(v0) {
-    stopGlide();
-    const H = innerHeight;
-    const R = H * 0.6;           // how far out a stop starts braking
-    const friction = 1.7;        // per second, the ordinary glide
-    const escape = H * 3.2;      // px/s: faster than this and you sail through
-    let pos = scrollY, v = v0, last = performance.now(), target = null;
-
-    const step = (now) => {
-      const dt = Math.min(0.04, (now - last) / 1000) || 0.016; last = now;
-      const max = maxScroll();
-      // the point ahead in the direction of travel
-      const ahead = points.filter((q) => v > 0 ? q > pos + 0.5 : q < pos - 0.5);
-      const p = ahead.length ? (v > 0 ? Math.min(...ahead) : Math.max(...ahead)) : null;
-      const dist = p === null ? Infinity : Math.abs(p - pos);
-      const u = Math.abs(v);
-
-      let k = friction;
-      if (p !== null && dist < R && u < escape) {
-        // brake so the glide runs out exactly at the point: never a push,
-        // only ever less speed than ordinary friction would leave
-        k = Math.max(friction, u / Math.max(dist, 1));
-        target = p;
-      } else target = null;
-      v *= Math.exp(-k * dt);
-
-      pos += v * dt;
-      if (pos <= 0 || pos >= max) { pos = clamp(pos, 0, max); v = 0; }
-      scrollTo(0, pos);
-
-      if (u < 6) {
-        if (target !== null && Math.abs(target - pos) < 3) scrollTo(0, target);
-        glide = null; return;
-      }
-      glide.raf = requestAnimationFrame(step);
-    };
-    glide = { raf: requestAnimationFrame(step) };
+  // ---------- the glide ----------
+  let glide = null; // { pos, v, friction, from, target, wheel, last, raf }
+  const halt = () => { if (glide) { cancelAnimationFrame(glide.raf); glide = null; } };
+  // from: where the gesture began (where the finger went down, or the wheel first turned)
+  function start(v, friction, wheel, from = scrollY) {
+    halt();
+    glide = { pos: scrollY, v, friction, from, target: null, wheel, last: performance.now() };
+    glide.raf = requestAnimationFrame(step);
   }
 
+  // The stop this glide may not pass: the first one ahead. If that one is
+  // only a step from where the gesture began, it is the stop you were at,
+  // and a real fling is going on to the next; a nudge still settles on it.
+  function aim(g) {
+    const dir = Math.sign(g.v) || 1, near = innerHeight * G.near;
+    const going = Math.abs(g.pos - g.from) + Math.abs(g.v) / g.friction; // how far this gesture means to go
+    const ahead = points.filter((q) => (q - g.pos) * dir > 0.5).sort((a, b) => (a - b) * dir);
+    if (!ahead.length) return null;
+    return ahead.length > 1 && Math.abs(ahead[0] - g.from) < near && going > 2 * near ? ahead[1] : ahead[0];
+  }
+
+  function step(now) {
+    const g = glide;
+    const dt = Math.min(0.04, (now - g.last) / 1000) || 0.016; g.last = now;
+    const dir = Math.sign(g.v) || 1, u = Math.abs(g.v), max = maxScroll();
+    // a wheel still turning is a hand still on the page: no braking until it
+    // lets go. Once it has, the stop ahead is chosen and kept.
+    const letGo = !g.wheel || now - wheel.last > G.coast || tailing();
+    if (!letGo) g.target = null;
+    else if (g.target === null) g.target = aim(g);
+    let k = g.friction, landing = 0;
+    if (g.target !== null) {
+      const dist = (g.target - g.pos) * dir;
+      // brake so the glide runs out exactly at the stop: never a push, only less speed
+      if (dist < innerHeight * G.reach && u > k * dist) { k = u / Math.max(dist, 1); landing = dist; }
+    }
+    g.v *= Math.exp(-k * dt);
+    // a braked glide was always going to get there; do not let its last few pixels take forever
+    if (landing > 1 && Math.abs(g.v) < G.land) g.v = dir * Math.min(G.land, landing * 8);
+    g.pos += g.v * dt;
+    if (g.target !== null && (g.target - g.pos) * dir < 0) { g.pos = g.target; g.v = 0; } // never past it
+    if (g.pos <= 0 || g.pos >= max) { g.pos = clamp(g.pos, 0, max); g.v = 0; }
+    scrollTo(0, g.pos);
+
+    const there = g.target !== null && Math.abs(g.target - g.pos) < 1;
+    if (there || (Math.abs(g.v) < 6 && (!g.wheel || now - wheel.last > G.coast))) {
+      if (there || (g.target !== null && Math.abs(g.target - g.pos) < 3)) {
+        scrollTo(0, g.target);
+        // what is left of the gesture that brought it here is spent
+        if (g.wheel) hold = { dir, floor: wheel.size, rises: 0 };
+      }
+      glide = null;
+      return;
+    }
+    g.raf = requestAnimationFrame(step);
+  }
+
+  // ---------- touch ----------
+  let touch = null, moved = false;
   addEventListener('pointerdown', (e) => {
+    halt(); // any press takes the page back
     if (e.pointerType !== 'touch' || !enabled()) return;
-    stopGlide();
     touch = { id: e.pointerId, y: e.clientY, scroll: scrollY, samples: [[performance.now(), e.clientY]] };
     moved = false;
   }, { passive: true });
@@ -78,22 +98,55 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
 
   const release = (e) => {
     if (!touch || e.pointerId !== touch.id) return;
-    const s = touch.samples, now = performance.now();
+    const s = touch.samples, from = touch.scroll, now = performance.now();
     touch = null;
     // velocity over the last 40–120 ms of movement, in page px/s (finger up = page down)
     const [tl, yl] = s[s.length - 1];
     if (now - tl > 120) return; // the finger paused before lifting: no glide
     let i = s.length - 2;
     while (i > 0 && tl - s[i][0] < 40) i--;
-    if (i >= 0) {
-      const [t0, y0] = s[i];
-      const dt = (tl - t0) / 1000;
-      if (dt > 0) { const v = -(yl - y0) / dt; if (Math.abs(v) > 80) startGlide(clamp(v, -7000, 7000)); }
-    }
+    if (i < 0) return;
+    const [t0, y0] = s[i], dt = (tl - t0) / 1000;
+    if (dt <= 0) return;
+    const v = -(yl - y0) / dt;
+    if (Math.abs(v) > G.fling[0]) start(clamp(v, -G.fling[1], G.fling[1]), G.touch, false, from);
   };
   addEventListener('pointerup', release, { passive: true });
   addEventListener('pointercancel', release, { passive: true });
 
   // a drag that started on a link should not also click it
   addEventListener('click', (e) => { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false; } }, true);
+
+  // ---------- wheel and trackpad ----------
+  // The browser says nothing about fingers lifting, so the gesture is read
+  // from the steps themselves: silence, or steps dying away (a trackpad
+  // coasting after the fingers lift), means it has let go.
+  let wheel = { last: 0, size: 0, peak: 0, falls: 0 };
+  const tailing = () => wheel.falls >= 3 && wheel.size < wheel.peak * 0.5;
+  let hold = null; // settled on a stop: the rest of the gesture that brought it there is swallowed
+
+  addEventListener('wheel', (e) => {
+    if (!enabled() || e.ctrlKey) return; // the text version, and pinch-zoom, are the browser's
+    e.preventDefault();
+    const d = e.deltaY * (e.deltaMode === 1 ? G.line : e.deltaMode === 2 ? innerHeight : 1);
+    if (!d) return;
+    const now = performance.now(), size = Math.abs(d), fresh = now - wheel.last > G.gap; // fresh: a new gesture
+    wheel = fresh ? { last: now, size, peak: size, falls: 0 } : { last: now, size, peak: Math.max(wheel.peak, size), falls: size <= wheel.size ? wheel.falls + 1 : 0 };
+    if (hold) {
+      // released by a new gesture, a turn the other way, a mouse wheel's step, or steps that start growing again
+      if (fresh || size >= G.notch || Math.sign(d) !== hold.dir) hold = null;
+      else if (size > hold.floor * 1.5 + 2) { if (++hold.rises >= 2) hold = null; }
+      else { hold.rises = 0; hold.floor = Math.min(hold.floor, size); }
+      if (hold) return;
+    }
+    if (!glide || !glide.wheel) start(0, G.wheel, true);
+    if (fresh || (glide.v && Math.sign(d) !== Math.sign(glide.v))) { glide.from = glide.pos; glide.target = null; } // a gesture begins here
+    // each step is a push; with this friction the pushes add up to exactly the distance asked
+    glide.v += d * G.wheel;
+  }, { passive: false });
+
+  // the keyboard scrolls natively: get out of its way
+  addEventListener('keydown', (e) => { if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) halt(); });
+
+  return { halt };
 }

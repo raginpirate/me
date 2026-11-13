@@ -36,6 +36,7 @@ mode.addEventListener('click', () => {
 
 // ---------- going to a stop ----------
 function go(stop, smoothly) {
+  glide.halt();
   scrollTo({ top: stop.snap * scene.grid.cellH, behavior: smoothly && !reduced.matches ? 'smooth' : 'auto' });
 }
 
@@ -62,10 +63,21 @@ scene.addEventListener('built', () => {
   measure();
 });
 
-// tell the scene where each card sits, so it can hang that stop's tether to suit
+// tell the scene where each card sits, so its tether knows where to end,
+// and where the lines under the name are, so the sky stays clear of them
+const sky = cards.get('sky');
 function measure() {
   if (plain || !scene.lights) return;
   for (const s of scene.lights) scene.attach(s, cards.get(s.id).getBoundingClientRect());
+  const quiet = [], range = document.createRange();
+  range.selectNodeContents(sky.querySelector('.tag'));
+  for (const r of range.getClientRects()) quiet.push([r.left, r.top, r.right, r.bottom]); // one box a line, tight to the words
+  const hint = sky.querySelector('.hint');
+  range.selectNodeContents(hint);
+  const word = range.getBoundingClientRect();
+  if (word.width) quiet.push([word.left, word.top, word.right, hint.getBoundingClientRect().bottom]); // the word and the dots under it
+  scene.quiet = quiet;
+  scene.dirty = true;
 }
 const watch = new ResizeObserver(measure);
 for (const c of cards.values()) watch.observe(c);
@@ -103,8 +115,8 @@ for (const [id, card] of cards) {
   });
 }
 
-// ---------- touch: brake at the stops ----------
-attachGravity(scene, { enabled: () => !plain });
+// ---------- gliding between the stops, by finger or by wheel ----------
+const glide = attachGravity(scene, { enabled: () => !plain });
 
 mode.hidden = false;
 show(!html.classList.contains('is-scene'));

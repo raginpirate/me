@@ -75,11 +75,25 @@ export const D = {
   twinkle: { field: [0.2, 1.4], name: [0.25, 1.3], thread: [0.24, 2.6], light: [0.6, 2.4], lamp: [0.4, 3.1] },
 
   // springs: [stiffness, damping, furthest, push radius, push strength, scroll shove]
-  spring: { star: [7, 0.5, 3, 5, 2.5, 1], light: [12, 0.6, 1.2, 5, 1.2, 0.6] },
+  // A light only leans from a pointer (a small push), so it can be pointed at and tapped.
+  spring: { star: [7, 0.5, 3, 5, 2.5, 1], light: [12, 0.6, 1.2, 5, 0.5, 0.6] },
   // pointer push on things that fall or fly: [radius, strength]
-  push: { bird: [4, 3], fall: [5, 2.5] },
+  // core: rows around the pointer where the push fades to nothing, so a thing
+  // right under it rests instead of snapping from one side to the other
+  push: { bird: [4, 3], fall: [5, 2.5], core: 1.2 },
   // falling: [rows per second, sway]
   fall: { flake: [2.5, 0.8], leaf: [1.8, 1.5] },
+  // room kept clear of field stars, in pixels at the stack type size.
+  // name: around each of the name's stars, and along its threads.
+  // text: around the lines under the name; gone inside the first, back to full by the second.
+  clear: { name: [20, 15], text: [8, 22] },
+  // the glide between stops. touch, wheel: friction per second. reach: screens out
+  // from a stop where braking starts. near: a stop this close ahead is the one you
+  // are at, and a real fling goes past it. line: pixels for a wheel that counts in lines.
+  // notch: a wheel step at least this big is a mouse wheel, not a trackpad's tail.
+  // gap: ms of silence that ends a wheel gesture. coast: ms of silence before it brakes.
+  // land: the slowest a braked glide finishes at, px a second. fling: slowest and fastest release that glides.
+  glide: { touch: 1.7, wheel: 4, reach: 0.6, near: 0.15, land: 30, line: 33, notch: 40, gap: 120, coast: 70, fling: [80, 7000] },
   // how often things appear
   spawn: { shoot: [3.5, 2.5], bird: [4, 6], flake: [9, 90], leaf: [5, 80] },   // [seconds, spread] / [seconds, most] / [per second, most]
 };
