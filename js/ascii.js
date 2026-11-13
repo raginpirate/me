@@ -5,22 +5,12 @@
 // particle on a spring or on a path; everything else is drawn once.
 
 import { Grid } from './grid.js';
-import { buildWorld, mulberry32, makeNoise } from './world.js';
+import { buildWorld, mulberry32 } from './world.js';
 import { D } from './direction.js';
 import { layoutName } from './asterism.js';
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const smooth = (a, b, t) => { t = clamp((t - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-const lerp = (a, b, t) => a + (b - a) * t;
-const pick = (arr, rnd) => arr[Math.floor(rnd() * arr.length)];
-
-// dx in columns, dy in rows (y up); cells are about twice as tall as wide
-function lineGlyph(dx, dy, aspect) {
-  const ax = Math.abs(dx) * aspect, ay = Math.abs(dy);
-  if (ax >= 2.2 * ay) return '-';
-  if (ay >= 2.2 * ax) return '|';
-  return dx * dy > 0 ? '/' : '\\';
-}
 
 // cells along a line between two cells (Bresenham), excluding endpoints
 function cellsBetween(x0, y0, x1, y1) {
@@ -47,10 +37,9 @@ export class AsciiScene extends HTMLElement {
     this.appendChild(this.canvas);
     this.reduced = matchMedia('(prefers-reduced-motion: reduce)');
     this.rnd = mulberry32(99);
-    this.noise = makeNoise(5);
     this.start = performance.now();
     this.t = 0; this.scrollRows = 0; this.scrollVel = 0;
-    this.pointer = null; this.pointerVel = 0;
+    this.pointer = null;
     this.movers = []; this.resting = [];
     this.lampCount = 0;
     this.named = [];
@@ -67,7 +56,6 @@ export class AsciiScene extends HTMLElement {
       // screen cells; converted to world cells each frame
       this.pointer = [e.clientX / this.grid.cellW, e.clientY / this.grid.cellH]; this.pointerAt = performance.now();
     };
-    this.onLeave = () => { this.pointer = null; };
     this.onResize = () => {
       // a mobile URL bar showing or hiding only changes the height a little:
       // ignore that. Rebuild for a width change or an orientation change.
@@ -78,7 +66,6 @@ export class AsciiScene extends HTMLElement {
     };
     addEventListener('scroll', this.onScroll, { passive: true });
     addEventListener('pointermove', this.onPointer, { passive: true });
-    addEventListener('pointerleave', this.onLeave);
     addEventListener('resize', this.onResize);
     this.onScroll();
     this.scrollRows = this.scrollTarget;
@@ -89,7 +76,7 @@ export class AsciiScene extends HTMLElement {
 
   disconnectedCallback() {
     removeEventListener('scroll', this.onScroll); removeEventListener('pointermove', this.onPointer);
-    removeEventListener('pointerleave', this.onLeave); removeEventListener('resize', this.onResize);
+    removeEventListener('resize', this.onResize);
     this.stopped = true;
   }
   pause() { this.paused = true; }
@@ -155,23 +142,13 @@ export class AsciiScene extends HTMLElement {
     const name = layoutName(this.getAttribute('name') || 'daniel wyckoff', { stacked: true, seed: 7, tight: phone });
     const wordWidth = phone ? 5.9 : 7.3;
     const unitPx = Math.min((phone ? 3.4 : 4.4) * g.cellH / 0.58, (phone ? 0.94 : 0.7) * this.viewW / wordWidth);
-    this.nameDense = true;
     const ux = unitPx / g.cellW, uy = unitPx / g.cellH;
     const cx = this.cols * 0.5, cy = L.name * this.screenRows;
-    this.nameStars = name.stars.map(([x, y, anchor, letter]) => {
+    this.nameStars = name.stars.map(([x, y, anchor]) => {
       const X = cx + x * ux, Y = cy - y * uy;
-      return { x: X, y: Y, hx: X, hy: Y, vx: 0, vy: 0, anchor, letter, cell: [Math.round(X), Math.round(Y)] };
+      return { x: X, y: Y, hx: X, hy: Y, vx: 0, vy: 0, anchor };
     });
-    this.nameLetters = name.letters;
-    // lines as cell paths, in drawing order
-    const perLetter = {};
-    this.nameLines = name.lines.filter(([, , letter]) => (perLetter[letter] = (perLetter[letter] || 0) + 1) <= 8).map(([i, j, letter]) => {
-      const a = this.nameStars[i], b = this.nameStars[j];
-      const cells = cellsBetween(a.cell[0], a.cell[1], b.cell[0], b.cell[1]);
-      const glyph = lineGlyph(b.cell[0] - a.cell[0], -(b.cell[1] - a.cell[1]), this.aspect);
-      return { i, j, letter, cells, glyph };
-    });
-    this.nameTotal = this.nameLines.reduce((s, l) => s + l.cells.length + 1, 0);
+    this.nameLines = name.lines.map(([i, j]) => ({ i, j }));
 
     // the four bright stars
     this.named = L.stars.map(([screen, xf]) => {
@@ -276,7 +253,7 @@ export class AsciiScene extends HTMLElement {
     }
     const X = (sx * g.cellW - cxPx) * Z / F, Y = (sy * g.cellH - cyPx) * Z / F;
     const n = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    const p = { kind: 'shoot', X, Y, Z, vX: speed * dir[0] / n, vY: speed * dir[1] / n, vZ: speed * dir[2] / n, cxPx, cyPx, x: sx, y: sy, vx: 0, vy: 0, life: 6, age: 0, hist: [], tailLen: 6 };
+    const p = { kind: 'shoot', X, Y, Z, vX: speed * dir[0] / n, vY: speed * dir[1] / n, vZ: speed * dir[2] / n, cxPx, cyPx, x: sx, y: sy, life: 6, age: 0, hist: [] };
     this.project3(p);
     return p;
   }
@@ -289,18 +266,18 @@ export class AsciiScene extends HTMLElement {
     p.scale = k;
   }
   spawnBird(x, y, dir, rnd) {
-    return { kind: 'bird', x, y, vx: dir * 7, vy: 0, baseY: y, phase: rnd() * 6.28, age: 0, life: 14, frame: 0, hist: [], tailLen: 0 };
+    return { kind: 'bird', x, y, vx: dir * 7, baseY: y, phase: rnd() * 6.28, age: 0, life: 14 };
   }
   toBird(p, rnd) {
-    p.kind = 'bird'; p.hist = []; p.vx = Math.sign(p.vx || 1) * 7; p.vy = 0; p.baseY = p.y; p.phase = rnd() * 6.28; p.age = 0; p.life = 14; p.frame = 0; p.morph = 0.4;
+    p.kind = 'bird'; p.hist = null; p.vx = 7; p.baseY = p.y; p.phase = rnd() * 6.28; p.age = 0; p.life = 14; p.morph = 0.4;
   }
   spawnFlake(x, y, rnd) {
     const u = rnd();
     const ch = u < 0.5 ? '*' : u < 0.85 ? '.' : '+';
-    return { kind: 'flake', x, y, vx: 0, vy: 2.5, ch, far: ch === '.', phase: rnd() * 6.28, age: 0, life: 40, wasSky: y < this.world.peak[clamp(Math.floor(x), 0, this.cols - 1)] };
+    return { kind: 'flake', x, y, vx: 0, ch, far: ch === '.', phase: rnd() * 6.28, age: 0, life: 40, wasSky: y < this.world.peak[clamp(Math.floor(x), 0, this.cols - 1)] };
   }
   toLeaf(p, rnd) {
-    p.kind = 'leaf'; p.vy = 1.8; p.color = rnd() < 0.5 ? D.palette.leaf : D.palette.leafOlive; p.frame = Math.floor(rnd() * 3); p.phase = rnd() * 6.28; p.age = 0; p.life = 60;
+    p.kind = 'leaf'; p.color = rnd() < 0.5 ? D.palette.leaf : D.palette.leafOlive; p.frame = Math.floor(rnd() * 3); p.phase = rnd() * 6.28; p.age = 0; p.life = 60;
     p.restRow = this.world.groundRow + 1 + Math.floor(rnd() * (this.rows - this.world.groundRow - 8));
   }
 
@@ -382,7 +359,6 @@ export class AsciiScene extends HTMLElement {
         p.baseY += 1.0 * dt + shove * 0.5 * dt;
         p.y = p.baseY + Math.sin(time * 2 + p.phase) * 1.0 + py;
         p.x += p.vx * dt + px * dt * 3;
-        if (p.hist.length) p.hist.shift();
         if (p.y >= L.flakesFrom * rows) {
           for (let i = 0; i < 3; i++) { const f = this.spawnFlake(p.x + (i - 1), p.y, rnd); f.vx = (rnd() - 0.5) * 2; this.movers.push(f); keep.push(f); }
           continue;
@@ -532,7 +508,6 @@ export class AsciiScene extends HTMLElement {
       if (p.kind === 'shoot') {
         this.drawShooting(p, top);
       } else if (p.kind === 'bird') {
-        if (p.morph > 0) this.drawTail(p, top, Math.ceil(p.morph * 15));
         const frames = G.bird;
         const f = frames[Math.floor(time * 6 + p.phase) % frames.length];
         if (p.morph > 0.25) g.put('v', P.bird, p.x, p.y - top);
@@ -584,23 +559,6 @@ export class AsciiScene extends HTMLElement {
       while (acc >= want(k) * Math.max(0.5, k0) && k < tail.length) {
         const a = (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.1, 1) * born;
         g.putSized(tail[k], `rgba(201,216,238,${a.toFixed(2)})`, x0, y0 - topPx, base * clamp(k0, 0.35, 3.2));
-        k++;
-      }
-    }
-  }
-
-  drawTail(p, top, len, alpha = 1) {
-    const G = D.glyphs;
-    const tail = G.shootTail;
-    const far = (p.z || 1) > 2.2;
-    let acc = 0, k = 0;
-    for (let i = p.hist.length - 2; i >= 0 && k < len; i--) {
-      const [x1, y1] = p.hist[i + 1], [x0, y0] = p.hist[i];
-      acc += Math.hypot((x1 - x0), (y1 - y0) / this.aspect);
-      while (acc >= k + 1 && k < len) {
-        const ch = far ? '.' : tail[Math.min(tail.length - 1, k)];
-        const a = (k < 2 ? 0.95 : k < 4 ? 0.6 : 0.4) * alpha;
-        this.grid.put(ch, `rgba(201,216,238,${a.toFixed(2)})`, x0, y0 - top);
         k++;
       }
     }

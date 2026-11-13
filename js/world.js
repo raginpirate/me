@@ -179,7 +179,6 @@ export function buildWorld(cols, rows, screenRows, D) {
 
   // trees: stand on the slope where it is gentle enough, below the treeline
   const shapes = G.trees;
-  const trees = [];
   let lastShape = -1;
   for (let c = 1; c < cols - 8;) {
     const pk = peak[c];
@@ -209,7 +208,6 @@ export function buildWorld(cols, rows, screenRows, D) {
         cells[rr][cc] = [ch, dark ? P.pineDark : P.pine];
       }
     }
-    trees.push([c + Math.floor(w / 2), baseR]);
     c += w - 1 + 3 + Math.floor(rnd() * 4);
   }
 
@@ -252,5 +250,5 @@ export function buildWorld(cols, rows, screenRows, D) {
     }
   }
 
-  return { cols, rows, cells, peak, far, snowline, summitRow, baseRow, groundRow, treelineRow, topCol, trees };
+  return { cells, peak, groundRow, topCol };
 }

@@ -4,7 +4,7 @@
 
 const USER = 'raginpirate';
 const TRACKED = ['Universal-Commerce-Protocol/ucp'];
-const CACHE_KEY = 'gh-pulse-v2';
+const CACHE_KEY = 'gh-pulse-v3';
 const CACHE_TTL = 60 * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -16,18 +16,6 @@ async function getJSON(url) {
   return r.json();
 }
 
-function fromEvents(events) {
-  const out = [];
-  for (const e of events) {
-    const repo = e.repo?.name, at = e.created_at, p = e.payload || {};
-    if (!repo || TRACKED.includes(repo)) continue; // tracked repos come from the commits call
-    if (e.type === 'PushEvent') {
-      for (const c of p.commits || []) out.push({ at, repo, sha: c.sha, detail: c.message?.split('\n')[0], url: `https://github.com/${repo}/commit/${c.sha}` });
-    }
-  }
-  return out;
-}
-
 function fromCommits(repo, commits) {
   return commits.map((c) => ({ at: c.commit?.author?.date || c.commit?.committer?.date, repo, sha: c.sha, detail: c.commit?.message?.split('\n')[0], url: c.html_url })).filter((c) => c.at);
 }
@@ -37,13 +25,9 @@ async function live() {
     const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
     if (cached && Date.now() - cached.at < CACHE_TTL) return { ...cached.data, source: 'cache' };
   } catch { /* no storage */ }
-  const results = await Promise.allSettled([
-    getJSON(`https://api.github.com/users/${USER}/events/public?per_page=100`),
-    ...TRACKED.map((r) => getJSON(`https://api.github.com/repos/${r}/commits?author=${USER}&per_page=100`)),
-  ]);
+  const results = await Promise.allSettled(TRACKED.map((r) => getJSON(`https://api.github.com/repos/${r}/commits?author=${USER}&per_page=100`)));
   const commits = [];
-  if (results[0].status === 'fulfilled') commits.push(...fromEvents(results[0].value));
-  TRACKED.forEach((r, i) => { if (results[i + 1].status === 'fulfilled') commits.push(...fromCommits(r, results[i + 1].value)); });
+  TRACKED.forEach((r, i) => { if (results[i].status === 'fulfilled') commits.push(...fromCommits(r, results[i].value)); });
   if (!commits.length) throw new Error('nothing from GitHub');
   const data = { commits, fetched: new Date().toISOString() };
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), data })); } catch { /* ignore */ }
