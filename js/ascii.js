@@ -154,7 +154,7 @@ export class AsciiScene extends HTMLElement {
     const mode = this.stack ? 'stack' : 'side';
     this.fade = D.fade / S;
     this.stops = D.stops.map((d, n) => {
-      const s = { id: d.id, n, band: null, snap: 0, glow: 0, target: null };
+      const s = { id: d.id, n, band: null, snap: 0, glow: 0, target: null, dots: [] };
       if (d.at) {
         const [screen, across] = d.at;
         s.x = s.hx = Math.round(across * this.cols); s.y = s.hy = Math.round(screen * this.screenRows); s.vx = s.vy = 0;
@@ -339,6 +339,10 @@ export class AsciiScene extends HTMLElement {
       if (Math.abs(on - s.glow) > 0.003) active = true;
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       if (s.glow > 0.02 && inView(s, 4)) litInView = true;
+      // the tether to its card, while the card is open. The page says where
+      // the card is (target, in viewport pixels).
+      if (on >= 0.02 && s.target && inView(s, rows)) this.tether(s, s.target[0] / g.cellW - 0.5, s.target[1] / g.cellH - 0.5 + top, spring);
+      else s.dots.length = 0;
     }
 
     // --- spawn and update the living things ---
@@ -513,12 +517,10 @@ export class AsciiScene extends HTMLElement {
       else g.put(p.rest ? ',' : G.leaves[(p.frame + Math.floor(time * 3)) % 3], p.color, p.x, y);
     }
 
-    // the tether from each open stop's light to its card. The page says
-    // where the card is (target, in viewport pixels).
+    // the tethers
     for (const s of this.lights) {
-      const on = this.presence(s);
-      if (on < 0.02 || !s.target || !inView(s, rows)) continue;
-      this.tether(s, s.target[0] / g.cellW - 0.5, s.target[1] / g.cellH - 0.5 + top, top, Math.min(1, 0.95 * on));
+      const level = Math.min(1, 0.95 * this.presence(s));
+      for (const p of s.dots) if (p.a) g.put('·', P.thread, p.x, p.y - top, p.a * level);
     }
   }
 
@@ -540,20 +542,33 @@ export class AsciiScene extends HTMLElement {
   // and the odd one is missing. The pattern belongs to the stop and is
   // measured out from its light, so it holds still while the page scrolls
   // and the far end simply grows or shrinks. It starts clear of the halo.
-  tether(s, bx, by, top, level) {
-    const g = this.grid, T = D.tether, u = this.u, color = this.P.thread;
+  //
+  // Each dot is a star on a spring, the same spring as the sky's: its place
+  // on the tether is its home, and a swipe or a pointer pushes it off and
+  // lets it settle back. This lays the dots out and moves them; the frame
+  // draws them.
+  tether(s, bx, by, spring) {
+    const g = this.grid, T = D.tether, u = this.u, dots = s.dots;
     const dx = bx - s.x, dy = by - s.y;
     const px = dx * g.cellW, py = dy * g.cellH, len = Math.hypot(px, py);
-    if (len < 1) return;
-    const nx = -py / len / g.cellW, ny = px / len / g.cellH; // one pixel sideways, in cells
-    const rnd = mulberry32(40 + s.n);
-    const [[far1, quick1], [far2, quick2]] = T.wander, p1 = rnd() * 6.28, p2 = rnd() * 6.28;
-    for (let d = (D.light.clear + 2) * u; d < len - 3 * u;) {
-      const f = d / len, ease = Math.sin(Math.PI * f); // the wander dies out at both ends
-      const w = (Math.sin(d / u * quick1 + p1) * far1 + Math.sin(d / u * quick2 + p2) * far2) * ease * u;
-      if (rnd() > T.miss) g.put('·', color, s.x + dx * f + nx * w, s.y + dy * f + ny * w - top, mix(T.alpha, rnd()) * level);
-      d += mix(T.step, rnd()) * u;
+    let k = 0;
+    if (len >= 1) {
+      const nx = -py / len / g.cellW, ny = px / len / g.cellH; // one pixel sideways, in cells
+      const rnd = mulberry32(40 + s.n);
+      const [[far1, quick1], [far2, quick2]] = T.wander, p1 = rnd() * 6.28, p2 = rnd() * 6.28;
+      for (let d = (D.light.clear + 2) * u; d < len - 3 * u; k++) {
+        const f = d / len, ease = Math.sin(Math.PI * f); // the wander dies out at both ends
+        const w = (Math.sin(d / u * quick1 + p1) * far1 + Math.sin(d / u * quick2 + p2) * far2) * ease * u;
+        const hx = s.x + dx * f + nx * w, hy = s.y + dy * f + ny * w;
+        const p = dots[k] || (dots[k] = { x: hx, y: hy, hx, hy, vx: 0, vy: 0, a: 0 });
+        // its home moves as the page scrolls; it keeps whatever push it is carrying
+        p.x += hx - p.hx; p.y += hy - p.hy; p.hx = hx; p.hy = hy;
+        p.a = rnd() > T.miss ? mix(T.alpha, rnd()) : 0; // a missed dot keeps its place in the pattern
+        if (p.a) spring(p, D.spring.star);
+        d += mix(T.step, rnd()) * u;
+      }
     }
+    dots.length = k;
   }
   // a thread dot's brightness: it flickers up over the reveal, then keeps a faint twinkle for good
   flicker(phase) {
