@@ -62,8 +62,11 @@ export const D = {
   // a stop's light. Sizes in pixels at the stack type size; [resting, lit]
   light: { star: [15, 17], bloom: [25, 31], bloomAlpha: [0.15, 0.22], pitch: 11, ring: 0.45, clear: 27, hollow: [32, 44] },
 
-  // the dotted thread: the name's lines and every card's tether
+  // the name's thread: straight, a dot every half cell, alternating bright and dim
   thread: { perCell: 2, bright: 0.95, dim: 0.6 },
+  // a card's tether: the same dots drawn by hand. Pixels at the stack type size.
+  // step: gap between dots. miss: share of dots left out. wander: [how far, how quickly] off the straight path, twice over.
+  tether: { step: [5, 10], miss: 0.08, alpha: [0.45, 0.95], wander: [[4.5, 0.045], [2, 0.11]] },
 
   // twinkles: [darkest, rate]
   twinkle: { field: [0.2, 1.4], name: [0.25, 1.3], thread: [0.24, 2.6], light: [0.6, 2.4], lamp: [0.4, 3.1] },

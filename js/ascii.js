@@ -513,28 +513,46 @@ export class AsciiScene extends HTMLElement {
       else g.put(p.rest ? ',' : G.leaves[(p.frame + Math.floor(time * 3)) % 3], p.color, p.x, y);
     }
 
-    // the thread from each open stop's light to its card. The page says
+    // the tether from each open stop's light to its card. The page says
     // where the card is (target, in viewport pixels).
     for (const s of this.lights) {
       const on = this.presence(s);
       if (on < 0.02 || !s.target || !inView(s, rows)) continue;
-      this.thread(s.x, s.y, s.target[0] / g.cellW - 0.5, s.target[1] / g.cellH - 0.5 + top, top, Math.min(1, 0.95 * on), null, A.clear * u);
+      this.tether(s, s.target[0] / g.cellW - 0.5, s.target[1] / g.cellH - 0.5 + top, top, Math.min(1, 0.95 * on));
     }
   }
 
-  // The one dotted thread: the name's lines and every card's tether. A dot
-  // every half cell, alternating bright and dim. With a `phase` each dot
-  // flickers on its own; without, the thread is steady. Dots within
-  // `clear` pixels of the start are left out.
-  thread(ax, ay, bx, by, top, level, phase, clear = 0) {
+  // The name's thread: a straight run of dots, one every half cell,
+  // alternating bright and dim, each flickering on its own.
+  thread(ax, ay, bx, by, top, level, phase) {
     const g = this.grid, T = D.thread, color = this.P.thread;
     const dx = bx - ax, dy = by - ay;
     const steps = Math.max(1, Math.round(T.perCell * Math.max(Math.abs(dx) * this.aspect * 2, Math.abs(dy))));
     for (let k = 1; k < steps; k++) {
       const f = k / steps;
-      if (clear && Math.hypot(dx * f * g.cellW, dy * f * g.cellH) < clear) continue;
-      const a = (k % 2 ? T.bright : T.dim) * level * (phase === null ? 1 : this.flicker(phase + k * 2.3));
+      const a = (k % 2 ? T.bright : T.dim) * level * this.flicker(phase + k * 2.3);
       if (a >= 0.02) g.put('·', color, ax + dx * f, ay + dy * f - top, a);
+    }
+  }
+
+  // A card's tether: the same dots, drawn by hand. It wanders a little off
+  // the straight path, the dots are unevenly spaced and unevenly bright,
+  // and the odd one is missing. The pattern belongs to the stop and is
+  // measured out from its light, so it holds still while the page scrolls
+  // and the far end simply grows or shrinks. It starts clear of the halo.
+  tether(s, bx, by, top, level) {
+    const g = this.grid, T = D.tether, u = this.u, color = this.P.thread;
+    const dx = bx - s.x, dy = by - s.y;
+    const px = dx * g.cellW, py = dy * g.cellH, len = Math.hypot(px, py);
+    if (len < 1) return;
+    const nx = -py / len / g.cellW, ny = px / len / g.cellH; // one pixel sideways, in cells
+    const rnd = mulberry32(40 + s.n);
+    const [[far1, quick1], [far2, quick2]] = T.wander, p1 = rnd() * 6.28, p2 = rnd() * 6.28;
+    for (let d = (D.light.clear + 2) * u; d < len - 3 * u;) {
+      const f = d / len, ease = Math.sin(Math.PI * f); // the wander dies out at both ends
+      const w = (Math.sin(d / u * quick1 + p1) * far1 + Math.sin(d / u * quick2 + p2) * far2) * ease * u;
+      if (rnd() > T.miss) g.put('·', color, s.x + dx * f + nx * w, s.y + dy * f + ny * w - top, mix(T.alpha, rnd()) * level);
+      d += mix(T.step, rnd()) * u;
     }
   }
   // a thread dot's brightness: it flickers up over the reveal, then keeps a faint twinkle for good
