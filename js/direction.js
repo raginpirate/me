@@ -36,7 +36,8 @@ export const D = {
   },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
-  // stop's light in the painting: [screens from the top, fraction across].
+  // stop's light in the painting: [screens from the top, fraction across the
+  // stage]. The stage is the screen, up to the width set in the stylesheet.
   // Card timing, card side, the glide's resting places and the tap targets
   // all come from this one list.
   stops: [

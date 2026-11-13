@@ -92,8 +92,11 @@ export class AsciiScene extends HTMLElement {
     const g = this.grid, L = D.layout;
     const P = this.P = palette(document.documentElement);
     if (!P.sky) throw new Error('the stylesheet did not load');
-    // the page's one test for "cards stack under the scene", set in the stylesheet
-    this.stack = getComputedStyle(document.documentElement).getPropertyValue('--stack').trim() === '1';
+    // the page's one test for "cards stack under the scene", and the width of
+    // its centred stage, both set in the stylesheet
+    const page = getComputedStyle(document.documentElement);
+    this.stack = page.getPropertyValue('--stack').trim() === '1';
+    const stagePx = parseFloat(page.getPropertyValue('--stage')) || Infinity;
     g.size = this.stack ? D.type.stack : this.viewW < D.type.wideFrom ? D.type.mid : D.type.wide;
     g.resize(this.viewW, this.viewH);
     this.u = g.size / D.type.stack; // lights are measured in pixels at the stack type size
@@ -165,13 +168,14 @@ export class AsciiScene extends HTMLElement {
     const S = L.screens - 1, last = this.rows - this.screenRows;
     const toT = (centre) => clamp((centre - 0.5) / S, 0, 1);                       // viewport centre in screens → scroll fraction
     const restRow = (centre) => clamp((centre - 0.5) * this.screenRows, 0, last);  // → the scroll position, in rows
-    const mode = this.stack ? 'stack' : 'side';
+    const mode = this.stack ? 'stack' : 'side', stage = Math.min(this.cols, stagePx / g.cellW);
     this.fade = D.fade / S;
     this.stops = D.stops.map((d, n) => {
       const s = { id: d.id, n, band: null, snap: 0, glow: 0, card: null, dots: [] };
       if (d.at) {
         const [screen, across] = d.at;
-        s.x = s.hx = Math.round(across * this.cols); s.y = s.hy = Math.round(screen * this.screenRows); s.vx = s.vy = 0;
+        // across the stage, which is the whole screen until the screen is wider than it
+        s.x = s.hx = Math.round(this.cols / 2 + (across - 0.5) * stage); s.y = s.hy = Math.round(screen * this.screenRows); s.vx = s.vy = 0;
         s.side = across > 0.5 ? 'left' : 'right'; // the card goes on the other side from its light
         s.band = [toT(screen + D.band[mode][0]), toT(screen + D.band[mode][1])];
         s.snap = restRow(screen + D.rest[mode]);

@@ -37,6 +37,9 @@
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
   --small: 0.8rem;
   --gutter: clamp(16px, 4vw, 48px);
+  /* On a wide screen everything you read or tap stays inside a centred column
+     this wide; the rest is scenery. The scene reads this to place its lights. */
+  --stage: 1120px;
 }
 /* The one test for a narrow screen: cards stack under the scene instead of
    sitting beside it. The scene reads --stack, so both always agree. */
@@ -127,8 +130,9 @@ ascii-scene, .hits, .hint { display: none; }
 }
 .is-scene .card::before { left: -5px; top: -8px; }
 .is-scene .card::after { right: -5px; bottom: -8px; }
-.is-scene .card[data-side="left"] { left: calc(var(--gutter) + 2vw); }
-.is-scene .card[data-side="right"] { right: calc(var(--gutter) + 4vw); }
+/* a card hugs its edge of the stage, or of the screen when the screen is narrower */
+.is-scene .card[data-side="left"] { left: max(calc(var(--gutter) + 2vw), calc(50% - var(--stage) / 2)); }
+.is-scene .card[data-side="right"] { right: max(calc(var(--gutter) + 4vw), calc(50% - var(--stage) / 2)); }
 .is-scene .card p { max-width: 46ch; }
 
 .is-scene .card-star { border-color: color-mix(in srgb, var(--ember) 45%, transparent); }
