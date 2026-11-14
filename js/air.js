@@ -40,7 +40,8 @@ export class Air {
       { k: 1.36, drift: 1.0, line: P.rule, body: P.dim, la: 0.8, ba: 0.55, front: true, items: mk(Math.ceil(per * 0.7), 0.16, [9, 20], [3, 6]) },
     ];
     // one cloud that never leaves: it sits on the seam between the painted peak and the cut-outs
-    this.layers[1].items.push({ x: 0, y: Math.round(sc.seamRow + sc.blend - this.deckRow), w: sc.seamHalf * 2.2 + 10, h: 2 * sc.blend + 5, s: 7, pinned: sc.ax });
+    // (long and low, its top nearly level: flat is how much of its height is the same all along)
+    this.layers[1].items.push({ x: 0, y: Math.round(sc.seamRow + 2 - this.deckRow), w: sc.seamHalf * 1.7 + 10, h: 6.2, s: 7, pinned: sc.ax, flat: 0.86 });
   }
 
   // is any of it on screen: the deck drifts, so it must be redrawn
@@ -84,7 +85,7 @@ export class Air {
         if (it.pinned !== undefined) x0 = it.pinned + Math.sin(drift * 0.07) * 3;
         if ((x0 + it.w) * cw < -4 || (x0 - it.w) * cw > g.w + 4) continue;
         const W = Math.ceil(it.w);
-        const topAt = (u) => { const e2 = 1 - (u / it.w) ** 2; return e2 <= 0 ? 0 : -it.h * Math.sqrt(e2) * (0.5 + 0.5 * (0.6 * Math.abs(Math.sin(u * 0.33 + it.s)) + 0.4 * n.noise(it.s + u * 0.21, 1.7))); };
+        const topAt = (u) => { const e2 = 1 - (u / it.w) ** 2; const flat = it.flat ?? 0.5; return e2 <= 0 ? 0 : -it.h * Math.sqrt(e2) * (flat + (1 - flat) * (0.6 * Math.abs(Math.sin(u * 0.33 + it.s)) + 0.4 * n.noise(it.s + u * 0.21, 1.7))); };
         for (let u = -W; u <= W; u++) {
           const e2 = 1 - (u / it.w) ** 2; if (e2 <= 0) continue;
           const t = topAt(u), b = it.h * 0.3 * Math.sqrt(e2) * (0.5 + 0.5 * n.noise(it.s + u * 0.13, 9.2)) + 0.4;

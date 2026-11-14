@@ -63,12 +63,12 @@ export class Life {
 
     // --- leaves: off the leafy trees you can see. They fall in the world, a little nearer than the trees. ---
     const leafy = trees.filter((q) => q.leafy && q.top > 0 && q.top < H);
-    this.leafAcc += dt * Math.min(leafy.length, 16) * 0.1;
+    this.leafAcc += dt * Math.min(leafy.length, 22) * 0.28;
     while (this.leafAcc >= 1) {
       this.leafAcc--;
-      if (!leafy.length || this.leaves.length > 90) continue;
+      if (!leafy.length || this.leaves.length > 220) continue;
       const q = pick(leafy);
-      this.leaves.push({ x: q.x + (rnd() - 0.5) * 3 * g.cellW * q.s, y: sc.centreRow + (q.top + g.cellH * q.s - H / 2) / (g.cellH * q.s), k: q.s, phase: rnd() * 6.28, color: rnd() < 0.55 ? sc.P.leaf : sc.P.leafOlive, age: 0, life: 4 + rnd() * 6, frame: Math.floor(rnd() * 3) });
+      this.leaves.push({ x: q.x + (rnd() - 0.5) * 3 * g.cellW * q.s, y: sc.centreRow + (q.top + g.cellH * q.s - H / 2) / (g.cellH * q.s), k: q.s, phase: rnd() * 6.28, color: rnd() < 0.55 ? sc.P.leaf : sc.P.leafOlive, age: 0, life: 5 + rnd() * 7, frame: Math.floor(rnd() * 3) });
     }
     this.leaves = this.leaves.filter((l) => {
       l.age += dt;
@@ -116,32 +116,34 @@ export class Life {
       }
     }
 
-    // --- squirrels: from the foot of one tree to the next in quick hops.
-    // They come in from the side of the screen and leave the same way. ---
+    // --- squirrels: each keeps to the ridge it is on, going from the foot of
+    // one tree to the next in quick hops. One comes out from behind a tree,
+    // and is gone when its tree is. ---
     const feet = trees.filter((q) => q.y > H * 0.2 && q.y < H * 0.95 && q.x > 20 && q.x < W - 20);
-    const foot = (q, side) => [q.x + side * 1.5 * g.size * q.s, q.y - 0.6 * g.size * q.s];
+    const foot = (q, side) => [q.x + side * 1.3 * g.size * q.s, q.y - 0.5 * g.size * q.s];
     for (const Q of this.squirrels) {
-      const go = (to, q) => { Q.from = [Q.x, Q.y]; Q.to = to; Q.aim = q ? q.id : null; Q.u = 0; Q.dur = clamp(Math.abs(to[0] - Q.x) / (26 * g.cellW), 0.22, 1.4); Q.state = 'hop'; };
+      const gone = () => { Q.state = 'away'; Q.wait = 1 + rnd() * 3; };
       if (Q.state === 'away') {
         Q.wait -= dt;
-        if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) { const q = pick(feet); Q.x = q.x < W / 2 ? -30 : W + 30; Q.y = q.y; Q.s = q.s; go(foot(q, Q.side), q); }
+        if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) { const q = pick(feet); Q.on = q.id; Q.lobe = q.lobe; [Q.x, Q.y] = foot(q, Q.side); Q.s = q.s; Q.dir = Q.side; Q.born = 0; Q.state = 'sit'; Q.wait = 0.8 + rnd() * 2; }
       } else if (Q.state === 'hop') {
-        const q = Q.aim !== null ? find(Q.aim) : null;
-        if (q) { Q.to = foot(q, Q.side); Q.s += (q.s - Q.s) * Math.min(1, dt * 6); }
-        else if (Q.aim !== null) { Q.aim = null; Q.to = [Q.x < W / 2 ? -40 : W + 40, Q.y]; }
+        const q = find(Q.aim);
+        if (!q) { gone(); continue; }
+        Q.to = foot(q, Q.side); Q.s = q.s;
         Q.u = Math.min(1, Q.u + dt / Q.dur);
         Q.dir = Q.to[0] >= Q.from[0] ? 1 : -1;
         const hops = Math.max(1, Math.round(Math.abs(Q.to[0] - Q.from[0]) / (5 * g.cellW)));
-        Q.x = Q.from[0] + (Q.to[0] - Q.from[0]) * Q.u; Q.y = Q.from[1] + (Q.to[1] - Q.from[1]) * Q.u - Math.abs(Math.sin(Q.u * Math.PI * hops)) * 0.8 * g.cellH * Q.s;
-        if (Q.u >= 1) { if (Q.aim !== null) { Q.state = 'sit'; Q.on = Q.aim; Q.wait = 0.6 + rnd() * 2.4; } else { Q.state = 'away'; Q.wait = 1 + rnd() * 3; } }
+        Q.x = Q.from[0] + (Q.to[0] - Q.from[0]) * Q.u; Q.y = Q.from[1] + (Q.to[1] - Q.from[1]) * Q.u - Math.abs(Math.sin(Q.u * Math.PI * hops)) * 0.7 * g.cellH * Q.s;
+        if (Q.u >= 1) { Q.state = 'sit'; Q.on = Q.aim; Q.wait = 0.6 + rnd() * 2.4; }
       } else {
         const q = find(Q.on);
-        Q.wait -= dt;
-        if (q) { [Q.x, Q.y] = foot(q, Q.side); Q.s = q.s; }
-        if (!q || Q.y < H * 0.08) go([Q.x < W / 2 ? -40 : W + 40, Q.y], null);
-        else if (Q.wait <= 0) {
-          const near = feet.filter((o) => o.id !== Q.on && Math.abs(o.x - q.x) > 3 * g.cellW && Math.abs(o.x - q.x) < 16 * g.cellW && Math.abs(o.y - q.y) < 7 * g.cellH);
-          if (near.length) { const o = pick(near); go(foot(o, Q.side), o); } else Q.wait = 0.6;
+        Q.born += dt; Q.wait -= dt;
+        if (!q || q.y < H * 0.08) { gone(); continue; }
+        [Q.x, Q.y] = foot(q, Q.side); Q.s = q.s;
+        if (Q.wait <= 0) {
+          // only to a tree on the same ridge: it does not jump the gap between two
+          const near = feet.filter((o) => o.lobe === Q.lobe && o.id !== Q.on && Math.abs(o.x - q.x) > 3 * g.cellW && Math.abs(o.x - q.x) < 16 * g.cellW && Math.abs(o.y - q.y) < 7 * g.cellH);
+          if (near.length) { const o = pick(near); Q.from = [Q.x, Q.y]; Q.aim = o.id; Q.u = 0; Q.dur = clamp(Math.abs(o.x - Q.x) / (26 * g.cellW), 0.22, 1.1); Q.state = 'hop'; } else Q.wait = 0.6;
         }
       }
     }
@@ -186,10 +188,10 @@ export class Life {
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);
     }
     for (const Q of this.squirrels) {
-      if (Q.state === 'away') continue;
-      const u = g.size * Q.s * 0.72;
+      if (Q.state === 'away' || sc.massif.hidden(Q.x, Q.y, Q.lobe)) continue;   // not there, or behind something nearer
+      const grow = Q.state === 'sit' ? Math.min(1, Q.born * 4) : 1, u = g.size * Q.s * 0.58 * (0.5 + 0.5 * grow);
       if (Q.state === 'hop') this.sprite(RUN, Q.x, Q.y, u, Q.dir);
-      else { const flick = Math.sin(t * 7 + Q.side) > 0.82 ? 0.14 : 0; this.sprite([[SIT[0][0], SIT[0][1], SIT[0][2] - flick, SIT[0][3] + flick, 'leaf'], ...SIT.slice(1)], Q.x, Q.y, u, Q.dir); }
+      else { const flick = Math.sin(t * 7 + Q.side) > 0.82 ? 0.14 : 0; this.sprite([[SIT[0][0], SIT[0][1], SIT[0][2] - flick, SIT[0][3] + flick, 'leaf'], ...SIT.slice(1)], Q.x, Q.y, u, Q.dir, grow); }
     }
   }
 }

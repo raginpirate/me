@@ -56,7 +56,8 @@ export class Ground {
     this.hutRows = [];
     hut.forEach((row, i) => { for (let j = 0; j < w; j++) { const ch = row[j]; if (ch !== ' ') this.hutRows.push([ch, ch === '[' || ch === ']' ? P.ember : timber, left + j, i - hut.length - 1]); } });
     for (let j = 1; j < w; j++) cells.delete(-2 * 1000 + left + j);
-    // where its window and its chimney are, in ground cells
+    // where the path comes to it (just left of its wall, on the ground), its window and its chimney, in ground cells
+    this.door = [left - 0.5, -2];
     this.window = [left + hut[4].indexOf('[') + 1, 4 - hut.length - 1 + 0.5];
     this.chimney = [left + hut[0].indexOf(',') + 0.5, -hut.length - 1];
   }

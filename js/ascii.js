@@ -65,7 +65,7 @@ export class AsciiScene extends HTMLElement {
     addEventListener('pointermove', this.onPointer, { passive: true });
     addEventListener('resize', this.onResize);
     this.onScroll();
-    this.scrollRows = Math.min(this.scrollTarget, this.last);   // a phone's bars can let the page go a little further: the scene stays put
+    this.scrollRows = this.scrollTarget;
     this.loop = this.loop.bind(this);
     this.started = true;
     requestAnimationFrame(this.loop);
@@ -122,9 +122,9 @@ export class AsciiScene extends HTMLElement {
     // massif's core fills in.
     // the furthest the scene scrolls, and the ground line: the row in the middle of the screen when it is there,
     // so the last screen is half above ground and half below
-    this.last = this.rows - S;
-    this.summitRow = L.summit * S; this.seamRow = Math.round(L.seam * S); this.groundRow = Math.round(this.last + S / 2);
-    this.blend = Math.max(3, Math.round(S * 0.07)); this.bodyTop = this.seamRow - this.blend;
+    this.end = this.rows - S;
+    this.summitRow = L.summit * S; this.seamRow = Math.round(L.seam * S); this.groundRow = Math.round(this.end + S / 2);
+    this.blend = 3; this.bodyTop = this.seamRow - this.blend;
     const w = this.world = buildWorld(this.cols, this.rows, S, D, P, this.seamRow + this.blend + 1);
     this.painted = (row, c) => row < this.bodyTop || hash(row, c, 5) > (row - this.bodyTop) / (2 * this.blend);
     const inside = (c, r) => c >= 0 && c < this.cols && w.peak[c] <= r;
@@ -228,15 +228,18 @@ export class AsciiScene extends HTMLElement {
     this.lights = this.stops.filter((s) => s.side);
 
     // the mountain below the peak, what is round it, what is under it, what lives on it
-    this.massif = new Massif(this);
-    this.massif.setLamps(this.lampCount);
-    this.air = new Air(this);
     const hut = this.stops.find((s) => s.mark === 'hut');
     this.ground = new Ground(this, hut.hx);
+    this.massif = new Massif(this);
+    this.massif.setLamps(this.lampCount);
+    // where the route runs through the seam, the painting gives way to it
+    const core = this.massif.lobes.find((l) => l.core);
+    for (const key of core.kept) { const row = Math.floor(key / core.W), c = Math.round(this.ax - core.cx - 0.5 + key % core.W); if (row >= this.bodyTop && row <= this.seamRow + this.blend && w.cells[row]?.[c]) w.cells[row][c] = null; }
+    this.air = new Air(this);
     // the last stop's waypoint is the hut's window, wherever the hut stands at the end of the page
-    this.centreRow = this.last + S / 2;
+    this.centreRow = this.end + S / 2;
     const [wx, wy] = this.ground.at(...this.ground.window);
-    hut.x = hut.hx = wx / g.cellW - 0.5; hut.y = hut.hy = wy / g.cellH - 0.5 + this.last;
+    hut.x = hut.hx = wx / g.cellW - 0.5; hut.y = hut.hy = wy / g.cellH - 0.5 + this.end;
     this.life = new Life(this);
 
     this.movers = [];
@@ -318,7 +321,7 @@ export class AsciiScene extends HTMLElement {
 
     // scroll: the painting moves exactly with the page; velocity drives the shove
     const prev = this.scrollRows;
-    this.scrollRows = Math.min(this.scrollTarget, this.last);   // a phone's bars can let the page go a little further: the scene stays put
+    this.scrollRows = Math.min(this.scrollTarget, this.end);   // a phone's bars can let the page go a little further: the scene stays put
     const rawVel = (this.scrollRows - prev) / dt;
     this.scrollVel += (rawVel - this.scrollVel) * Math.min(1, dt * 12);
     this.t = this.maxScroll > 0 ? clamp(this.scrollRows / this.maxScroll, 0, 1) : 0;
@@ -565,7 +568,7 @@ export class AsciiScene extends HTMLElement {
       const py = (row - top) * g.cellH, cy = py + g.cellH / 2;
       if (Math.abs(cy - y) > r0 * 2.2) continue;
       const w = Math.exp(-(((cy - y) / sig) ** 2)); lit.sum += (c + 0.5) * g.cellW * w; lit.weight += w;
-      lit.near.push([c * g.cellW, py, ch, g.size, 1]);
+      lit.near.push([c * g.cellW, py, ch, g.size, 1, false]);
     }
     if (lit.weight > 1e-3) this.lampX = lit.sum / lit.weight;
     const x = this.lampX ?? g.w / 2;
@@ -576,11 +579,11 @@ export class AsciiScene extends HTMLElement {
       grad.addColorStop(0, this.sky + '00'); grad.addColorStop(0.5, this.sky + hex(dark * 0.62)); grad.addColorStop(1, this.sky + hex(dark));
       g.box(0, 0, g.w, H, grad);
     }
-    for (const [px, py, ch, size, vis] of lit.near) {
-      const d = Math.hypot(px + size * 0.3 - x, py + size * 0.6 - y), f = (1 - smooth(r0 * 0.55, r0 * 2.1, d)) * vis;
+    for (const [px, py, ch, size, vis, mid] of lit.near) {
+      const d = mid ? Math.hypot(px - x, py - y) : Math.hypot(px + size * 0.3 - x, py + size * 0.6 - y), f = (1 - smooth(r0 * 0.55, r0 * 2.1, d)) * vis;
       if (f < 0.02) continue;
-      g.set(ch, P.ember, px, py, size, f);
-      g.set(ch, P.emberHot, px, py, size, f * f * 0.7);
+      if (mid) { g.ink(ch, P.ember, px, py, size, f); g.ink(ch, P.emberHot, px, py, size, f * f * 0.7); }
+      else { g.set(ch, P.ember, px, py, size, f); g.set(ch, P.emberHot, px, py, size, f * f * 0.7); }
     }
   }
 

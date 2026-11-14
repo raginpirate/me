@@ -75,7 +75,12 @@ export class Massif {
       defs.push({ ridge: true, th: face(apex) + off, off, d: out(at) * (1.05 + rnd() * 0.2), apex, half: ridge, rag: 5, seed: 400 + i * 17 });
     }
     // lower ones stand in front of higher ones, always
-    defs.sort((a, b) => a.apex - b.apex);
+    // Which stands in front of which never changes. Spires stand behind the
+    // core, so the rope down it is never hidden. A ridge off the route stands
+    // behind the route's ridges near its own height, so the path is never
+    // hidden either. Otherwise lower stands in front of higher.
+    const rank = (d) => d.core ? -1 : !d.ridge ? d.apex - 1e6 : d.route ? d.apex : d.apex - 0.45 * S;
+    defs.sort((a, b) => rank(a) - rank(b));
     this.lobes = defs.map((d) => this.shape(d));
 
     // the route: over each of its cut-outs from where it arrives to where it steps onto the next
@@ -83,12 +88,17 @@ export class Massif {
     route.forEach((l, i) => { l.arrive = l.core ? [l.cx + 1, sc.bodyTop] : this.onCrest(l, l.cx - Math.round((3 + rnd() * 3) * kx)); });
     route.forEach((l, i) => {
       const next = route[i + 1];
-      if (!next) { l.depart = null; return; }
+      if (!next) {
+        // the last ridge: the path runs down it to the hut, where the hut stands at the end of the page
+        const end = this.pose(l, sc.yawAt(99)), G = sc.groundRow;
+        l.depart = [this.inside(l, Math.round(l.cx + (sc.ground.door[0] * sc.ground.k - end.X) / end.s), G - 1), G - 1];
+        return;
+      }
       // where the next one's arrival shows on this one, half way between each facing you
       const yaw = (l.core ? next.th - 0.2 : (l.th + next.th) / 2), mid = ((l.core ? next.apex : (l.apex + next.apex) / 2)) + lead * S;
       const a = this.pose(l, yaw), b = this.pose(next, yaw);
       const x = b.X + (next.arrive[0] - next.cx) * b.s, y = (next.arrive[1] - mid) * b.s;
-      const r = Math.max(l.arrive[1] + 3, Math.round(mid + y / a.s) - 1);
+      const r = Math.max(l.arrive[1] + 3, Math.round(mid + y / a.s) - 3);
       // it leaves a little way back from there, so there is always a gap for the bridge to cross
       const gap = Math.min(9, Math.round((4 + rnd() * 2) * kx));
       l.depart = [this.inside(l, Math.round(l.cx + (x - a.X) / a.s) - gap, r), r];
@@ -146,6 +156,8 @@ export class Massif {
       }
     }
     for (const [c, r] of path) for (let dr = -1; dr <= 1; dr++) for (let dc = -2; dc <= 2; dc++) kept.add((r + dr) * W + c + dc);
+    // a clearing where the bridge lands: no trees on the crest there, so the bridge and the path coming to it are not behind them
+    if (!l.core) for (let dr = -7; dr <= 1; dr++) for (let dc = -13; dc <= 3; dc++) kept.add((l.arrive[1] + dr) * W + l.arrive[0] + dc);
   }
 
   // paint one cut-out: snow, rock or trees, and the route's marks. Done the first time it is needed.
@@ -176,6 +188,10 @@ export class Massif {
     // --- the body, row by row. Light comes from the left: the face to the
     // left of an arête is lit, the face to its right is in shadow, and where
     // a shadowed face meets the next lit one there is a fold. ---
+    // the ground itself is a soft wash, one pixel to a cell, brightest just under the crest and gone a few rows below it:
+    // it is what makes a ridge a shape and not only the trees on it
+    const img = new ImageData(W, rowsN), px = img.data, rgb = (h) => [1, 3, 5].map((n) => parseInt(h.slice(n, n + 2), 16)), tones = [rgb(P.pineDark), rgb(P.rockDark)];
+    const moss = mixHex(P.pine, P.leafOlive, 0.45), GRASS = [',', '.', "'", '"', ',', '`'];
     const snowAbs = (c) => (Y.seam + 0.34) * S + (n.fbm(c * 0.09 + l.seed, 2.2, 3) - 0.5) * 16;   // above this row everything is white
     const deep = Math.round(S * 1.25);
     for (let r = Math.ceil(Math.min(...peak)); r < G + 14; r++) {
@@ -188,7 +204,20 @@ export class Massif {
         for (let x = c; x <= e; x++) {
           mask[i][x] = 1;
           const depth = r - peak[x];
-          if (depth > deep || r >= G || wood > 0.6 || kept.has(r * W + x)) continue;
+          if (r >= G) continue;
+          // the ground itself: a wash that is strongest at the crest and gone a few rows under it
+          if (depth < 26 && !(l.core && r <= sc.seamRow + sc.blend + 2)) {
+            const p4 = (i * W + x) * 4, k = wood > 0.5 ? 0 : 1;
+            px[p4] = tones[k][0]; px[p4 + 1] = tones[k][1]; px[p4 + 2] = tones[k][2];
+            px[p4 + 3] = 255 * (k ? 0.2 : 0.32) * Math.exp(-depth / 6.5) * Math.min(1, depth + 0.3);
+          }
+          if (depth > deep || kept.has(r * W + x)) continue;
+          if (wood > 0.6) {
+            // under the trees: the crest as a line, and ground cover thinning out below it
+            if (depth < 1) cells[i][x] = [edge(peak[x] - Math.floor(peak[x]), slope[x]), slope[x] < 0.05 ? moss : P.pine, 0.95];
+            else if (depth < 11 && rnd() < 0.3 * (1 - depth / 11)) cells[i][x] = [GRASS[Math.floor(rnd() * GRASS.length)], slope[x] < 0.05 ? P.pine : P.pineDark, 0.85 - depth * 0.05];
+            continue;
+          }
           let k = 0; while (k < cross.length && cross[k] < x) k++;       // which face: count the arêtes to the left
           const isArete = cross[k] === x, left = k > 0 ? cross[k - 1] : c, right = k < cross.length ? cross[k] : e;
           const lit = cross.length ? (k === 0 ? 1 : x < (left + right) / 2 ? 0 : k < cross.length ? 1 : 0) : (slope[x] < 0 ? 1 : 0);
@@ -230,22 +259,24 @@ export class Massif {
           const ch = row[j]; if (ch === ' ') continue;
           const foot = i === h - 1 && (ch === '|' || leafy), right = j > (w - 1) / 2 + 0.6;
           cells[k][x0 + j] = leafy ? [ch, foot ? P.ground : olive ? P.leafOlive : P.leaf, !foot && (dark || right) ? 0.6 : 1]
-            : [ch, snowy && i === 0 ? P.snow : foot || dark || right ? P.pineDark : P.pine, 1];
+            : [ch, !foot && (i < snowy || (i === snowy && snowy > 1 && j === f)) ? P.snow : foot || dark || right ? P.pineDark : P.pine, 1];
         }
       }
       trees.push({ c, row: r, h, leafy, id: index * 10000 + trees.length });
     };
     const pick = (at, d) => {
-      const low = smooth(Y.forest + 0.3, Y.forest + 2.0, at), leafy = rnd() < low * 0.16, small = !leafy && rnd() > d * 0.85 + 0.08;
+      const low = smooth(Y.forest + 0.3, Y.forest + 2.0, at), leafy = rnd() < low * 0.22, small = !leafy && rnd() > d * 0.85 + 0.08;
       return [leafy ? T.leafy[Math.floor(rnd() * T.leafy.length)] : small ? T.sapling : T.pines[Math.floor(rnd() * T.pines.length)], leafy];
     };
+    // how much snow a tree carries: laden near the treeline, dusted lower, bare in the forest proper
+    const snowOn = (at) => at < Y.forest - 0.15 ? 2 : at < Y.forest + 0.3 ? (rnd() < 0.75 ? 2 : 1) : at < Y.forest + 0.95 ? (rnd() < 0.6 ? 1 : 0) : 0;
     const density = (at) => smooth(Y.treeline - 0.1, Y.forest + 0.2, at);
     for (let c = 2 + Math.floor(rnd() * 3); c < W - 3; c += 3 + Math.floor(rnd() * 3)) {
       if (!Number.isFinite(peak[c])) continue;
       const r = Math.round(peak[c]), at = r / S, d = density(at);
       if (r >= G - 1 || rnd() > d * 1.1 || (l.core && r <= sc.bodyTop + 2)) continue;
       const [shape, leafy] = pick(at, d);
-      stamp(c, r, shape, leafy, slope[c] > 0.05, !leafy && at < Y.forest + 0.3 && rnd() < 0.6);
+      stamp(c, r, shape, leafy, slope[c] > 0.05, leafy ? 0 : Math.min(snowOn(at), shape.length - 1));
     }
     for (let r = Math.round(Y.treeline * S); r < G; r += 3) {
       const at = r / S, d = density(at);
@@ -254,7 +285,7 @@ export class Massif {
         const depth = r - peak[c];
         if (depth < 4 || depth > deep || rnd() > d * 0.92 * (1 - 0.72 * smooth(10, 44, depth))) continue;
         const [shape, leafy] = pick(at, d);
-        stamp(c, r, shape, leafy, slope[c] > 0.05, !leafy && at < Y.forest + 0.2 && rnd() < 0.5);
+        stamp(c, r, shape, leafy, slope[c] > 0.05, leafy ? 0 : Math.min(snowOn(at), shape.length - 1));
       }
     }
 
@@ -275,6 +306,8 @@ export class Massif {
     for (let i = 0; i < rowsN; i++) for (let c = 0; c < W; c++) if (mask[i][c]) { if (c > 0) wide[i][c - 1] = 1; if (c + 1 < W) wide[i][c + 1] = 1; if (i > 0) wide[i - 1][c] = 1; }
 
     // what each row covers, as runs, for hiding whatever is behind
+    l.wash = document.createElement('canvas'); l.wash.width = W; l.wash.height = rowsN;
+    l.wash.getContext('2d').putImageData(img, 0, 0);
     l.runs = wide.map((m) => { const out = []; let a = -1; for (let c = 0; c <= W; c++) { const on = c < W && m[c]; if (on && a < 0) a = c; else if (!on && a >= 0) { out.push([a, c]); a = -1; } } return out; });
   }
 
@@ -287,7 +320,7 @@ export class Massif {
   at(l, c, r) { const g = this.sc.grid; return [(l.X + (c - l.cx - 0.5) * l.s) * g.cellW, g.h / 2 + (r - this.centreRow) * g.cellH * l.s]; }
 
   render() {
-    const sc = this.sc, g = sc.grid, cw = g.cellW, ch = g.cellH, H = g.h, sky = sc.sky;
+    const sc = this.sc, g = sc.grid, P = sc.P, cw = g.cellW, ch = g.cellH, H = g.h, sky = sc.sky;
     for (const l of this.lobes) {
       if (l.vis < 0.02) continue;
       const top = H / 2 + (l.apex - 8 - this.centreRow) * ch * l.s;
@@ -301,34 +334,50 @@ export class Massif {
       for (let row = r0; row <= r1; row++) {
         const i = row - l.base, y = y0 + row * chs;
         for (const [a, b] of l.runs[i]) if (b >= c0 && a <= c1) g.box(x0 + a * cws - 0.5, y - 0.5, (b - a) * cws + 1, chs + 1, sky, l.vis);
-        const cells = l.cells[i];
+      }
+      // the ground's wash, stretched to size: smoothing makes it a soft edge, not blocks
+      g.ctx.globalAlpha = g.alpha = l.vis * l.tone;
+      g.ctx.drawImage(l.wash, 0, r0 - l.base, l.W, r1 - r0 + 1, x0, y0 + r0 * chs, l.W * cws, (r1 - r0 + 1) * chs);
+      for (let row = r0; row <= r1; row++) {
+        const i = row - l.base, y = y0 + row * chs, cells = l.cells[i];
         for (let c = c0; c <= c1; c++) {
           const cell = cells[c];
-          if (cell && !(row <= seam && sc.painted(row, Math.round(shift + c)))) g.set(cell[0], cell[1], x0 + c * cws, y, size, cell[2] * l.vis * l.tone);
+          if (cell && !(row <= seam && !l.kept.has(row * l.W + c) && sc.painted(row, Math.round(shift + c)))) g.set(cell[0], cell[1], x0 + c * cws, y, size, cell[2] * l.vis * l.tone);
         }
       }
     }
     // the route crosses from one cut-out to the next on a rope bridge: a
     // sagging deck of planks, a hand rope over it, a post at either end
-    const P = sc.P, wood = mixHex(P.ground, P.leaf, 0.5);
+    const wood = mixHex(P.ground, P.leaf, 0.5);
     for (let i = 0; i + 1 < this.route.length; i++) {
-      const a = this.route[i], b = this.route[i + 1], vis = Math.min(a.vis, b.vis);
-      if (vis < 0.1 || !a.depart) continue;
-      const [x0, y0] = this.at(a, a.depart[0] + 0.5, a.depart[1] + 0.5), [x1, y1] = this.at(b, b.arrive[0] + 0.5, b.arrive[1] + 0.5);
-      if (Math.max(y0, y1) < -40 || Math.min(y0, y1) > H + 40) continue;
-      const u = g.size * (a.s + b.s) / 2, dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
-      if (len < u * 1.3) continue;
-      const n = Math.max(2, Math.round(len / (u * 0.6))), sag = Math.min(len * 0.16, u * 1.3);
-      const on = (t) => [x0 + dx * t, y0 + dy * t + sag * 4 * t * (1 - t)];
-      for (let k = 0; k <= n; k++) { const [x, y] = on(k / n); g.box(x - u * 0.45, y - u * 1.35, u * 0.9, u * 1.9, sky, vis); }   // it hides what is behind it
-      for (let k = 0; k <= n; k++) {
-        const [x, y] = on(k / n);
+      const B = this.bridge(i); if (!B) continue;
+      const { pts, u, vis } = B;
+      for (const [x, y] of pts) g.box(x - u * 0.45, y - u * 1.35, u * 0.9, u * 1.9, sky, vis);   // it hides what is behind it
+      pts.forEach(([x, y], k) => {
         g.ink('=', wood, x, y, u * 0.95, vis);
         g.ink('·', P.muted, x, y - u * 0.95, u, 0.9 * vis);
         if (k % 3 === 1) g.ink(':', P.muted, x, y - u * 0.48, u * 0.7, 0.6 * vis);
-      }
-      for (const [x, y] of [[x0, y0], [x1, y1]]) g.ink('|', wood, x, y - u * 0.5, u * 1.35, vis);
+      });
+      if (B.posts) for (const [x, y] of [pts[0], pts[pts.length - 1]]) g.ink('|', wood, x, y - u * 0.5, u * 1.35, vis);
     }
+  }
+
+  // the bridge from the route's i-th cut-out to the next: its planks, in pixels, or null if it is not to be seen
+  bridge(i) {
+    const g = this.sc.grid, a = this.route[i], b = this.route[i + 1];
+    if (!b || !a.depart || Math.min(a.vis, b.vis) < 0.1) return null;
+    // it starts where the path on this side last shows: if the far end of the path has slipped behind the next ridge, the bridge reaches back to it
+    let k = a.path.length - 1, x0, y0;
+    for (; k >= 0; k--) { [x0, y0] = this.at(a, a.path[k][0] + 0.5, a.path[k][1] + 0.5); if (k === 0 || !this.hidden(x0, y0, a.index)) break; }
+    const [x1, y1] = this.at(b, b.arrive[0] + 0.5, b.arrive[1] + 0.5);
+    if (Math.max(y0, y1) < -40 || Math.min(y0, y1) > g.h + 40) return null;
+    const u = g.size * (a.s + b.s) / 2, dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+    // while the next ridge is still far round the mountain there is no bridge to it yet
+    const vis = Math.min(a.vis, b.vis) * (1 - smooth(8 * u, 11 * u, len));
+    if (vis < 0.05) return null;
+    const n = Math.max(1, Math.round(len / (u * 0.6))), sag = Math.min(len * 0.16, u * 1.3), pts = [];
+    for (let k = 0; k <= n; k++) { const t = k / n; pts.push([x0 + dx * t, y0 + dy * t + sag * 4 * t * (1 - t)]); }
+    return { pts, u, vis, posts: len > u * 1.3 };
   }
 
   // is a pixel hidden by a cut-out standing in front of the one at `index`
@@ -344,7 +393,7 @@ export class Massif {
 
   // Where you are on the route: its place across the screen at height y
   // (pixels), and its marks within `reach` of there, each as [left, top,
-  // glyph, size, strength], for the scene to light.
+  // glyph, size, strength, whether it is placed by its middle], for the scene to light.
   light(y, reach) {
     const g = this.sc.grid, near = [], sig = g.cellH * 2;
     let sum = 0, weight = 0;
@@ -357,7 +406,15 @@ export class Massif {
         const cx = px + g.cellW * l.s / 2;
         if (this.hidden(cx, cy, l.index)) continue;
         const w = Math.exp(-(((cy - y) / sig) ** 2)) * l.vis; sum += cx * w; weight += w;
-        near.push([px, py, ch, g.size * l.s, l.vis]);
+        near.push([px, py, ch, g.size * l.s, l.vis, false]);
+      }
+    }
+    for (let i = 0; i + 1 < this.route.length; i++) {
+      const B = this.bridge(i); if (!B) continue;
+      for (const [x, cy] of B.pts) {
+        if (Math.abs(cy - y) > reach) continue;
+        const w = Math.exp(-(((cy - y) / sig) ** 2)) * B.vis; sum += x * w; weight += w;
+        near.push([x, cy, '=', B.u * 0.95, B.vis, true]);   // a plank: placed by its middle
       }
     }
     return { sum, weight, near };
@@ -372,7 +429,7 @@ export class Massif {
         const [x, y] = this.at(l, t.c + 0.5, t.row + 1);
         if (y < 0 || y > g.h + 30 || x < 10 || x > g.w - 10) continue;
         const covered = this.hidden(x, y - g.cellH * l.s * 0.5, n);
-        if (!covered) out.push({ id: t.id, x, y, top: y - t.h * g.cellH * l.s, s: l.s, leafy: t.leafy });
+        if (!covered) out.push({ id: t.id, x, y, top: y - t.h * g.cellH * l.s, s: l.s, leafy: t.leafy, lobe: n });
       }
     });
     return out;
