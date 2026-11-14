@@ -28,16 +28,18 @@ export class Air {
 
     // The cloud deck: three depths of long, flat-bottomed cloud. A nearer
     // layer is set larger and passes faster than the page, a further one
-    // smaller and slower: k is both.
+    // smaller and slower: k is both. veil: how much a cloud hides what is
+    // behind it. Those in front of the mountain are thin, so the mountain
+    // goes on through the deck and is not cut off by it.
     this.deckRow = Math.round((L.deck[0] + L.deck[1]) / 2 * S);
     this.span = cols + 80;
     const wide = cols > 100 ? 1.5 : 1;
     const mk = (count, spread, w, h, off = 0) => Array.from({ length: count }, () => ({ x: rnd() * this.span, y: Math.round(off * S + (rnd() + rnd() + rnd() - 1.5) / 1.5 * spread * S), w: mix(w, rnd()) * wide, h: mix(h, rnd()), s: rnd() * 100 }));
-    const per = Math.max(5, Math.round(cols / 9));
+    const per = Math.max(5, Math.round(cols / 9 / (cols > 100 ? 1.35 : 1)));
     this.layers = [
-      { k: 0.74, drift: 0.3, line: P.rockDark, body: P.far, la: 1, ba: 0.85, front: false, items: [...mk(per, 0.22, [9, 22], [2.4, 5]), ...mk(Math.ceil(per / 2), 0.08, [4, 9], [1.2, 2.2], -0.5)] },
-      { k: 1, drift: -0.55, line: P.dim, body: P.rockDark, la: 0.95, ba: 0.9, front: true, items: [...mk(per, 0.17, [9, 22], [2.8, 6]), ...mk(Math.ceil(per / 2), 0.07, [5, 10], [1.3, 2.4], 0.42)] },
-      { k: 1.36, drift: 1.0, line: P.rule, body: P.dim, la: 0.8, ba: 0.55, front: true, items: mk(Math.ceil(per * 0.7), 0.16, [9, 20], [3, 6]) },
+      { k: 0.74, drift: 0.3, line: P.rockDark, body: P.far, la: 1, ba: 0.85, veil: 1, front: false, items: [...mk(per, 0.22, [9, 22], [2.4, 5]), ...mk(Math.ceil(per / 2), 0.08, [4, 9], [1.2, 2.2], -0.5)] },
+      { k: 1, drift: -0.55, line: P.dim, body: P.rockDark, la: 0.95, ba: 0.9, veil: 0.7, front: true, items: [...mk(per, 0.17, [9, 22], [2.8, 6]), ...mk(Math.ceil(per / 2), 0.07, [5, 10], [1.3, 2.4], 0.42)] },
+      { k: 1.36, drift: 1.0, line: P.rule, body: P.dim, la: 0.8, ba: 0.55, veil: 0.5, front: true, items: mk(Math.ceil(per * 0.7), 0.16, [9, 20], [3, 6]) },
     ];
     // one cloud that never leaves: it sits on the seam between the painted peak and the cut-outs
     // (long and low, its top nearly level: flat is how much of its height is the same all along)
@@ -71,6 +73,18 @@ export class Air {
     }
   }
 
+  // Mist through the deck, over the mountain: it goes into the clouds and
+  // comes out of them, it is not cut off by them. Thickest through the
+  // middle of the deck, nothing at its top and bottom.
+  drawMist() {
+    const sc = this.sc, g = sc.grid, [a, b] = D.layout.deck, S = sc.screenRows;
+    const y0 = g.h / 2 + ((a - 0.12) * S - sc.centreRow) * g.cellH, y1 = g.h / 2 + ((b + 0.2) * S - sc.centreRow) * g.cellH;
+    if (y1 < 0 || y0 > g.h) return;
+    const grad = g.ctx.createLinearGradient(0, y0, 0, y1), hex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
+    for (const [t, v] of [[0, 0], [0.3, 0.42], [0.5, 0.5], [0.72, 0.36], [1, 0]]) grad.addColorStop(t, sc.sky + hex(v));
+    g.box(0, Math.max(0, y0), g.w, Math.min(g.h, y1) - Math.max(0, y0), grad);
+  }
+
   drawClouds(front) {
     const sc = this.sc, g = sc.grid, n = sc.noise, H = g.h, drift = sc.reduced.matches ? 0 : sc.time;
     for (const L of this.layers) {
@@ -90,7 +104,8 @@ export class Air {
           const e2 = 1 - (u / it.w) ** 2; if (e2 <= 0) continue;
           const t = topAt(u), b = it.h * 0.3 * Math.sqrt(e2) * (0.5 + 0.5 * n.noise(it.s + u * 0.13, 9.2)) + 0.4;
           const rt = Math.floor(t), rb = Math.floor(b), x = (x0 + u) * cw;
-          g.box(x - 0.4, y0 + rt * ch - 0.5, cw + 0.8, (rb - rt + 1) * ch + 1, sc.sky);   // a cloud hides what is behind it
+          g.box(x - 0.4, y0 + rt * ch - 0.5, cw + 0.8, ch + 0.5, sc.sky, L.veil * 0.5);   // a cloud veils what is behind it, thinly at its top
+          g.box(x - 0.4, y0 + (rt + 1) * ch - 0.5, cw + 0.8, (rb - rt) * ch + 1, sc.sky, L.veil);
           g.set(edge(t - rt, (topAt(u + 1) - topAt(u - 1)) / 2), L.line, x, y0 + rt * ch, size, L.la * (0.8 + 0.2 * (-u / it.w)));
           // the body: thick in the middle, wispy at the ends, a flat dark base
           for (let r = rt + 1; r <= rb; r++) {

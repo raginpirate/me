@@ -540,8 +540,9 @@ export class AsciiScene extends HTMLElement {
       if (!reduced) this.life.front();
     }
     this.lamp(top);
+    if (below && !reduced) this.life.leaves(...this.lampAt);
     this.drawRoute(top, time, reduced);
-    if (below) this.air.drawClouds(true);
+    if (below) { this.air.drawMist(); this.air.drawClouds(true); }
 
     // the tethers. Their stars come in one by one as the card opens, each
     // at its own moment, and leave the same way. While they are there they
@@ -572,6 +573,7 @@ export class AsciiScene extends HTMLElement {
     }
     if (lit.weight > 1e-3) this.lampX = lit.sum / lit.weight;
     const x = this.lampX ?? g.w / 2;
+    this.lampAt = [x, y, r0, r1];
     // the dark comes on below the summit: up there the sky is the light
     const dark = K.dark * smooth(L.summit + 0.1, L.seam + 0.45, this.centre);
     if (dark > 0.01) {
