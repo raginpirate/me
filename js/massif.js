@@ -388,8 +388,8 @@ export class Massif {
         if (cell && !(body && row <= seam && !sh.kept.has(row * W + c) && sc.painted(row, sh.x0 + c))) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2] ?? 1);
       }
     }
-    // each tree hides what is behind it, and no more than that: those further up the face are drawn first
-    drawTrees((t, row, x, y, cwk, chk) => { g.box(x + row.f * cwk, y, (row.e - row.f + 1) * cwk, chk, sh.fill); for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a); });
+    // trees further up the face first; a glyph has no background, so a tree covers only the marks it stands over (taken out when painted)
+    drawTrees((t, row, x, y, cwk, chk) => { for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a); });
   }
 
   // Once you have crossed onto a wooded sheet, all that is behind it is a little further off in the dark: a veil
@@ -424,7 +424,6 @@ export class Massif {
     for (const b of this.bridges) {
       const B = this.span(b); if (!B) continue;
       const { pts, u } = B;
-      for (const [x, y] of pts) g.box(x - u * 0.4, y - u * 0.32, u * 0.8, u * 0.64, sc.sky);   // its deck hides what is behind it
       pts.forEach(([x, y], k) => {
         g.ink('=', wood, x, y, u * 0.95);
         g.ink('·', P.muted, x, y - u * 0.95, u, 0.85);
@@ -460,7 +459,7 @@ export class Massif {
   // takes; and whether it can be seen, with nothing nearer over it.
   stand(sh, t) {
     const g = this.sc.grid, [x, y] = this.at(sh, t.c + 0.5, t.row + 1);
-    return { id: t.id, x, y, top: y - t.h * g.cellH * t.font / g.size, bole: y - t.stem * g.cellH * t.font / g.size, near: sh.z, size: t.font / g.size, kind: t.kind, sheet: sh.index, row: t.row, seen: !this.hidden(x, y - sh.ch * 0.5, sh.index) };
+    return { id: t.id, x, y, top: y - t.h * g.cellH * t.font / g.size, bole: y - t.stem * g.cellH * t.font / g.size, near: sh.z, size: t.font / g.size, kind: t.kind, sheet: sh.index, row: t.row, seen: !this.hidden(x, y - t.h * g.cellH * t.font / g.size * 0.85, sh.index) };   // its crown can be seen, whatever is in front of its foot
   }
   tree(id) { const sh = this.sheets[Math.floor(id / 10000)], t = sh?.trees?.[id % 10000]; return t ? this.stand(sh, t) : null; }
   // trees something could sit on: those on the screen or about to be, that can be seen

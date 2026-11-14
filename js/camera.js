@@ -24,22 +24,23 @@ const T = 256;   // a tile's side, in device pixels
 
 export class Camera {
   constructor(sc) {
-    const g = this.g = sc.grid, C = D.camera, S = sc.screenRows;
+    const g = this.g = sc.grid, C = D.camera, S = this.S = sc.screenRows;
     this.mid = g.w / g.cellW / 2;                       // columns to the middle of the screen
     this.from = C.from * S; this.run = sc.end + S / 2 - this.from;   // from the cloud line to the last row it ever looks at
-    // the slant on the last row, in columns a row. It is asked for in screen widths a screen, so a wide screen slides further.
+    // the slant it holds, in columns a row. It is asked for in screen widths a screen, so a wide screen slides further.
     this.slant = sc.reduced.matches ? 0 : clamp(C.slant * g.w / g.h, ...C.within) * g.cellH / g.cellW;
     this.panes = []; this.all = []; this.kept = 0; this.frame = 0;   // the mountain's panes, furthest first; every pane; pixels of tile held; frames drawn
     const screen = g.canvas.width * g.canvas.height;
     this.room = Math.min(5 * screen, 2.6 * screen + 6e6);   // pixels of tile to hold: a few screens of them, fewer of a very large one
     this.look(0);
   }
-  // How far it has slid when it is at row y. The slant is `early` of its
-  // full self once `ease` of the way down, and grows on evenly from there:
-  // this is the sum of it.
+  // How far it has slid when it is at row y. The slant comes in over the
+  // first `ramp` screens below the cloud line, to the first bridge, and is
+  // held from there: it grows only by `rise` of itself by the last row.
+  // This is the sum of it.
   slide(y) {
-    const { ease, early } = D.camera, s = clamp((y - this.from) / this.run, 0, 1), u = Math.min(s / ease, 1);
-    return this.slant * this.run * (early * (ease * (u ** 3 - u ** 4 / 2) + Math.max(0, s - ease)) + (1 - early) * s * s / 2);
+    const { ramp, rise } = D.camera, r = ramp * this.S, d = Math.max(0, y - this.from), t = Math.min(d / r, 1), on = Math.max(0, d - r), rest = this.run - r;
+    return this.slant * (r * (t ** 3 - t ** 4 / 2) + on + rise * on * on / (2 * rest));
   }
   look(y) { this.y = y; this.x = this.slide(y); }
 

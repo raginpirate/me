@@ -52,7 +52,7 @@ export class Life {
     });
     this.flock = null; this.nextFlock = 2.5;
     this.owl = { state: 'none', on: null, met: false, x: 0, y: 0, s: 1, wait: 0, gone: 0 };
-    this.squirrel = { state: 'away', wait: 3 + rnd() * 3, side: 1, x: 0, y: 0, s: 1, dir: 1 };
+    this.squirrel = { state: 'away', wait: 2 + rnd() * 2, side: 1, x: 0, y: 0, s: 1, dir: 1 };
   }
 
   // how thick the snow is at a height
@@ -117,7 +117,8 @@ export class Life {
     // off to a tree: from where it is, or if that is off the screen, from the edge of the screen on that side
     const fly = (o) => {
       O.from = [clamp(O.x, -40, W + 40), clamp(O.y, -40, H + 40)]; O.s0 = O.s; O.aim = o.id; O.u = 0;
-      O.dur = clamp(Math.hypot(o.x - O.from[0], o.top - O.from[1]) / (18 * g.cellW), 0.7, 2.2); O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly';
+      O.dur = clamp(Math.hypot(o.x - O.from[0], o.top - O.from[1]) / (9 * g.cellW), 1.4, 3.4);   // unhurried: it keeps pace with you
+      O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly';
     };
     if (O.state === 'none') {
       // it has always been there: it is given its first tree before that tree comes into view
@@ -129,9 +130,9 @@ export class Life {
       // Has its tree gone from you, or is it about to? Off the top or the bottom of the screen (sooner on the side
       // the page is carrying it to), out of sight behind something, or off to a side. But not when you are on your
       // way to it: then it waits for you where it is.
-      const above = q.top < H * (going > 0 ? 0.16 : 0.05), below = q.top > H * (going < 0 ? 0.8 : 0.93);
+      const above = O.y < H * (going > 0 ? 0.16 : 0.06), below = O.y > H * (going < 0 ? 0.8 : 0.93);   // where it sits, not where its tree is
       const lost = (above && going >= 0) || (below && going <= 0) || (!above && !below && (!q.seen || q.x < 10 || q.x > W - 10));
-      if (!lost && !above && !below) O.met = true;   // until you have come to it once, it waits where it is
+      if (!above && !below && q.x > 0 && q.x < W) O.met = true;   // until you have come to it once, it waits where it is
       O.gone = lost ? O.gone + dt : 0; O.wait = above || below ? Math.max(O.wait, 4) : O.wait - dt;   // when you come back to it, it sits a while
       const others = roosts.filter((o) => o.id !== O.on), to = lost && O.met && O.gone > (going ? 0.15 : 1.2) ? ahead(O.on) : [];
       if (to.length) fly(middle(to));   // it has to follow you
@@ -160,7 +161,7 @@ export class Life {
     const feet = trees.filter((q) => q.y > H * 0.2 && q.y < H * 0.95 && q.x > 20 && q.x < W - 20);
     const foot = (q, side) => [q.x + side * 1.3 * g.size * q.size, q.y - 0.5 * g.size * q.size];
     const trunk = (q, side, u) => [q.x + side * 0.45 * g.size * q.size, q.y - 0.5 * g.size * q.size - u * Math.max(q.y - q.bole, 0.5 * (q.y - q.top))];   // u: how far up, to where the leaves take it
-    const gone = () => { Q.state = 'away'; Q.wait = 10 + rnd() * 12; };
+    const gone = () => { Q.state = 'away'; Q.wait = 5 + rnd() * 6; };
     if (Q.state === 'away') {
       Q.wait -= dt;
       if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) {
@@ -249,7 +250,7 @@ export class Life {
     this.snow(1); this.snow(2);
     const O = this.owl;
     if (O.state !== 'none' && O.y > -60 && O.y < H + 60) {
-      const u = g.size * O.s * 0.45, blink = (t * 0.31 + 0.2) % 1 > 0.96;
+      const u = g.size * O.s * 0.65, blink = (t * 0.31 + 0.2) % 1 > 0.96;
       if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
       this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);

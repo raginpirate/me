@@ -605,7 +605,6 @@ export class AsciiScene extends HTMLElement {
       const [x, y] = this.massif.at(m.sh, m.c + 0.5, m.r + 0.5);
       if (y < -10 || y > H + 10 || this.massif.hidden(x, y, m.sh.index)) continue;
       const u = m.sh.font, pulse = reduced ? 1 : twinkle(time, m.phase, ...D.twinkle.lamp);
-      g.box(x - u * 0.9, y - u * 0.7, u * 1.8, u * 1.4, this.sky);
       g.ink('o', P.ember, x, y, u, pulse);
     }
     // waypoints

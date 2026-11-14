@@ -30,10 +30,10 @@ export const D = {
     ground: 10,            // about where the ground is; the scene puts the line exactly half a screen from its end
   },
   // The camera's sideways slide. from: screens down the page where it begins (the cloud line in the middle of the screen).
-  // slant: how far it slides for a screen of scroll at the very end, in screen widths, and the tangents that is
-  // kept within (so on a phone it is not nothing and on a wide screen not a rush). ease, early: by `ease` of the way down
-  // the slant is `early` of that; from there it grows on evenly to the last row of the page. It never lessens.
-  camera: { from: 4.55, slant: 0.3, within: [0.16, 0.5], ease: 0.3, early: 0.55 },
+  // slant: how far it slides for a screen of scroll, in screen widths, and the tangents that is kept within (so on a
+  // phone it is not nothing and on a wide screen not a rush). ramp: screens it takes to come in, to the first bridge.
+  // rise: how much more it is on the last row of the page, as a share of itself. It never lessens.
+  camera: { from: 4.55, slant: 0.12, within: [0.075, 0.2], ramp: 0.9, rise: 0.15 },
   // The mountain under the peak. stride: screens of travel between the route's ridges, down to the stop named in `sparse` and from it on.
   // step: between two ridges far apart the slope has a brow this often. under: how far the path goes on under the next brow.
   // near: the depth of the last ridge and the ground; the sheets come to it in even steps. mist: the mist behind a crest:
