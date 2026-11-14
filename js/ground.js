@@ -17,7 +17,8 @@ export class Ground {
     // rows count from the ground line: row -1 is the line itself, 0 and on are under it, and the hut stands `up` rows over it
     const hut = D.glyphs.hut, up = hut.length + 2;
     const cells = Array.from({ length: deep + up }, () => new Array(cols).fill(null));
-    const set = (r, c, ch, color, a = 1) => { if (c >= 0 && c < cols && r < deep) cells[r + up][c] = [ch, color, a]; };
+    // what is under the ground goes into the dark the deeper it is
+    const set = (r, c, ch, color, a = 1) => { if (c >= 0 && c < cols && r < deep) cells[r + up][c] = [ch, color, a * (1 - 0.65 * Math.max(0, r) / deep)]; };
 
     // the ground line and the litter on it, soil under it, fine roots hanging from the turf
     const litter = [',', "'", '~', ',', '"'];
@@ -69,7 +70,7 @@ export class Ground {
       x: x0, y: sc.groundRow + 1 - up, z: k, cols, rows: deep + up, solid: (c, i) => i >= up - 1 && i < deep + up && c >= 0 && c < cols,
       paint(c0, i0, c1, i1, ox, oy) {
         const { cw, ch } = this, line = up - 1, box = (a, i, b, j, color) => { if (b >= c0 && a <= c1 && j >= i0 && i <= i1) g.box(ox + a * cw - 0.5, oy + i * ch, (b - a + 1) * cw + 1, (j - i + 1) * ch, color); };
-        box(0, line, cols - 1, line, P.skyBase); box(0, up, cols - 1, deep + up - 1, earth); box(left + 1, up - 6, left + w - 1, up - 2, P.skyBase);
+        box(0, line, cols - 1, line, P.skyBase); box(0, up, cols - 1, deep + up - 1, earth); hut.forEach((ln, i) => { const a = ln.search(/\S/), b = ln.trimEnd().length - 1; if (a >= 0) box(left + a, up - 1 - hut.length + i, left + b, up - 1 - hut.length + i, P.skyBase); });
         for (let i = i0; i <= i1; i++) for (let c = c0; c <= c1; c++) { const cell = cells[i][c]; if (cell) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2]); }
       },
     });

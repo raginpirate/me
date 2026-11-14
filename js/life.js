@@ -52,7 +52,7 @@ export class Life {
     });
     this.flock = null; this.nextFlock = 2.5;
     this.owl = { state: 'none', on: null, met: false, x: 0, y: 0, s: 1, wait: 0, gone: 0 };
-    this.squirrel = { state: 'away', wait: 7 + rnd() * 6, side: 1, x: 0, y: 0, s: 1, dir: 1 };
+    this.squirrel = { state: 'away', wait: 3 + rnd() * 3, side: 1, x: 0, y: 0, s: 1, dir: 1 };
   }
 
   // how thick the snow is at a height
@@ -106,7 +106,7 @@ export class Life {
     // is none to go to, as in the snow above the forest, it stays where it
     // is, and is there when you come back. ---
     const O = this.owl, home = L.forest * S, going = Math.sign(Math.round(sc.scrollVel));   // which way the page is going
-    const perch = (q) => [q.x, q.top - 0.8 * g.size * q.near];
+    const perch = (q) => [q.x, q.top - 0.4 * g.size * q.size];
     const roosts = trees.filter((q) => q.row >= home && q.top > H * 0.1 && q.top < H * 0.8 && q.x > 30 && q.x < W - 30);
     // where each tree will have been carried to by the time it could get there: the page is still moving
     const T = 1.3, rows = clamp(sc.scrollVel * T, -S * 0.45, S * 0.45), cols = sc.cam.slide(sc.cam.y + rows) - sc.cam.x;
@@ -125,7 +125,7 @@ export class Life {
       if (id !== null) { O.on = id; O.state = 'perch'; O.wait = 4 + rnd() * 5; }
     } else if (O.state === 'perch') {
       const q = sc.massif.tree(O.on);
-      [O.x, O.y] = perch(q); O.s = q.near;
+      [O.x, O.y] = perch(q); O.s = q.size;
       // Has its tree gone from you, or is it about to? Off the top or the bottom of the screen (sooner on the side
       // the page is carrying it to), out of sight behind something, or off to a side. But not when you are on your
       // way to it: then it waits for you where it is.
@@ -147,7 +147,7 @@ export class Life {
       const q = sc.massif.tree(O.aim), to = perch(q);
       O.u = Math.min(1, O.u + dt / O.dur);
       const e = smooth(0, 1, O.u);
-      O.s = O.s0 + (q.near - O.s0) * e;   // it grows as it comes nearer and shrinks as it goes further off
+      O.s = O.s0 + (q.size - O.s0) * e;   // it is the size of things where it is going by the time it gets there
       O.dir = to[0] >= O.from[0] ? 1 : -1;
       O.x = O.from[0] + (to[0] - O.from[0]) * e; O.y = O.from[1] + (to[1] - O.from[1]) * e - Math.sin(Math.PI * e) * O.arc;
       if (O.u >= 1) { O.state = 'perch'; O.on = O.aim; O.wait = 6 + rnd() * 9; O.gone = 0; }
@@ -158,14 +158,15 @@ export class Life {
     // then runs up a trunk and is gone for a good while. ---
     const Q = this.squirrel;
     const feet = trees.filter((q) => q.y > H * 0.2 && q.y < H * 0.95 && q.x > 20 && q.x < W - 20);
-    const foot = (q, side) => [q.x + side * 1.3 * g.size * q.near, q.y - 0.5 * g.size * q.near];
-    const trunk = (q, side, u) => [q.x + side * 0.45 * g.size * q.near, q.y - 0.5 * g.size * q.near - u * 0.62 * (q.y - q.top)];   // u: how far up
-    const gone = () => { Q.state = 'away'; Q.wait = 24 + rnd() * 30; };
+    const foot = (q, side) => [q.x + side * 1.3 * g.size * q.size, q.y - 0.5 * g.size * q.size];
+    const trunk = (q, side, u) => [q.x + side * 0.45 * g.size * q.size, q.y - 0.5 * g.size * q.size - u * Math.max(q.y - q.bole, 0.5 * (q.y - q.top))];   // u: how far up, to where the leaves take it
+    const gone = () => { Q.state = 'away'; Q.wait = 10 + rnd() * 12; };
     if (Q.state === 'away') {
       Q.wait -= dt;
       if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) {
-        const q = pick(feet);
-        Q.on = q.id; Q.sheet = q.sheet; Q.side = rnd() < 0.5 ? 1 : -1; Q.dir = Q.side; Q.s = q.near; Q.todo = 1 + Math.floor(rnd() * 3); Q.wait = 0.8 + rnd() * 2;
+        // at a tree in your light, if there is one, where it can be seen
+        const [lx, ly, , reach] = sc.lampAt || [W / 2, H / 2, 0, H], lit = feet.filter((o) => Math.hypot(o.x - lx, o.y - ly) < reach * 0.7), q = pick(lit.length ? lit : feet);
+        Q.on = q.id; Q.sheet = q.sheet; Q.side = rnd() < 0.5 ? 1 : -1; Q.dir = Q.side; Q.s = q.size; Q.todo = 1 + Math.floor(rnd() * 3); Q.wait = 0.8 + rnd() * 2;
         if (rnd() < 0.5) { Q.state = 'down'; Q.u = 1; } else { Q.state = 'sit'; Q.born = 0; }
         [Q.x, Q.y] = Q.state === 'down' ? trunk(q, Q.side, 1) : foot(q, Q.side);
       }
@@ -174,7 +175,7 @@ export class Life {
       if (!q || q.y < H * 0.08) gone();
       else if (Q.state === 'hop') {
         Q.to = foot(q, Q.side);
-        Q.u = Math.min(1, Q.u + dt / Q.dur); Q.s = Q.s0 + (q.near - Q.s0) * Q.u;
+        Q.u = Math.min(1, Q.u + dt / Q.dur); Q.s = Q.s0 + (q.size - Q.s0) * Q.u;
         Q.dir = Q.to[0] >= Q.from[0] ? 1 : -1;
         const hops = Math.max(1, Math.round(Math.abs(Q.to[0] - Q.from[0]) / (5 * g.cellW)));
         Q.x = Q.from[0] + (Q.to[0] - Q.from[0]) * Q.u; Q.y = Q.from[1] + (Q.to[1] - Q.from[1]) * Q.u - Math.abs(Math.sin(Q.u * Math.PI * hops)) * 0.7 * g.cellH * Q.s;
@@ -182,13 +183,13 @@ export class Life {
       } else if (Q.state === 'up' || Q.state === 'down') {
         // up or down the trunk in little rushes
         const rush = Math.sin(t * 8 + 1) > -0.35 ? 1 : 0.15;
-        Q.u = clamp(Q.u + (Q.state === 'up' ? 1 : -1) * rush * dt / 0.9, 0, 1); Q.s = q.near;
+        Q.u = clamp(Q.u + (Q.state === 'up' ? 1 : -1) * rush * dt / 0.9, 0, 1); Q.s = q.size;
         [Q.x, Q.y] = trunk(q, Q.side, Q.u);
         if (Q.state === 'up' && Q.u >= 1) gone();
         else if (Q.state === 'down' && Q.u <= 0) { Q.state = 'sit'; Q.born = 1; Q.wait = 0.8 + rnd() * 2; }
       } else {
         Q.born += dt; Q.wait -= dt;
-        [Q.x, Q.y] = foot(q, Q.side); Q.s = q.near;
+        [Q.x, Q.y] = foot(q, Q.side); Q.s = q.size;
         if (Q.wait <= 0) {
           // only to a tree on the same ridge: it does not jump the gap between two
           const near = Q.todo > 0 ? feet.filter((o) => o.sheet === Q.sheet && o.id !== Q.on && Math.abs(o.x - q.x) > 3 * g.cellW && Math.abs(o.x - q.x) < 16 * g.cellW && Math.abs(o.y - q.y) < 7 * g.cellH) : [];
@@ -248,7 +249,7 @@ export class Life {
     this.snow(1); this.snow(2);
     const O = this.owl;
     if (O.state !== 'none' && O.y > -60 && O.y < H + 60) {
-      const u = g.size * O.s * 0.9, blink = (t * 0.31 + 0.2) % 1 > 0.96;
+      const u = g.size * O.s * 0.45, blink = (t * 0.31 + 0.2) % 1 > 0.96;
       if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
       this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);

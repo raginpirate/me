@@ -8,27 +8,12 @@ export const D = {
     shootHead: '✦', shootTail: ['*', '=', '-', '-', '.', '.'],
     leaves: [',', "'", '~'],
     rock: ['%', '#', '*', '+', '=', ':', '-', '.'],   // light → dark
-    pines: [
-      ['  ^  ', ' /^\\ ', '/^^^\\', '  |  '],
-      ['  ^  ', ' /|\\ ', ' /|\\ ', '/|||\\'],
-      ['   ^   ', '  / \\  ', ' /^^^\\ ', '/^^^^^\\', '  /|\\  '],
-    ],
-    leafy: [
-      [' ,&&, ', '(&&&&)', '  ||  '],
-      [' &&& ', '(&&&)', '  |  '],
-      ['  ,&,  ', ' (&&&) ', '(&&&&&)', '  \\|/  '],
-    ],
-    // a birch: a tall airy crown, and a white trunk that shows up through it
-    birch: [
-      ['  .:,  ', ' ;%:%; ', ' :%|%: ', " ';|:' ", '   !   ', '   |   '],
-      [' ,;. ', ':%:%:', ';%|%;', ' :|: ', '  !  ', '  |  '],
-      ['  ,:;  ', ' :%;%: ', " ';|;' ", '   |   ', '   !   '],
-    ],
     hut: ['      ,     ', '   ___|]__  ', '  /       \\ ', ' /_________\\', ' |  []  _  |', ' |_____|_|_|'],
   },
 
-  // type size of the painting, in pixels
-  type: { stack: 11, mid: 13, wide: 14, wideFrom: 1100 },
+  // type size of the painting, in pixels. most: the largest that type is ever set, in that size:
+  // what stands nearer than that is drawn with more characters, not larger ones
+  type: { stack: 11, mid: 13, wide: 14, wideFrom: 1100, most: 1.2 },
 
   // vertical composition, in screen heights from the top of the page
   layout: {
@@ -50,12 +35,18 @@ export const D = {
   // the slant is `early` of that; from there it grows on evenly to the last row of the page. It never lessens.
   camera: { from: 4.55, slant: 0.3, within: [0.16, 0.5], ease: 0.3, early: 0.55 },
   // The mountain under the peak. stride: screens of travel between the route's ridges, down to the stop named in `sparse` and from it on.
+  // step: between two ridges far apart the slope has a brow this often. under: how far the path goes on under the next brow.
+  // near: the depth of the last ridge and the ground; the sheets come to it in even steps. mist: the mist behind a crest:
+  // how high it stands over the crest, in screens, how thick it is at the crest, and how pale against the dark. tall: how tall each kind of tree
+  // stands at the page's depth, in rows of the page. grow: it stands that many times its depth, to this power, taller.
+  // veil: once you are on a wooded sheet, how much all that is behind it is put out. recede: how much dimmer a sheet is
+  // painted past where the route leaves it. face: how much larger and brighter a tree at the foot of a face is than one on its crest.
   // gap: rows of travel a bridge spans. lamp: the light you carry: how much of everything
   // out of its reach is put out, and where it is full and where it ends, as shares of the screen's shorter side.
   // ribs: the mountain's ribs under the peak, each [where across, as a share of its half-width either side of its middle;
   // screens under the seam that it starts]. spread: how much wider they stand for each screen down. cast: how wide a rib's
   // shadow is on the lit flank, and how wide its lit face on the dark one, as shares of the half-width.
-  massif: { stride: [0.33, 1.25], sparse: 'fera', gap: 3, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
+  massif: { stride: [0.33, 1.25], sparse: 'fera', step: 0.34, under: 0.15, near: 1.9, face: 0.45, gap: 3, mist: [0.26, 0.72, 0.5], veil: 0.34, recede: 0.55, tall: { pine: 4.6, leafy: 3.8, birch: 5.5 }, grow: 2.1, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the

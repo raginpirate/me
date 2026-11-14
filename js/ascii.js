@@ -535,6 +535,7 @@ export class AsciiScene extends HTMLElement {
       if (!reduced) this.life.behind();
       this.air.drawClouds(false);
     }
+    this.massif.haze();
     cam.show();   // the peak, the mountain under it, the ground
     if (below) {
       this.ground.draw();
@@ -603,7 +604,7 @@ export class AsciiScene extends HTMLElement {
     for (const m of this.massif.lamps) {
       const [x, y] = this.massif.at(m.sh, m.c + 0.5, m.r + 0.5);
       if (y < -10 || y > H + 10 || this.massif.hidden(x, y, m.sh.index)) continue;
-      const u = g.size * m.sh.z, pulse = reduced ? 1 : twinkle(time, m.phase, ...D.twinkle.lamp);
+      const u = m.sh.font, pulse = reduced ? 1 : twinkle(time, m.phase, ...D.twinkle.lamp);
       g.box(x - u * 0.9, y - u * 0.7, u * 1.8, u * 1.4, this.sky);
       g.ink('o', P.ember, x, y, u, pulse);
     }
@@ -618,7 +619,7 @@ export class AsciiScene extends HTMLElement {
       if (!s.mark || s.show < 0.05) continue;
       const [x, y] = this.where(s);
       if (y < -40 || y > H + 40) continue;
-      const u = g.size * (s.sheet ? s.sheet.z : this.ground.k), lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light)), a = s.show;
+      const u = s.sheet ? s.sheet.font : g.size * this.ground.k, lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light)), a = s.show;
       if (s.sheet) {
         // a small hollow, so it reads against rock and trees
         const x2 = g.ctx, r = u * 2.6, grad = x2.createRadialGradient(x, y, r * 0.45, x, y, r);

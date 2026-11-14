@@ -61,7 +61,8 @@ export class Camera {
   // oy): draw its cells c0..c1 of rows i0..i1 with the grid, cell (c, i) at
   // ox + c * cw, oy + i * ch. solid(c, i): does it hide everything behind
   // that cell, and behind all of its column under that? at: the pixel it
-  // is at, for a thing that drifts and has no place of its own.
+  // is at, for a thing that drifts and has no place of its own. veil, fill:
+  // how much it dims all that is behind it, and with what.
   pane(p) { const z = p.z ?? 1, s = p.s ?? z; this.all.push(p); return Object.assign(p, { z, cw: this.g.cellW * s, ch: this.g.cellH * s, tiles: new Map() }); }
   // one tile of a pane, painted if it has not been; null if there is nothing on it
   tile(p, tx, ty) {
@@ -105,9 +106,15 @@ export class Camera {
     }
     return out;
   }
-  // draw a list of panes, furthest first: the mountain, unless another is given
+  // Draw a list of panes, furthest first: the mountain, unless another is
+  // given. A pane with a veil puts all that is behind it that much further
+  // into the dark, in its own fill.
   show(list = this.panes, front) {
-    for (const [p, nearer] of this.order(list, front)) for (const [tx, ty, x, y] of this.seen(p, nearer)) { const c = this.tile(p, tx, ty); if (c) this.g.blit(c, x, y); }
+    for (const [p, nearer] of this.order(list, front)) {
+      const tiles = this.seen(p, nearer);
+      if (p.veil > 0.01 && (tiles.length || this.seen(p, []).length)) this.g.box(0, 0, this.g.w, this.g.h, p.fill, p.veil);   // on the screen, if hidden
+      for (const [tx, ty, x, y] of tiles) { const c = this.tile(p, tx, ty); if (c) this.g.blit(c, x, y); }
+    }
   }
   // once a frame: let go of the tiles longest unseen, if too many are held
   tidy() {
