@@ -2,6 +2,10 @@
 // clouds, a far flock now and then, and in the forest falling leaves, an
 // owl that goes from tree top to tree top, and squirrels.
 //
+// Size is distance here too: the owl and the squirrels are the size of the
+// tree they are at, and change size on the way from one to the next; a
+// flock is small and faint by how far off it is.
+//
 // The owl and the squirrels are small drawings made of a few glyphs at
 // different sizes. A part is [glyph, across, down, size, colour]: across
 // and down from the drawing's middle, and size, all in units of the type
@@ -68,11 +72,11 @@ export class Life {
       this.leafAcc--;
       if (!leafy.length || this.leaves.length > 220) continue;
       const q = pick(leafy);
-      this.leaves.push({ x: q.x + (rnd() - 0.5) * 3 * g.cellW * q.s, y: sc.centreRow + (q.top + g.cellH * q.s - H / 2) / (g.cellH * q.s), k: q.s, phase: rnd() * 6.28, color: rnd() < 0.55 ? sc.P.leaf : sc.P.leafOlive, age: 0, life: 5 + rnd() * 7, frame: Math.floor(rnd() * 3) });
+      this.leaves.push({ x: q.x + (rnd() - 0.5) * 3 * g.cellW * q.s, y: sc.centreRow + (q.top + g.cellH * q.s - H / 2) / (g.cellH * q.ls), k: q.ls, size: q.s, phase: rnd() * 6.28, color: rnd() < 0.55 ? sc.P.leaf : sc.P.leafOlive, age: 0, life: 5 + rnd() * 7, frame: Math.floor(rnd() * 3) });
     }
     this.leaves = this.leaves.filter((l) => {
       l.age += dt;
-      l.y += 1.7 * (0.65 + 0.35 * Math.sin(t * 3 + l.phase)) * dt;
+      l.y += 1.7 * (0.65 + 0.35 * Math.sin(t * 3 + l.phase)) * dt * l.size / l.k;
       l.x += (Math.sin(t * 2.1 + l.phase) * 1.5 + wind * 0.5) * g.cellW * dt;
       return l.age < l.life && l.y < sc.groundRow;
     });
@@ -80,10 +84,10 @@ export class Life {
     // --- a flock, far off, once in a while, below the clouds ---
     this.nextFlock -= dt;
     if (!this.flock && this.nextFlock <= 0 && sc.centre > L.deck[1] - 0.05 && sc.centre < L.ground - 1.5) {
-      const dir = rnd() < 0.5 ? 1 : -1, n = 7 + Math.floor(rnd() * 7), k = 0.3, birds = [{ dx: 0, dy: 0, ph: rnd() * 6.28 }];
-      for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push({ dx: -dir * (j * 2.1 + (rnd() - 0.5) * 0.9), dy: side * j * (0.5 + rnd() * 0.12) + (rnd() - 0.5) * 0.3, ph: rnd() * 6.28 }); }
+      const dir = rnd() < 0.5 ? 1 : -1, n = 7 + Math.floor(rnd() * 7), k = 0.3, far = 0.45 + rnd() * 0.3, birds = [{ dx: 0, dy: 0, ph: rnd() * 6.28 }];
+      for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push({ dx: -dir * (j * 2.1 + (rnd() - 0.5) * 0.9) * far, dy: (side * j * (0.5 + rnd() * 0.12) + (rnd() - 0.5) * 0.3) * far, ph: rnd() * 6.28 }); }
       const len = (Math.ceil(n / 2) * 2.1 + 3) * g.cellW;
-      this.flock = { x: dir > 0 ? -20 : W + 20, y: sc.centreRow + ((0.18 + rnd() * 0.4) * H - H / 2) / (g.cellH * k), k, dir, len, birds, v: Math.max(34, W / 20), drift: (rnd() - 0.5) * 0.5 };
+      this.flock = { x: dir > 0 ? -20 : W + 20, y: sc.centreRow + ((0.18 + rnd() * 0.4) * H - H / 2) / (g.cellH * k), k, far, dir, len, birds, v: Math.max(34, W / 20) * (0.5 + far), drift: (rnd() - 0.5) * 0.5 };
       this.nextFlock = 15 + rnd() * 10;
     }
     if (this.flock) { const f = this.flock; f.x += f.dir * f.v * dt; f.y += f.drift * dt; if (f.dir > 0 ? f.x - f.len > W + 20 : f.x + f.len < -20) this.flock = null; }
@@ -91,17 +95,18 @@ export class Life {
     // --- the owl: tree top to tree top, following you down. It never jumps:
     // it flies in from off the screen, and flies off again when it must. ---
     const O = this.owl, tops = trees.filter((q) => q.top > H * 0.1 && q.top < H * 0.82 && q.x > 30 && q.x < W - 30);
-    const fly = (to, q) => { O.from = [O.x, O.y]; O.to = to; O.aim = q ? q.id : null; O.u = 0; O.dur = clamp(Math.hypot(to[0] - O.x, to[1] - O.y) / (15 * g.cellW), 0.9, 2.6); O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly'; };
+    const fly = (to, q) => { O.from = [O.x, O.y]; O.s0 = O.s; O.to = to; O.aim = q ? q.id : null; O.u = 0; O.dur = clamp(Math.hypot(to[0] - O.x, to[1] - O.y) / (15 * g.cellW), 0.9, 2.6); O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly'; };
     const perch = (q) => [q.x, q.top - 0.8 * g.size * q.s];
     if (O.state === 'away') {
       O.wait -= dt;
-      if (O.wait <= 0 && tops.length > 2) { const q = pick(tops); O.x = rnd() < 0.5 ? -40 : W + 40; O.y = q.top - (4 + rnd() * 8) * g.cellH; O.s = q.s; fly(perch(q), q); }
+      if (O.wait <= 0 && tops.length > 2) { const q = pick(tops); O.x = rnd() < 0.5 ? -40 : W + 40; O.y = q.top - (4 + rnd() * 8) * g.cellH; O.s = q.s * 0.4; fly(perch(q), q); }
     } else if (O.state === 'fly') {
       const q = O.aim !== null ? find(O.aim) : null;
-      if (q) { O.to = perch(q); O.s += (q.s - O.s) * Math.min(1, dt * 4); }
+      if (q) O.to = perch(q);
       else if (O.aim !== null) { O.aim = null; O.to = [O.x < W / 2 ? -60 : W + 60, O.y - 3 * g.cellH]; }   // its tree has gone: carry on off the screen
       O.u = Math.min(1, O.u + dt / O.dur);
       const e = smooth(0, 1, O.u);
+      O.s = O.s0 + ((q ? q.s : O.s0 * 0.4) - O.s0) * e;   // it grows as it comes nearer and shrinks as it goes off
       O.dir = O.to[0] >= O.from[0] ? 1 : -1;
       O.x = O.from[0] + (O.to[0] - O.from[0]) * e; O.y = O.from[1] + (O.to[1] - O.from[1]) * e - Math.sin(Math.PI * e) * O.arc;
       if (O.u >= 1) { if (O.aim !== null) { O.state = 'perch'; O.on = O.aim; O.wait = 2.4 + rnd() * 3.2; } else { O.state = 'away'; O.wait = 1.5 + rnd() * 2; } }
@@ -129,8 +134,8 @@ export class Life {
       } else if (Q.state === 'hop') {
         const q = find(Q.aim);
         if (!q) { gone(); continue; }
-        Q.to = foot(q, Q.side); Q.s = q.s;
-        Q.u = Math.min(1, Q.u + dt / Q.dur);
+        Q.to = foot(q, Q.side);
+        Q.u = Math.min(1, Q.u + dt / Q.dur); Q.s = Q.s0 + (q.s - Q.s0) * Q.u;
         Q.dir = Q.to[0] >= Q.from[0] ? 1 : -1;
         const hops = Math.max(1, Math.round(Math.abs(Q.to[0] - Q.from[0]) / (5 * g.cellW)));
         Q.x = Q.from[0] + (Q.to[0] - Q.from[0]) * Q.u; Q.y = Q.from[1] + (Q.to[1] - Q.from[1]) * Q.u - Math.abs(Math.sin(Q.u * Math.PI * hops)) * 0.7 * g.cellH * Q.s;
@@ -143,7 +148,7 @@ export class Life {
         if (Q.wait <= 0) {
           // only to a tree on the same ridge: it does not jump the gap between two
           const near = feet.filter((o) => o.lobe === Q.lobe && o.id !== Q.on && Math.abs(o.x - q.x) > 3 * g.cellW && Math.abs(o.x - q.x) < 16 * g.cellW && Math.abs(o.y - q.y) < 7 * g.cellH);
-          if (near.length) { const o = pick(near); Q.from = [Q.x, Q.y]; Q.aim = o.id; Q.u = 0; Q.dur = clamp(Math.abs(o.x - Q.x) / (26 * g.cellW), 0.22, 1.1); Q.state = 'hop'; } else Q.wait = 0.6;
+          if (near.length) { const o = pick(near); Q.from = [Q.x, Q.y]; Q.s0 = Q.s; Q.aim = o.id; Q.u = 0; Q.dur = clamp(Math.abs(o.x - Q.x) / (26 * g.cellW), 0.22, 1.1); Q.state = 'hop'; } else Q.wait = 0.6;
         }
       }
     }
@@ -162,7 +167,7 @@ export class Life {
     const f = this.flock;
     if (f) for (const b of f.birds) {
       const y = H / 2 + (f.y - sc.centreRow) * g.cellH * f.k + (b.dy * (1 + 0.08 * Math.sin(t * 0.7 + b.ph)) + 0.3 * Math.sin(t * 1.1 + b.ph)) * g.cellH;
-      g.ink(Math.sin(t * 5.5 + b.ph) > 0.1 ? 'v' : '-', P.bird, f.x + b.dx * g.cellW, y, g.size * 0.8, 0.62);
+      g.ink(Math.sin(t * 5.5 + b.ph) > 0.1 ? 'v' : '-', P.bird, f.x + b.dx * g.cellW, y, g.size * f.far, 0.3 + 0.45 * f.far);   // the further off, the smaller and fainter
     }
   }
   snow(tier) {
@@ -179,7 +184,7 @@ export class Life {
   front() {
     const sc = this.sc, g = sc.grid, t = sc.time, H = g.h;
     this.snow(1); this.snow(2);
-    for (const l of this.leaves) g.ink(D.glyphs.leaves[(l.frame + Math.floor(t * 3 + l.phase)) % 3], l.color, l.x, H / 2 + (l.y - sc.centreRow) * g.cellH * l.k, g.size * l.k, Math.min(1, l.age * 3, (l.life - l.age) * 1.5));
+    for (const l of this.leaves) g.ink(D.glyphs.leaves[(l.frame + Math.floor(t * 3 + l.phase)) % 3], l.color, l.x, H / 2 + (l.y - sc.centreRow) * g.cellH * l.k, g.size * l.size, Math.min(1, l.age * 3, (l.life - l.age) * 1.5));
     const O = this.owl;
     if (O.state !== 'away') {
       const u = g.size * O.s * 0.9, blink = (t * 0.31 + 0.2) % 1 > 0.96;

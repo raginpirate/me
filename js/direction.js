@@ -13,7 +13,6 @@ export const D = {
       ['  ^  ', ' /|\\ ', ' /|\\ ', '/|||\\'],
       ['   ^   ', '  / \\  ', ' /^^^\\ ', '/^^^^^\\', '  /|\\  '],
     ],
-    sapling: [' ^ ', '/|\\'],
     leafy: [
       [' ,&&, ', '(&&&&)', '  ||  '],
       [' &&& ', '(&&&)', '  |  '],
@@ -49,7 +48,10 @@ export const D = {
   // lamp: the light you carry down the route. dark: how much of everything out of
   // its reach is put out. core, reach: where the light is full and where it ends,
   // as shares of the screen's shorter side.
-  massif: { turn: [4.25, 9.6], turns: 0.6, depth: 0.42, lead: 0.14, haze: [1.1, 1.65], far: 0.55, lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
+  // near: size is distance. What stands one screen below you is in front of you and is drawn e^near
+  // times the size of what is at your height; what is above you is behind, and smaller by the same rule.
+  // stride: screens between the route's ridges, down to the stop named in `sparse` and from it on.
+  massif: { turn: [4.25, 9.6], turns: 0.6, depth: 0.42, near: 0.42, lead: 0.14, haze: [1.1, 1.65], far: 0.55, stride: [0.3, 1.25], sparse: 'fera', lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the

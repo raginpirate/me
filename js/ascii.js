@@ -579,6 +579,7 @@ export class AsciiScene extends HTMLElement {
       grad.addColorStop(0, this.sky + '00'); grad.addColorStop(0.5, this.sky + hex(dark * 0.62)); grad.addColorStop(1, this.sky + hex(dark));
       g.box(0, 0, g.w, H, grad);
     }
+    this.massif.drawBridges();   // after the dark, so a bridge out of the light still shows: plain, not lit
     for (const [px, py, ch, size, vis, mid] of lit.near) {
       const d = mid ? Math.hypot(px - x, py - y) : Math.hypot(px + size * 0.3 - x, py + size * 0.6 - y), f = (1 - smooth(r0 * 0.55, r0 * 2.1, d)) * vis;
       if (f < 0.02) continue;
