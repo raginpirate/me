@@ -139,10 +139,12 @@ export class AsciiScene extends HTMLElement {
     const seam = this.peakSpan[this.seamRow];
     this.seamHalf = (seam[1] - seam[0]) / 2; this.ax = (seam[0] + seam[1]) / 2;   // the massif's axis and its width where it takes over
     // the route starts at the flag: a fixed rope down the peak to the seam
+    this.rope = [];
     for (let row = Math.ceil(this.summitRow) + 2, n = 0; row < this.bodyTop; row++, n++) {
       const t = n / (this.bodyTop - this.summitRow), span = this.peakSpan[row];
       const c = clamp(Math.round(w.topCol + 1 + (Math.floor(this.ax + 0.5) - w.topCol - 1) * t), span[0] + 1, span[1] - 2);
-      w.cells[row][c] = n % 4 === 0 ? ['+', P.ember, 0.95] : [':', P.ember, 0.6];
+      w.cells[row][c] = n % 4 === 0 ? ['+', P.muted, 0.8] : [':', P.muted, 0.5];
+      this.rope.push([c, row, w.cells[row][c][0]]);
     }
     this.tileRows = Math.ceil(S);
     this.tiles = new Map(); this.bare = new Set();
@@ -530,12 +532,13 @@ export class AsciiScene extends HTMLElement {
       g.blit(this.mount.canvas, 0);
     }
     this.paint(top);
-    this.drawRoute(top, time, reduced);
     if (below) {
       this.ground.draw();
       if (!reduced) this.life.front();
-      this.air.drawClouds(true);
     }
+    this.lamp(top);
+    this.drawRoute(top, time, reduced);
+    if (below) this.air.drawClouds(true);
 
     // the tethers. Their stars come in one by one as the card opens, each
     // at its own moment, and leave the same way. While they are there they
@@ -548,6 +551,39 @@ export class AsciiScene extends HTMLElement {
     }
   }
 
+  // The light you carry down the route. It is where the route is, at the
+  // height on the screen where a stop's waypoint rests. Round it everything
+  // is as bright as it is painted; further off the mountain is put out, and
+  // only the stretch of route inside the light is lit.
+  lamp(top) {
+    const g = this.grid, P = this.P, K = D.massif.lamp, L = D.layout, H = g.h;
+    const y = H * (0.5 - D.rest[this.stack ? 'stack' : 'side']), m = Math.min(g.w, H), r0 = K.core * m, r1 = K.reach * m;
+    const lit = this.massif.light(y, r0 * 2.2);
+    // the rope on the peak is route too
+    const sig = g.cellH * 2;
+    for (const [c, row, ch] of this.rope) {
+      const py = (row - top) * g.cellH, cy = py + g.cellH / 2;
+      if (Math.abs(cy - y) > r0 * 2.2) continue;
+      const w = Math.exp(-(((cy - y) / sig) ** 2)); lit.sum += (c + 0.5) * g.cellW * w; lit.weight += w;
+      lit.near.push([c * g.cellW, py, ch, g.size, 1]);
+    }
+    if (lit.weight > 1e-3) this.lampX = lit.sum / lit.weight;
+    const x = this.lampX ?? g.w / 2;
+    // the dark comes on below the summit: up there the sky is the light
+    const dark = K.dark * smooth(L.summit + 0.1, L.seam + 0.45, this.centre);
+    if (dark > 0.01) {
+      const grad = g.ctx.createRadialGradient(x, y, r0, x, y, r1), hex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
+      grad.addColorStop(0, this.sky + '00'); grad.addColorStop(0.5, this.sky + hex(dark * 0.62)); grad.addColorStop(1, this.sky + hex(dark));
+      g.box(0, 0, g.w, H, grad);
+    }
+    for (const [px, py, ch, size, vis] of lit.near) {
+      const d = Math.hypot(px + size * 0.3 - x, py + size * 0.6 - y), f = (1 - smooth(r0 * 0.55, r0 * 2.1, d)) * vis;
+      if (f < 0.02) continue;
+      g.set(ch, P.ember, px, py, size, f);
+      g.set(ch, P.emberHot, px, py, size, f * f * 0.7);
+    }
+  }
+
   // The route's own things: the flag on the summit, the lamps of those
   // climbing it, and a waypoint for every stop on the mountain: a small
   // lantern on whatever stands there. Each is a drawing of a few glyphs at
@@ -555,11 +591,12 @@ export class AsciiScene extends HTMLElement {
   drawRoute(top, time, reduced) {
     const g = this.grid, P = this.P, w = this.world, H = g.h;
     // the flag
-    const fx = (w.topCol + 0.5) * g.cellW, fy = (Math.ceil(this.summitRow) - top) * g.cellH, fu = g.size * 1.15;
-    if (fy > -40 && fy < H + 40) {
-      g.ink('|', P.rockLight, fx, fy - 0.45 * fu, fu * 1.3); g.ink('|', P.rockLight, fx, fy - 1.45 * fu, fu * 1.3);
+    const fx = (w.topCol + 0.5) * g.cellW, fy = (Math.ceil(this.summitRow) - top) * g.cellH, fu = g.size * 1.7;
+    if (fy > -80 && fy < H + 40) {
+      for (const dy of [0.45, 1.4, 2.3]) g.ink('|', P.rockLight, fx, fy - dy * fu, fu * 1.3);
       const wave = reduced ? 0 : Math.sin(time * 3.2);
-      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.56 + 0.05 * wave) * fu, fy - 1.68 * fu, fu * 1.3);
+      g.ink('o', P.ember, fx + 0.6 * fu, fy - 2.5 * fu, fu * 2.6, 0.12);
+      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.58 + 0.05 * wave) * fu, fy - 2.5 * fu, fu * 1.45);
     }
     // lamps
     for (const m of this.massif.lamps) {

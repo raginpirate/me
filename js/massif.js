@@ -12,7 +12,7 @@
 // fades into haze. Lower cut-outs always stand in front of higher ones, so
 // nothing ever swaps places.
 
-import { clamp, smooth, mulberry32, wrapPi, edge } from './util.js';
+import { clamp, smooth, mulberry32, wrapPi, edge, mixHex } from './util.js';
 import { D } from './direction.js';
 
 // straight runs between points [[x, y], ...]
@@ -89,7 +89,9 @@ export class Massif {
       const a = this.pose(l, yaw), b = this.pose(next, yaw);
       const x = b.X + (next.arrive[0] - next.cx) * b.s, y = (next.arrive[1] - mid) * b.s;
       const r = Math.max(l.arrive[1] + 3, Math.round(mid + y / a.s) - 1);
-      l.depart = [this.inside(l, Math.round(l.cx + (x - a.X) / a.s), r), r];
+      // it leaves a little way back from there, so there is always a gap for the bridge to cross
+      const gap = Math.min(9, Math.round((4 + rnd() * 2) * kx));
+      l.depart = [this.inside(l, Math.round(l.cx + (x - a.X) / a.s) - gap, r), r];
     });
     this.lobes.forEach((l, i) => { l.index = i; this.trace(l); });
     this.lamps = [];
@@ -114,7 +116,8 @@ export class Massif {
   // where a cut-out stands and how large it is drawn, for a turn of the table
   pose(l, yaw) {
     const phi = l.core ? 0 : this.sc.reduced.matches ? l.off : wrapPi(l.th - yaw), [h0, h1] = D.massif.haze;
-    return { vis: l.core ? 1 : 1 - smooth(h0, h1, Math.abs(phi)), s: this.sc.reduced.matches ? 1 : 1 + D.massif.depth * l.d * Math.cos(phi) / this.reach, X: this.sc.ax + l.d * Math.sin(phi) };
+    // tone: the cut-out that faces you is the brightest; one turning away dims, so what is in front reads against what is behind
+    return { vis: l.core ? 1 : 1 - smooth(h0, h1, Math.abs(phi)), tone: l.core ? 1 : D.massif.far + (1 - D.massif.far) * smooth(0.3, 1, Math.cos(phi)), s: this.sc.reduced.matches ? 1 : 1 + D.massif.depth * l.d * Math.cos(phi) / this.reach, X: this.sc.ax + l.d * Math.sin(phi) };
   }
 
   // the route across a cut-out: arrive, by the waypoint if it has one, depart
@@ -255,17 +258,24 @@ export class Massif {
       }
     }
 
-    // --- the route's own marks: a fixed rope on the ice, a path of stones on the rock, a trodden path in the forest ---
+    // --- the route's own marks: a fixed rope on the ice, a path of stones on
+    // the rock, a trodden path in the forest. They are faint here; the scene
+    // lights the stretch you are on. ---
     path.forEach(([c, r], k) => {
       const i = r - base, at = r / S; if (i < 0 || i >= rowsN || c < 0 || c >= W) return;
       mask[i][c] = 1;
-      cells[i][c] = at < Y.ice ? (k % 4 === 0 ? ['+', P.ember, 0.95] : [':', P.ember, 0.6])
-        : at < Y.forest ? [k % 3 ? '.' : ',', P.ember, 0.75]
-        : k % 7 === 3 ? ['=', P.ember, 0.5] : [k % 2 ? ':' : '.', P.ember, 0.62];
+      cells[i][c] = at < Y.ice ? (k % 4 === 0 ? ['+', P.muted, 0.8] : [':', P.muted, 0.5])
+        : at < Y.forest ? [k % 3 ? '.' : ',', P.muted, 0.6]
+        : k % 7 === 3 ? ['=', P.muted, 0.45] : [k % 2 ? ':' : '.', P.muted, 0.5];
     });
 
+    // a dark margin round everything on it, one cell either side and one
+    // above, so its edge reads against whatever is behind it
+    const wide = l.mask = mask.map((m) => Uint8Array.from(m));
+    for (let i = 0; i < rowsN; i++) for (let c = 0; c < W; c++) if (mask[i][c]) { if (c > 0) wide[i][c - 1] = 1; if (c + 1 < W) wide[i][c + 1] = 1; if (i > 0) wide[i - 1][c] = 1; }
+
     // what each row covers, as runs, for hiding whatever is behind
-    l.runs = mask.map((m) => { const out = []; let a = -1; for (let c = 0; c <= W; c++) { const on = c < W && m[c]; if (on && a < 0) a = c; else if (!on && a >= 0) { out.push([a, c]); a = -1; } } return out; });
+    l.runs = wide.map((m) => { const out = []; let a = -1; for (let c = 0; c <= W; c++) { const on = c < W && m[c]; if (on && a < 0) a = c; else if (!on && a >= 0) { out.push([a, c]); a = -1; } } return out; });
   }
 
   // ---------- each frame ----------
@@ -294,19 +304,63 @@ export class Massif {
         const cells = l.cells[i];
         for (let c = c0; c <= c1; c++) {
           const cell = cells[c];
-          if (cell && !(row <= seam && sc.painted(row, Math.round(shift + c)))) g.set(cell[0], cell[1], x0 + c * cws, y, size, cell[2] * l.vis);
+          if (cell && !(row <= seam && sc.painted(row, Math.round(shift + c)))) g.set(cell[0], cell[1], x0 + c * cws, y, size, cell[2] * l.vis * l.tone);
         }
       }
     }
-    // the route steps from one cut-out to the next
+    // the route crosses from one cut-out to the next on a rope bridge: a
+    // sagging deck of planks, a hand rope over it, a post at either end
+    const P = sc.P, wood = mixHex(P.ground, P.leaf, 0.5);
     for (let i = 0; i + 1 < this.route.length; i++) {
       const a = this.route[i], b = this.route[i + 1], vis = Math.min(a.vis, b.vis);
       if (vis < 0.1 || !a.depart) continue;
       const [x0, y0] = this.at(a, a.depart[0] + 0.5, a.depart[1] + 0.5), [x1, y1] = this.at(b, b.arrive[0] + 0.5, b.arrive[1] + 0.5);
-      if (Math.max(y0, y1) < -20 || Math.min(y0, y1) > H + 20) continue;
-      const n = Math.round(Math.hypot(x1 - x0, y1 - y0) / (cw * 1.15));
-      for (let k = 1; k < n; k++) g.ink('.', sc.P.ember, x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, g.size * (a.s + b.s) / 2, 0.7 * vis);
+      if (Math.max(y0, y1) < -40 || Math.min(y0, y1) > H + 40) continue;
+      const u = g.size * (a.s + b.s) / 2, dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
+      if (len < u * 1.3) continue;
+      const n = Math.max(2, Math.round(len / (u * 0.6))), sag = Math.min(len * 0.16, u * 1.3);
+      const on = (t) => [x0 + dx * t, y0 + dy * t + sag * 4 * t * (1 - t)];
+      for (let k = 0; k <= n; k++) { const [x, y] = on(k / n); g.box(x - u * 0.45, y - u * 1.35, u * 0.9, u * 1.9, sky, vis); }   // it hides what is behind it
+      for (let k = 0; k <= n; k++) {
+        const [x, y] = on(k / n);
+        g.ink('=', wood, x, y, u * 0.95, vis);
+        g.ink('·', P.muted, x, y - u * 0.95, u, 0.9 * vis);
+        if (k % 3 === 1) g.ink(':', P.muted, x, y - u * 0.48, u * 0.7, 0.6 * vis);
+      }
+      for (const [x, y] of [[x0, y0], [x1, y1]]) g.ink('|', wood, x, y - u * 0.5, u * 1.35, vis);
     }
+  }
+
+  // is a pixel hidden by a cut-out standing in front of the one at `index`
+  hidden(x, y, index) {
+    const g = this.sc.grid;
+    for (let m = index + 1; m < this.lobes.length; m++) {
+      const f = this.lobes[m]; if (f.vis < 0.5 || !f.mask) continue;
+      const c = Math.floor(f.cx + 0.5 + (x / g.cellW - f.X) / f.s), i = Math.floor(this.centreRow + (y - g.h / 2) / (g.cellH * f.s)) - f.base;
+      if (i >= 0 && i < f.rowsN && c >= 0 && c < f.W && f.mask[i][c] === 1) return true;
+    }
+    return false;
+  }
+
+  // Where you are on the route: its place across the screen at height y
+  // (pixels), and its marks within `reach` of there, each as [left, top,
+  // glyph, size, strength], for the scene to light.
+  light(y, reach) {
+    const g = this.sc.grid, near = [], sig = g.cellH * 2;
+    let sum = 0, weight = 0;
+    for (const l of this.route) {
+      if (l.vis < 0.2 || !l.cells) continue;
+      for (const [c, r] of l.path) {
+        const [px, py] = this.at(l, c, r), cy = py + g.cellH * l.s / 2;
+        if (Math.abs(cy - y) > reach) continue;
+        const ch = l.cells[r - l.base]?.[c]?.[0]; if (!ch) continue;
+        const cx = px + g.cellW * l.s / 2;
+        if (this.hidden(cx, cy, l.index)) continue;
+        const w = Math.exp(-(((cy - y) / sig) ** 2)) * l.vis; sum += cx * w; weight += w;
+        near.push([px, py, ch, g.size * l.s, l.vis]);
+      }
+    }
+    return { sum, weight, near };
   }
 
   // trees something could sit on: on cut-outs facing you, on screen, with nothing nearer over them
@@ -317,12 +371,7 @@ export class Massif {
       for (const t of l.trees) {
         const [x, y] = this.at(l, t.c + 0.5, t.row + 1);
         if (y < 0 || y > g.h + 30 || x < 10 || x > g.w - 10) continue;
-        let covered = false;
-        for (let m = n + 1; m < this.lobes.length && !covered; m++) {
-          const f = this.lobes[m]; if (f.vis < 0.5 || !f.mask) continue;
-          const c = Math.floor(f.cx + 0.5 + (x / g.cellW - f.X) / f.s), i = Math.floor(this.centreRow + (y - g.cellH * f.s * 0.5 - g.h / 2) / (g.cellH * f.s)) - f.base;
-          covered = i >= 0 && i < f.rowsN && c >= 0 && c < f.W && f.mask[i][c] === 1;
-        }
+        const covered = this.hidden(x, y - g.cellH * l.s * 0.5, n);
         if (!covered) out.push({ id: t.id, x, y, top: y - t.h * g.cellH * l.s, s: l.s, leafy: t.leafy });
       }
     });

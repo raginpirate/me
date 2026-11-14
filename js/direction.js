@@ -45,7 +45,11 @@ export const D = {
   // cut-out is drawn than one at the middle. lead: a cut-out faces you when
   // the middle of the screen is this many screens below its top.
   // haze: the angle, radians, where one starts to fade as it goes round the side, and where it is gone.
-  massif: { turn: [4.25, 9.6], turns: 0.6, depth: 0.42, lead: 0.14, haze: [1.1, 1.65], moon: -0.95 },
+  // far: how dim a cut-out is when it has turned away, against 1 for the one facing you.
+  // lamp: the light you carry down the route. dark: how much of everything out of
+  // its reach is put out. core, reach: where the light is full and where it ends,
+  // as shares of the screen's shorter side.
+  massif: { turn: [4.25, 9.6], turns: 0.6, depth: 0.42, lead: 0.14, haze: [1.1, 1.65], far: 0.55, lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the
