@@ -90,6 +90,41 @@ export class Grid {
     this.stamp(this.ctx, s, px - s.ix - s.bx, py + s.iy - s.by, alpha);
   }
 
+  // a glyph set in a cell of any size, at any pixel: (x, y) is the top left
+  // of its cell. This is how a thing nearer or further than the page is drawn.
+  set(ch, color, x, y, size, alpha = 1) {
+    if (!ch || ch === ' ' || alpha < 0.01) return;
+    if (x < -size || y < -size * 1.3 || x > this.w || y > this.h) return;
+    // one sprite for each whole size, stretched to the exact size asked for:
+    // a thing that grows as it comes nearer grows smoothly, not in steps
+    const q = Math.max(4, Math.round(size)), s = this.sprite(ch, color, q), k = size / q, c = this.ctx;
+    if (alpha !== this.alpha) c.globalAlpha = this.alpha = alpha;
+    c.drawImage(s.canvas, x - s.bx * k, y + (q * 0.9 - s.by) * k, s.w * k, s.h * k);
+  }
+
+  // a filled box, for hiding what is behind something
+  box(x, y, w, h, color, alpha = 1) {
+    const c = this.ctx;
+    if (alpha !== this.alpha) c.globalAlpha = this.alpha = alpha;
+    c.fillStyle = color;
+    c.fillRect(x, y, w, h);
+  }
+
+  // draw onto another canvas for a while: a layer that is kept between frames
+  into(ctx, draw) {
+    const keep = this.ctx;
+    this.ctx = ctx; this.alpha = NaN;
+    draw();
+    this.ctx = keep; this.alpha = NaN;
+  }
+  layer() {
+    const c = document.createElement('canvas');
+    c.width = this.canvas.width; c.height = this.canvas.height;
+    const x = c.getContext('2d');
+    x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    return x;
+  }
+
   clear(color) {
     const c = this.ctx;
     if (this.alpha !== 1) c.globalAlpha = this.alpha = 1;

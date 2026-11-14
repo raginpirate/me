@@ -1,17 +1,21 @@
 // <ascii-scene> — a night mountain drawn in type.
 //
-// A tall ASCII painting the browser scrolls through 1:1. Everything that
-// lives (stars, the name, shooting stars, birds, flakes, leaves) is a
-// particle on a spring or on a path; everything else is painted once.
+// A tall scene the browser scrolls through 1:1. At the top a sky: stars,
+// the name, shooting stars, each a particle on a spring or on a path.
+// Then the painted peak, and below it the massif: cut-outs on a turntable
+// that turns as you go down, with the route winding round it, clouds and
+// far ranges behind, and things that live there.
 // The page starts it with start(); until then it is an empty element.
 
 import { Grid } from './grid.js';
 import { buildWorld } from './world.js';
 import { D } from './direction.js';
 import { layoutName } from './asterism.js';
-import { clamp, smooth, mulberry32, twinkle } from './util.js';
-
-const mix = ([a, b], t) => a + (b - a) * t;
+import { clamp, smooth, mulberry32, twinkle, mix, makeNoise, hash, mixHex } from './util.js';
+import { Massif } from './massif.js';
+import { Air } from './air.js';
+import { Ground } from './ground.js';
+import { Life } from './life.js';
 
 // The palette is the page's own: one definition, in styles.css.
 // P.rockLight reads --rock-light.
@@ -61,7 +65,7 @@ export class AsciiScene extends HTMLElement {
     addEventListener('pointermove', this.onPointer, { passive: true });
     addEventListener('resize', this.onResize);
     this.onScroll();
-    this.scrollRows = this.scrollTarget;
+    this.scrollRows = Math.min(this.scrollTarget, this.last);   // a phone's bars can let the page go a little further: the scene stays put
     this.loop = this.loop.bind(this);
     this.started = true;
     requestAnimationFrame(this.loop);
@@ -101,19 +105,48 @@ export class AsciiScene extends HTMLElement {
     g.resize(this.viewW, this.viewH);
     this.u = g.size / D.type.stack; // lights are measured in pixels at the stack type size
 
-    this.screenRows = this.viewH / g.cellH;
+    const S = this.screenRows = this.viewH / g.cellH;
     this.cols = g.cols;
-    this.rows = Math.ceil(L.screens * this.screenRows) + 2;
-    this.world = buildWorld(this.cols, this.rows, this.screenRows, D, P);
-    this.tileRows = Math.ceil(this.screenRows);
-    this.tiles = new Map(); this.bare = new Set();
-    this.maxScroll = (L.screens - 1) * this.screenRows;
+    this.rows = Math.ceil(L.screens * S) + 2;
+    this.maxScroll = (L.screens - 1) * S;
     this.aspect = g.cellW / g.cellH; // a column is this many rows wide
+    this.noise = makeNoise(77);
     const rnd = mulberry32(2026);
 
     // page height follows the world, in pixels, so the scroll range does not
     // move when a browser bar comes and goes
     document.documentElement.style.setProperty('--world-height', `${Math.round(this.rows * g.cellH)}px`);
+
+    // The peak is painted, as it always was, down to a seam inside the
+    // clouds. Through the seam the painting thins out cell by cell and the
+    // massif's core fills in.
+    // the furthest the scene scrolls, and the ground line: the row in the middle of the screen when it is there,
+    // so the last screen is half above ground and half below
+    this.last = this.rows - S;
+    this.summitRow = L.summit * S; this.seamRow = Math.round(L.seam * S); this.groundRow = Math.round(this.last + S / 2);
+    this.blend = Math.max(3, Math.round(S * 0.07)); this.bodyTop = this.seamRow - this.blend;
+    const w = this.world = buildWorld(this.cols, this.rows, S, D, P, this.seamRow + this.blend + 1);
+    this.painted = (row, c) => row < this.bodyTop || hash(row, c, 5) > (row - this.bodyTop) / (2 * this.blend);
+    const inside = (c, r) => c >= 0 && c < this.cols && w.peak[c] <= r;
+    this.peakSpan = [];   // what the peak covers on each row: [from, to)
+    for (let row = 0; row <= this.seamRow + this.blend; row++) {
+      let a = w.topCol, b = w.topCol;
+      const on = inside(a, row);
+      if (on) { while (inside(a - 1, row)) a--; while (inside(b + 1, row)) b++; this.peakSpan[row] = [a, b + 1]; }
+      const cells = w.cells[row];
+      for (let c = 0; c < this.cols; c++) if (cells[c] && (!on || c < a || c > b || !this.painted(row, c))) cells[c] = null;
+    }
+    const seam = this.peakSpan[this.seamRow];
+    this.seamHalf = (seam[1] - seam[0]) / 2; this.ax = (seam[0] + seam[1]) / 2;   // the massif's axis and its width where it takes over
+    // the route starts at the flag: a fixed rope down the peak to the seam
+    for (let row = Math.ceil(this.summitRow) + 2, n = 0; row < this.bodyTop; row++, n++) {
+      const t = n / (this.bodyTop - this.summitRow), span = this.peakSpan[row];
+      const c = clamp(Math.round(w.topCol + 1 + (Math.floor(this.ax + 0.5) - w.topCol - 1) * t), span[0] + 1, span[1] - 2);
+      w.cells[row][c] = n % 4 === 0 ? ['+', P.ember, 0.95] : [':', P.ember, 0.6];
+    }
+    this.tileRows = Math.ceil(S);
+    this.tiles = new Map(); this.bare = new Set();
+    this.mount = g.layer(); this.mountKey = null;
 
     // field stars: everywhere above the mountain, three tiers
     this.field = [];
@@ -121,14 +154,19 @@ export class AsciiScene extends HTMLElement {
       const u = rnd();
       const tier = u < dimShare ? 0 : u < midShare ? 1 : 2;
       const ch = tier === 0 ? (rnd() < 0.2 ? '·' : '.') : tier === 1 ? (rnd() < 0.15 ? '+' : '*') : '✦';
-      this.field.push({ x, y, hx: x, hy: y, vx: 0, vy: 0, tier, ch, phase: rnd() * 6.28 });
+      this.field.push({ x, y, hx: x, hy: y, vx: 0, vy: 0, tier, ch, phase: rnd() * 6.28, fade: 1 });
     };
-    const skyRows = Math.floor(L.summit * this.screenRows);
+    const skyRows = Math.floor(L.deck[1] * S);
     const count = Math.floor((this.cols * skyRows) / 58);
     for (let i = 0; i < count; i++) {
-      const x = rnd() * this.cols, y = rnd() * (skyRows + 20);
-      if (y > this.world.peak[Math.floor(x)]) continue;
+      const x = rnd() * this.cols, y = rnd() * skyRows, span = this.peakSpan[Math.floor(y)];
+      if (span && x >= span[0] && x < span[1]) continue;
+      // most stars are gone by the top of the cloud deck; one in four shows through it
+      const through = rnd() < 0.25, ys = y / S;
+      const fade = Math.max(1 - smooth(L.deck[0] - 0.12, L.deck[0] + 0.3, ys), through ? 0.7 * (1 - smooth(L.deck[1] - 0.3, L.deck[1], ys)) : 0);
+      if (fade < 0.03) continue;
       star(x, y, 0.7, 0.94);
+      this.field[this.field.length - 1].fade = fade;
     }
     // the sky above the name is what you see first: a little denser there,
     // with a few bright ones, so the name is not alone up top
@@ -165,11 +203,11 @@ export class AsciiScene extends HTMLElement {
     this.nameSeeds = this.nameStars.map(() => seeded());
 
     // the stops: when each card is open, where a glide rests, where its light is
-    const S = L.screens - 1, last = this.rows - this.screenRows;
-    const toT = (centre) => clamp((centre - 0.5) / S, 0, 1);                       // viewport centre in screens → scroll fraction
+    const span = L.screens - 1, last = this.rows - this.screenRows;   // span: the scroll's length in screens
+    const toT = (centre) => clamp((centre - 0.5) / span, 0, 1);                       // viewport centre in screens → scroll fraction
     const restRow = (centre) => clamp((centre - 0.5) * this.screenRows, 0, last);  // → the scroll position, in rows
     const mode = this.stack ? 'stack' : 'side', stage = Math.min(this.cols, stagePx / g.cellW);
-    this.fade = D.fade / S;
+    this.fade = D.fade / span;
     this.stops = D.stops.map((d, n) => {
       const s = { id: d.id, n, band: null, snap: 0, glow: 0, card: null, dots: [] };
       if (d.at) {
@@ -178,6 +216,7 @@ export class AsciiScene extends HTMLElement {
         s.x = s.hx = Math.round(this.cols / 2 + (across - 0.5) * stage); s.y = s.hy = Math.round(screen * this.screenRows); s.vx = s.vy = 0;
         s.side = across > 0.5 ? 'left' : 'right'; // the card goes on the other side from its light
         s.band = [toT(screen + D.band[mode][0]), toT(screen + D.band[mode][1])];
+        s.at = screen; s.mark = d.mark;   // a mark: a waypoint on the route rather than a light in the sky
         s.snap = restRow(screen + D.rest[mode]);
       } else if (d.until) s.band = [0, toT(d.until)];
       else s.snap = restRow(d.rest);
@@ -185,55 +224,31 @@ export class AsciiScene extends HTMLElement {
       return s;
     });
     this.lights = this.stops.filter((s) => s.side);
-    this.hollow();
 
-    // headlamps: a walk down the face between the route rows
-    this.placeLamps(this.lampCount);
+    // the mountain below the peak, what is round it, what is under it, what lives on it
+    this.massif = new Massif(this);
+    this.massif.setLamps(this.lampCount);
+    this.air = new Air(this);
+    const hut = this.stops.find((s) => s.mark === 'hut');
+    this.ground = new Ground(this, hut.hx);
+    // the last stop's waypoint is the hut's window, wherever the hut stands at the end of the page
+    this.centreRow = this.last + S / 2;
+    const [wx, wy] = this.ground.at(...this.ground.window);
+    hut.x = hut.hx = wx / g.cellW - 0.5; hut.y = hut.hy = wy / g.cellH - 0.5 + this.last;
+    this.life = new Life(this);
 
-    // static props for reduced motion
-    this.movers = []; this.resting = []; this.count = { bird: 0, flake: 0, leaf: 0 };
-    if (this.reduced.matches) {
-      for (let i = 0; i < 40; i++) this.movers.push(this.spawnFlake(rnd() * this.cols, (L.flakesFrom + rnd() * (L.leavesFrom - L.flakesFrom)) * this.screenRows, rnd));
-      for (let i = 0; i < 40; i++) { const f = this.spawnFlake(rnd() * this.cols, (L.leavesFrom + rnd() * (L.groundFrom - L.leavesFrom)) * this.screenRows, rnd); this.toLeaf(f, rnd); this.movers.push(f); }
-      for (let i = 0; i < 5; i++) this.movers.push(this.spawnBird(rnd() * this.cols, (L.birds[0] + rnd() * (L.birds[1] - L.birds[0])) * this.screenRows, rnd() < 0.5 ? 1 : -1, rnd));
-    }
-    this.nextShoot = 1.5 + rnd() * 2; this.nextBird = 1; this.flakeAcc = 0; this.leafAcc = 0;
+    this.movers = [];
+    this.nextShoot = 1.5 + rnd() * 2;
     this.dirty = true; this.told = undefined;
     this.dispatchEvent(new CustomEvent('built'));
   }
 
-  // a light on the mountain sits in a small hollow, so it reads against the rock and the trees
-  hollow() {
-    const g = this.grid, [inner, outer] = D.light.hollow, rnd = mulberry32(5);
-    const rx = Math.ceil(outer * this.u / g.cellW), ry = Math.ceil(outer * this.u / g.cellH);
-    for (const s of this.lights) {
-      for (let r = s.hy - ry; r <= s.hy + ry; r++) for (let c = s.hx - rx; c <= s.hx + rx; c++) {
-        if (!this.world.cells[r]?.[c]) continue;
-        const d = Math.hypot((c - s.hx) * g.cellW, (r - s.hy) * g.cellH) / this.u;
-        if (d < inner || rnd() > (d - inner) / (outer - inner)) this.world.cells[r][c] = null;
-      }
-    }
+  // how far the turntable has turned when the middle of the screen is `centre` screens down the page
+  yawAt(centre) {
+    const [a, b] = D.massif.turn, t = clamp((centre - a) / (b - a), 0, 1), k = 0.16;
+    return D.massif.turns * 2 * Math.PI * (t < k ? t * t / (2 * k) : t <= 1 - k ? t - k / 2 : 1 - k - (1 - t) ** 2 / (2 * k)) / (1 - k);
   }
-
-  placeLamps(n) {
-    const L = D.layout, w = this.world;
-    this.lampCount = n;
-    this.lamps = [];
-    this.dirty = true;
-    if (!n || !w) return;
-    const r0 = L.route[0] * this.screenRows, r1 = L.route[1] * this.screenRows;
-    const rnd = mulberry32(77);
-    let x = w.topCol + 2;
-    for (let i = 0; i < n; i++) {
-      const r = Math.round(r0 + ((r1 - r0) * (i + 0.5)) / n);
-      x += Math.round((rnd() - 0.42) * 7);
-      x = clamp(x, 2, this.cols - 3);
-      // keep it on the mountain
-      while (x < this.cols - 3 && r < w.peak[x]) x++;
-      this.lamps.push({ x, y: r, phase: rnd() * 6.28 });
-    }
-  }
-  setTrailLights(n) { this.placeLamps(clamp(n, 0, 40)); }
+  setTrailLights(n) { this.lampCount = clamp(n, 0, 40); this.massif?.setLamps(this.lampCount); this.dirty = true; this.mountKey = null; }
 
   // ---------- particles ----------
   // Shooting stars are points in front of a camera. The camera sits at the
@@ -289,23 +304,6 @@ export class AsciiScene extends HTMLElement {
     p.x = p.px / g.cellW; p.y = p.py / g.cellH;         // world cells, for everything else
     p.scale = k;
   }
-  spawnBird(x, y, dir, rnd) {
-    return { kind: 'bird', x, y, vx: dir * 7, baseY: y, phase: rnd() * 6.28, age: 0, life: 14 };
-  }
-  toBird(p, rnd) {
-    // it keeps flying the way the shooting star was heading
-    p.kind = 'bird'; p.hist = null; p.vx = (p.vX < 0 ? -1 : 1) * 7; p.baseY = p.y; p.phase = rnd() * 6.28; p.age = 0; p.life = 14; p.morph = 0.4;
-  }
-  spawnFlake(x, y, rnd) {
-    const u = rnd();
-    const ch = u < 0.5 ? '*' : u < 0.85 ? '.' : '+';
-    return { kind: 'flake', x, y, vx: 0, ch, far: ch === '.', phase: rnd() * 6.28, age: 0, life: 40, wasSky: y < this.world.peak[clamp(Math.floor(x), 0, this.cols - 1)] };
-  }
-  toLeaf(p, rnd) {
-    p.kind = 'leaf'; p.color = rnd() < 0.5 ? this.P.leaf : this.P.leafOlive; p.frame = Math.floor(rnd() * 3); p.phase = rnd() * 6.28; p.age = 0; p.life = 60;
-    p.restRow = this.world.groundRow + 1 + Math.floor(rnd() * (this.rows - this.world.groundRow - 8));
-  }
-
   // ---------- the frame ----------
   loop(now) {
     if (this.stopped || this.paused) return;
@@ -318,12 +316,13 @@ export class AsciiScene extends HTMLElement {
 
     // scroll: the painting moves exactly with the page; velocity drives the shove
     const prev = this.scrollRows;
-    this.scrollRows = this.scrollTarget;
+    this.scrollRows = Math.min(this.scrollTarget, this.last);   // a phone's bars can let the page go a little further: the scene stays put
     const rawVel = (this.scrollRows - prev) / dt;
     this.scrollVel += (rawVel - this.scrollVel) * Math.min(1, dt * 12);
     this.t = this.maxScroll > 0 ? clamp(this.scrollRows / this.maxScroll, 0, 1) : 0;
     const top = this.scrollRows, rows = this.screenRows, bottom = top + rows;
-    const centre = top + rows / 2;
+    this.centreRow = top + rows / 2; this.centre = this.centreRow / rows;   // the middle of the screen: in rows, and in screens
+    this.massif.frame(this.centreRow, this.yawAt(this.centre));
     // The scroll's shove on everything: with the scroll's speed, but levelling
     // off, so a fast scroll leans the world further without ever pinning it
     // against a limit.
@@ -367,76 +366,56 @@ export class AsciiScene extends HTMLElement {
     for (const s of this.nameStars) if (inView(s, 6)) spring(s, D.spring.star);
     let litInView = false;
     for (const s of this.lights) {
-      if (inView(s, 6)) spring(s, D.spring.light);
+      if (s.mark) {
+        // a waypoint stands where its cut-out (or the hut) stands now
+        const [x, y] = s.lobe ? this.massif.at(s.lobe, ...s.lobe.mark) : this.ground.at(...this.ground.window);
+        s.x = x / g.cellW - 0.5; s.y = y / g.cellH - 0.5 + top; s.show = s.lobe ? s.lobe.vis : 1;
+      } else if (inView(s, 6)) spring(s, D.spring.light);
       const on = this.presence(s);
       if (Math.abs(on - s.glow) > 0.003) active = true;
       s.glow += (on - s.glow) * Math.min(1, dt * 5);
       if (s.glow > 0.02 && inView(s, 4)) litInView = true;
-      // its tether: strung fresh each time the card opens, gone when it closes
-      if (on >= 0.02 && s.card) { if (!s.dots.length) this.string(s); this.tether(s, top, spring, dt); }
+      // a light's tether: strung fresh each time the card opens, gone when it closes.
+      // A waypoint has none: on the mountain the route is what leads to it.
+      if (!s.mark && on >= 0.02 && s.card) { if (!s.dots.length) this.string(s); this.tether(s, top, spring, dt); }
       else if (s.dots.length) s.dots = [];
     }
 
-    // --- spawn and update the living things ---
-    if (!reduced) this.spawn(dt, rnd, top, bottom, centre);
-    const keep = [], count = { bird: 0, flake: 0, leaf: 0 };
+    // --- shooting stars ---
+    if (!reduced && this.centre > L.shooting[0] && this.centre < L.shooting[1]) {
+      this.nextShoot -= dt;
+      if (this.nextShoot <= 0) { this.movers.push(this.spawnShooting(rnd)); this.nextShoot = D.spawn.shoot[0] + rnd() * D.spawn.shoot[1]; }
+    }
+    const keep = [];
     for (const p of this.movers) {
       p.age += dt;
-      if (p.kind === 'shoot') {
-        // bend away from the pointer: the lateral velocity turns, in 3D
-        if (ptr) {
-          const dx = (p.x - ptr[0]) * this.aspect, dy = p.y - ptr[1], d = Math.hypot(dx, dy);
-          const reach = 6 * Math.max(0.6, p.scale);
-          if (d < reach && d > 0.01) {
-            const want = Math.atan2(dy, dx), have = Math.atan2(p.vY, p.vX);
-            let diff = want - have; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
-            const turn = clamp(diff, -0.7, 0.7) * (1 - d / reach) * dt * 6;
-            const sp = Math.hypot(p.vX, p.vY), a = have + turn;
-            p.vX = sp * Math.cos(a); p.vY = sp * Math.sin(a);
-          }
+      // bend away from the pointer: the lateral velocity turns, in 3D
+      if (ptr) {
+        const dx = (p.x - ptr[0]) * this.aspect, dy = p.y - ptr[1], d = Math.hypot(dx, dy);
+        const reach = 6 * Math.max(0.6, p.scale);
+        if (d < reach && d > 0.01) {
+          const want = Math.atan2(dy, dx), have = Math.atan2(p.vY, p.vX);
+          let diff = want - have; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff < -Math.PI) diff += 2 * Math.PI;
+          const turn = clamp(diff, -0.7, 0.7) * (1 - d / reach) * dt * 6;
+          const sp = Math.hypot(p.vX, p.vY), a = have + turn;
+          p.vX = sp * Math.cos(a); p.vY = sp * Math.sin(a);
         }
-        p.vY -= shove * g.cellH * (p.Z / this.focal) * dt;
-        p.X += p.vX * dt; p.Y += p.vY * dt; p.Z += p.vZ * dt;
-        this.project3(p);
-        p.hist.push([p.X, p.Y, p.Z]); if (p.hist.length > 48) p.hist.shift();
-        const F = this.focal;
-        if (p.y >= L.birds[0] * rows) this.toBird(p, rnd);
-        else if (!(p.age < p.life && p.x > -20 && p.x < this.cols + 20 && p.y < bottom + 8 && p.Z > 0.28 * F && p.Z < 4.2 * F)) continue; // gone past the edge
-      } else if (p.kind === 'bird') {
-        p.morph = Math.max(0, (p.morph || 0) - dt);
-        const [px, py] = push(p, ...D.push.bird);
-        p.baseY += 1.0 * dt + shove * 0.5 * dt;
-        p.y = p.baseY + Math.sin(time * 2 + p.phase) * 1.0 + py;
-        p.x += p.vx * dt + px * dt * 3;
-        if (p.y >= L.flakesFrom * rows) {
-          // a bird that reaches the snow becomes three flakes
-          for (let i = 0; i < 3; i++) { const f = this.spawnFlake(p.x + (i - 1), p.y, rnd); f.vx = (rnd() - 0.5) * 2; keep.push(f); count.flake++; }
-          continue;
-        }
-        if (!(p.age < p.life && p.x > -6 && p.x < this.cols + 6 && inView(p, rows))) continue;
-        count.bird++;
-      } else if (!p.rest) {
-        // a flake, or a leaf still falling
-        const [px, py] = push(p, ...D.push.fall);
-        const [speed, sway] = D.fall[p.kind];
-        p.x += (Math.sin(time * 2.1 + p.phase) * sway + (p.vx || 0) + px * 2) * dt;
-        p.y += (speed + shove * 0.5 + py * 2) * dt;
-        p.vx = (p.vx || 0) * (1 - dt * 0.8);
-        if (p.kind === 'flake') {
-          if (p.y >= L.leavesFrom * rows) this.toLeaf(p, rnd);
-          else if (p.wasSky && p.y >= w.peak[clamp(Math.floor(p.x), 0, this.cols - 1)]) { p.landed = (p.landed || 0) + dt; if (p.landed > 0.5) continue; }
-        } else if (p.y >= p.restRow) {
-          // a leaf comes to rest; only the newest two hundred stay
-          p.rest = true; p.y = p.restRow; this.resting.push(p);
-          if (this.resting.length > 200) this.resting.shift().gone = true;
-        }
-        if (!(p.age < p.life && p.y < this.rows)) continue;
-        if (!p.rest) count[p.kind]++;
-      } else if (p.gone) continue;
-      if (!p.rest && inView(p, 2)) active = true;
+      }
+      p.vY -= shove * g.cellH * (p.Z / this.focal) * dt;
+      p.X += p.vX * dt; p.Y += p.vY * dt; p.Z += p.vZ * dt;
+      this.project3(p);
+      p.hist.push([p.X, p.Y, p.Z]); if (p.hist.length > 48) p.hist.shift();
+      const F = this.focal;
+      // gone past the edge, or down to the summit, where they burn out
+      if (!(p.age < p.life && p.x > -20 && p.x < this.cols + 20 && p.y < Math.min(bottom + 8, L.summit * rows) && p.Z > 0.28 * F && p.Z < 4.2 * F)) continue;
+      if (inView(p, 2)) active = true;
       keep.push(p);
     }
-    this.movers = keep; this.count = count;
+    this.movers = keep;
+
+    // --- what lives on the mountain ---
+    const alive = this.life.showing || this.air.showing || this.ground.showing;
+    if (!reduced && this.life.showing) this.life.update(dt);
 
     // the name twinkles in all at once over three seconds
     const reveal = this.reveal = reduced ? 1 : clamp((time - 0.4) / 3, 0, 1);
@@ -449,15 +428,14 @@ export class AsciiScene extends HTMLElement {
     // If only slow twinkles are alive, every other frame will do. If nothing
     // is, the last frame stands, and the spare time paints the next screen
     // of mountain ahead of the scroll.
-    const skyVisible = top < L.summit * rows + 10;
-    const lampsVisible = this.lamps.length > 0 && bottom > L.route[0] * rows - 2 && top < L.route[1] * rows + 2;
-    const ambient = !reduced && (skyVisible || litInView || lampsVisible);
+    const skyVisible = top < L.deck[1] * rows;
+    const ambient = !reduced && (skyVisible || litInView || alive);
     this.tick = (this.tick || 0) + 1;
     if (!active && !(ambient && this.tick % 2 === 0)) { this.warm(top); return; }
 
-    // --- draw ---
-    g.clear(this.t > 0.86 ? P.skyBase : P.sky);
-    this.paint(top);
+    // --- draw, from the back to the front ---
+    this.sky = mixHex(P.sky, P.skyBase, smooth(8.3, 9.7, this.centre));
+    g.clear(this.sky);
 
     // field stars
     if (skyVisible) {
@@ -468,7 +446,7 @@ export class AsciiScene extends HTMLElement {
       const hush = this.quiet.length ? this.presence(this.stops[0]) : 0, [gone, back] = D.clear.text.map((v) => v * this.u);
       for (const s of this.field) {
         if (!inView(s)) continue;
-        let ch = s.ch, a = 1;
+        let ch = s.ch, a = s.fade;
         if (hush > 0.01) {
           const x = (s.x + 0.5) * g.cellW, y = (s.y - top + 0.5) * g.cellH;
           let d = Infinity;
@@ -514,15 +492,15 @@ export class AsciiScene extends HTMLElement {
       for (const s of this.nameStars) g.put('*', P.star, s.x, s.y - top);
     }
 
-    // the lights, one for every stop with something to read. Each is one
-    // object placed in pixels, not cells (a cell is twice as tall as it is
-    // wide): a soft bloom of the glyph itself, a ring of dots at one even
-    // pitch, and the star centred on its own ink. At rest: bloom and four
-    // dots. Lit: the four brighten, the corners and four outer points fill
-    // in, the star grows and warms.
+    // the lights in the sky, one for every stop up there. Each is one object
+    // placed in pixels, not cells (a cell is twice as tall as it is wide): a
+    // soft bloom of the glyph itself, a ring of dots at one even pitch, and
+    // the star centred on its own ink. At rest: bloom and four dots. Lit:
+    // the four brighten, the corners and four outer points fill in, the star
+    // grows and warms.
     const A = D.light, u = this.u, pitch = A.pitch * u;
     for (const s of this.lights) {
-      if (!inView(s, 4)) continue;
+      if (s.mark || !inView(s, 4)) continue;
       const lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light));
       const x = (s.x + 0.5) * g.cellW, y = (s.y - top + 0.5) * g.cellH;
       g.ink('✦', P.ember, x, y, mix(A.bloom, lit) * u, mix(A.bloomAlpha, live));
@@ -533,31 +511,30 @@ export class AsciiScene extends HTMLElement {
       g.ink('✦', P.ember, x, y, size);
       g.ink('✦', P.emberHot, x, y, size, lit);
     }
+    for (const p of this.movers) if (inView(p, 2)) this.drawShooting(p, top);
 
-    // headlamps on the route, one per merged commit
-    if (lampsVisible) {
-      const sweep = smooth(L.route[0] - 0.3, L.route[1], centre / rows);
-      this.lamps.forEach((l, i) => {
-        if (l.y < top - 2 || l.y > bottom + 2) return;
-        const order = (i + 0.5) / this.lamps.length;
-        const lit = smooth(order - 0.1, order + 0.02, sweep * 1.08);
-        const pulse = reduced ? 1 : twinkle(time, l.phase, ...D.twinkle.lamp);
-        g.put('o', P.ember, l.x, l.y - top, (0.35 + 0.65 * lit) * pulse);
-        if (lit > 0.5) for (const dx of [-1, 1]) g.put('·', P.ember, l.x + dx, l.y - top, 0.5 * lit * pulse);
-      });
+    // below the sky: far ranges, far snow and the flock, the clouds behind
+    // the mountain; then the mountain; then what is in front of it
+    const below = bottom > (L.deck[0] - 1.2) * rows;
+    if (below) {
+      this.air.drawRanges();
+      if (!reduced) this.life.behind();
+      this.air.drawClouds(false);
+      // the massif and the ground are kept as one layer, redrawn only when the page has moved
+      const key = `${top}|${this.sky}`;
+      if (key !== this.mountKey) {
+        this.mountKey = key;
+        this.mount.clearRect(0, 0, g.w, g.h);
+        g.into(this.mount, () => { this.massif.render(); this.ground.render(); });
+      }
+      g.blit(this.mount.canvas, 0);
     }
-
-    // the living things
-    for (const p of this.movers) {
-      if (!inView(p, 2)) continue;
-      const y = p.y - top;
-      if (p.kind === 'shoot') this.drawShooting(p, top);
-      else if (p.kind === 'bird') {
-        // a shooting star is a single mark for a moment before it is a bird
-        const f = p.morph > 0.25 ? ' v ' : G.bird[Math.floor(time * 6 + p.phase) % G.bird.length];
-        for (let i = 0; i < f.length; i++) g.put(f[i], P.bird, p.x - 1 + i, y);
-      } else if (p.kind === 'flake') g.put(p.ch, p.far ? P.dim : P.snow, p.x, y);
-      else g.put(p.rest ? ',' : G.leaves[(p.frame + Math.floor(time * 3)) % 3], p.color, p.x, y);
+    this.paint(top);
+    this.drawRoute(top, time, reduced);
+    if (below) {
+      this.ground.draw();
+      if (!reduced) this.life.front();
+      this.air.drawClouds(true);
     }
 
     // the tethers. Their stars come in one by one as the card opens, each
@@ -568,6 +545,55 @@ export class AsciiScene extends HTMLElement {
       const on = this.presence(s);
       const edge = this.stack ? (s.card.top - 2) / g.cellH - 0.5 + top : Infinity; // nothing is drawn over a stacked card
       for (const p of s.dots) if (p.a && p.y < edge) g.put('·', P.thread, p.x, p.y - top, p.a * 0.95 * smooth(p.late * 0.55, p.late * 0.55 + 0.45, on) * this.flicker(p.tw));
+    }
+  }
+
+  // The route's own things: the flag on the summit, the lamps of those
+  // climbing it, and a waypoint for every stop on the mountain: a small
+  // lantern on whatever stands there. Each is a drawing of a few glyphs at
+  // different sizes, sized with the cut-out it stands on.
+  drawRoute(top, time, reduced) {
+    const g = this.grid, P = this.P, w = this.world, H = g.h;
+    // the flag
+    const fx = (w.topCol + 0.5) * g.cellW, fy = (Math.ceil(this.summitRow) - top) * g.cellH, fu = g.size * 1.15;
+    if (fy > -40 && fy < H + 40) {
+      g.ink('|', P.rockLight, fx, fy - 0.45 * fu, fu * 1.3); g.ink('|', P.rockLight, fx, fy - 1.45 * fu, fu * 1.3);
+      const wave = reduced ? 0 : Math.sin(time * 3.2);
+      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.56 + 0.05 * wave) * fu, fy - 1.68 * fu, fu * 1.3);
+    }
+    // lamps
+    for (const m of this.massif.lamps) {
+      if (m.l.vis < 0.1) continue;
+      const [x, y] = this.massif.at(m.l, m.c + 0.5, m.r + 0.5);
+      if (y < -10 || y > H + 10) continue;
+      const u = g.size * m.l.s, pulse = reduced ? 1 : twinkle(time, m.phase, ...D.twinkle.lamp);
+      g.box(x - u * 0.9, y - u * 0.7, u * 1.8, u * 1.4, this.sky, m.l.vis);
+      g.ink('o', P.ember, x, y, u, m.l.vis * pulse);
+    }
+    // waypoints
+    const FIX = {
+      axe: [['T', -0.6, 0.15, 1.5, P.rockLight]],
+      cairn: [['O', -0.78, 0.3, 1.1, P.rockLight], ['o', -0.82, -0.38, 0.9, P.rockLight], ['o', -0.76, -0.95, 0.6, P.rockLight]],
+      post: [['T', -0.6, 0, 1.7, mixHex(P.ground, P.leaf, 0.45)]],
+      hut: [],
+    };
+    for (const s of this.lights) {
+      if (!s.mark || s.show < 0.05) continue;
+      const [x, y] = this.where(s);
+      if (y < -40 || y > H + 40) continue;
+      const u = g.size * (s.lobe ? s.lobe.s : this.ground.k), lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light)), a = s.show;
+      if (s.lobe) {
+        // a small hollow, so it reads against rock and trees
+        const x2 = g.ctx, r = u * 2.6, grad = x2.createRadialGradient(x, y, r * 0.45, x, y, r);
+        grad.addColorStop(0, this.sky); grad.addColorStop(1, this.sky + '00');
+        g.box(x - r, y - r, 2 * r, 2 * r, grad, a);
+      }
+      for (const [ch, dx, dy, k, color] of FIX[s.mark]) g.ink(ch, color, x + dx * u, y + dy * u, k * u, a);
+      // the lantern: a glow, the flame, and when its card is open a ring round it
+      g.ink('o', P.ember, x, y, u * 2.7, (0.1 + 0.2 * live) * a);
+      if (s.mark === 'hut') { for (const [ch, dx] of [['[', -0.5], [']', 0.5]]) g.ink(ch, P.emberHot, x + dx * g.cellW * this.ground.k, y, u, live * a); }
+      else { g.ink('o', P.ember, x, y, u * 0.85, a); g.ink('o', P.emberHot, x, y, u * 0.85, lit * a); }
+      if (lit > 0.05) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.ink('·', P.ember, x + dx * u * 1.25, y + dy * u * 1.25, u, 0.8 * live * a);
     }
   }
 
@@ -678,7 +704,8 @@ export class AsciiScene extends HTMLElement {
     const g = this.grid, P = this.P, F = this.focal, tail = D.glyphs.shootTail;
     const base = g.size, topPx = top * g.cellH;
     const headK = F / p.Z;
-    const fade = clamp((p.life - p.age) / 0.3, 0, 1); // one a pointer has held on screen past its time fades instead of blinking out
+    // one a pointer has held on screen past its time fades instead of blinking out; so does one that comes down to the summit
+    const fade = clamp((p.life - p.age) / 0.3, 0, 1) * (1 - smooth(D.layout.summit - 0.5, D.layout.summit - 0.05, p.y / this.screenRows));
     g.ink(D.glyphs.shootHead, P.starBright, p.px, p.py - topPx, base * clamp(headK, 0.35, 3.6), clamp(headK * 1.15, 0.1, 1) * fade);
     // the tail follows the real path through space; spacing is one glyph at each point's own scale
     let acc = 0, k = 0;
@@ -691,45 +718,6 @@ export class AsciiScene extends HTMLElement {
         g.ink(tail[k], P.star, x0, y0 - topPx, base * clamp(k0, 0.35, 3.2), (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.1, 1) * fade);
         k++;
       }
-    }
-  }
-
-  spawn(dt, rnd, top, bottom, centre) {
-    const L = D.layout, W = D.spawn, rows = this.screenRows;
-    const cs = centre / rows; // viewport centre in screens
-    // shooting stars
-    if (cs > L.shooting[0] && cs < L.shooting[1]) {
-      this.nextShoot -= dt;
-      if (this.nextShoot <= 0) { this.movers.push(this.spawnShooting(rnd)); this.nextShoot = W.shoot[0] + rnd() * W.shoot[1]; }
-    }
-    // birds from the edges
-    if (bottom > L.birds[0] * rows && top < L.birds[1] * rows) {
-      this.nextBird -= dt;
-      if (this.nextBird <= 0 && this.count.bird < W.bird[1]) {
-        const dir = rnd() < 0.5 ? 1 : -1;
-        const y = clamp(top + rnd() * rows * 0.6, L.birds[0] * rows, L.birds[1] * rows - 2);
-        this.movers.push(this.spawnBird(dir > 0 ? -3 : this.cols + 3, y, dir, rnd));
-        this.nextBird = W.bird[0];
-      }
-    }
-    // flakes across the width
-    if (bottom > L.flakesFrom * rows && top < L.leavesFrom * rows) {
-      this.flakeAcc += dt * W.flake[0];
-      while (this.flakeAcc >= 1 && this.count.flake < W.flake[1]) {
-        this.flakeAcc -= 1;
-        this.movers.push(this.spawnFlake(rnd() * this.cols, Math.max(L.flakesFrom * rows, top - 1), rnd));
-      }
-      if (this.flakeAcc > 1) this.flakeAcc = 0;
-    }
-    // leaves through the trees
-    if (bottom > L.leavesFrom * rows && top < L.groundFrom * rows) {
-      this.leafAcc += dt * W.leaf[0];
-      while (this.leafAcc >= 1 && this.count.leaf < W.leaf[1]) {
-        this.leafAcc -= 1;
-        const f = this.spawnFlake(rnd() * this.cols, Math.max(L.leavesFrom * rows, top - 1), rnd);
-        this.toLeaf(f, rnd); this.movers.push(f);
-      }
-      if (this.leafAcc > 1) this.leafAcc = 0;
     }
   }
 
@@ -749,7 +737,8 @@ export class AsciiScene extends HTMLElement {
     const x = c.getContext('2d');
     x.scale(g.dpr, g.dpr);
     for (let r = r0; r < r1; r++) {
-      const row = this.world.cells[r];
+      const row = this.world.cells[r], span = this.peakSpan[r];
+      if (span && r < this.bodyTop) { x.fillStyle = this.P.sky; x.fillRect(span[0] * g.cellW, (r - r0) * g.cellH, (span[1] - span[0]) * g.cellW, g.cellH + 0.5); }   // the peak hides what is behind it
       for (let col = 0; col < this.cols; col++) { const cell = row[col]; if (cell) g.put(cell[0], cell[1], col, r - r0, cell[2] ?? 1, x); }
     }
     this.tiles.set(index, { canvas: c, used: performance.now() });
@@ -769,6 +758,7 @@ export class AsciiScene extends HTMLElement {
   warm(top) {
     const [first, last] = this.span(top), n = Math.ceil(this.rows / this.tileRows);
     for (const i of [last + 1, first - 1]) if (i >= 0 && i < n && !this.bare.has(i) && !this.tiles.has(i)) { this.tile(i); return; }
+    this.massif.warm();
   }
 
   // ---------- for the page ----------

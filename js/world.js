@@ -1,37 +1,16 @@
-// The tall ASCII painting: a sky, a snow-topped peak in front of a fogged
-// far ridge, ridges running downhill, a treeline, the base. Built once per
-// resize into a row/column buffer of [glyph, colour] or [glyph, colour,
-// strength]. P is the page's palette.
+// The painted peak: a snow-topped summit with its arêtes, lit from the
+// left. Built once per resize into a row/column buffer of [glyph, colour]
+// or [glyph, colour, strength], down to row `limit`; everything below that
+// is the massif's. P is the page's palette.
+//
+// Its outline and its arêtes are still worked out for the whole mountain
+// this peak once topped (FOOT), so the peak is cell for cell what it was.
 
-import { clamp, smooth, mulberry32 } from './util.js';
+import { clamp, smooth, mulberry32, makeNoise } from './util.js';
 
-function makeNoise(seed) {
-  const rnd = mulberry32(seed);
-  const S = 256, perm = new Uint8Array(S * 2), grid = new Float32Array(S);
-  for (let i = 0; i < S; i++) { perm[i] = i; grid[i] = rnd(); }
-  for (let i = S - 1; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [perm[i], perm[j]] = [perm[j], perm[i]]; }
-  for (let i = 0; i < S; i++) perm[S + i] = perm[i];
-  const fade = (t) => t * t * (3 - 2 * t);
-  function noise(x, y) {
-    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, X = xi & 255, Y = yi & 255;
-    const a = grid[perm[X + perm[Y]]], b = grid[perm[X + 1 + perm[Y]]], c = grid[perm[X + perm[Y + 1]]], d = grid[perm[X + 1 + perm[Y + 1]]];
-    const u = fade(xf), v = fade(yf);
-    return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
-  }
-  const fbm = (x, y, oct = 4) => {
-    let s = 0, amp = 0.5, f = 1, n = 0;
-    for (let i = 0; i < oct; i++) { s += amp * noise(x * f, y * f); n += amp; amp *= 0.5; f *= 2.03; }
-    return s / n;
-  };
-  const ridged = (x, y, oct = 3) => {
-    let s = 0, amp = 0.5, f = 1, n = 0;
-    for (let i = 0; i < oct; i++) { s += amp * (1 - Math.abs(2 * noise(x * f, y * f) - 1)); n += amp; amp *= 0.5; f *= 2.1; }
-    return s / n;
-  };
-  return { noise, fbm, ridged };
-}
+const FOOT = { base: 8.6, ground: 8.3, snow: 4.4 };   // screens: where that mountain's slopes ended, and its snowline
 
-export function buildWorld(cols, rows, screenRows, D, P) {
+export function buildWorld(cols, rows, screenRows, D, P, limit) {
   const { noise, fbm, ridged } = makeNoise(20181105);
   const rnd = mulberry32(42);
   const G = D.glyphs, L = D.layout;
@@ -39,10 +18,9 @@ export function buildWorld(cols, rows, screenRows, D, P) {
   for (let r = 0; r < rows; r++) cells[r] = new Array(cols).fill(null);
 
   const summitRow = L.summit * screenRows;
-  const baseRow = L.base * screenRows;
-  const groundRow = Math.round(L.groundFrom * screenRows);
-  const treelineRow = L.treeline * screenRows;
-  const snowBottom = L.snowBottom * screenRows;
+  const baseRow = FOOT.base * screenRows;
+  const groundRow = Math.round(FOOT.ground * screenRows);
+  const snowBottom = FOOT.snow * screenRows;
   const apex = L.apexX * cols;
   const H = baseRow - summitRow; // the mountain's height in rows
 
@@ -62,14 +40,6 @@ export function buildWorld(cols, rows, screenRows, D, P) {
   for (let c = 0; c < cols; c++) if (peak[c] < top) { top = peak[c]; topCol = c; }
   const lift = top - summitRow;
   for (let c = 0; c < cols; c++) peak[c] -= lift;
-
-  // a far ridge behind, fogged
-  const far = new Float32Array(cols);
-  for (let c = 0; c < cols; c++) {
-    const x = c / cols;
-    let h = hump(x, 0.14, 0.14, 0.5) + hump(x, 0.9, 0.16, 0.46) + hump(x, 0.5, 0.5, 0.3) + (ridged(x * 6 + 9, 3.1, 2) - 0.5) * 0.08;
-    far[c] = baseRow - Math.max(0, h) * H;
-  }
 
   // slope, smoothed over 3 cells; negative means the surface rises to the right
   const slope = new Float32Array(cols);
@@ -101,32 +71,9 @@ export function buildWorld(cols, rows, screenRows, D, P) {
 
   const ramp = G.rock;
   for (let c = 0; c < cols; c++) {
-    const pk = peak[c], fr = far[c];
+    const pk = peak[c];
     const lit = slopeS[c] < 0 ? 1 : slopeS[c] > 0 ? 0 : 0.5;  // left faces (rising to the right) are lit
-    for (let r = 0; r < rows; r++) {
-      // ground band
-      if (r >= groundRow) {
-        const bottom = rows - r <= 6;
-        const g = bottom ? ['_', '.', ' ', ' '] : G.ground;
-        const n = noise(c * 0.37 + 1, r * 0.61 + 2);
-        const edge = Math.min(c, cols - 1 - c) / cols; // trunks crowd the edges
-        if (edge < 0.12 && noise(c * 1.3, 0.5) > 0.74 && r < rows - 8) { cells[r][c] = ['|', P.pineDark]; continue; }
-        // leaves piled at the foot of the slope: dense on the ground line, thinning below
-        const foot = Math.max(0, 0.6 - (r - groundRow) * 0.085);
-        if (rnd() < foot) { cells[r][c] = [G.leaves[Math.floor(rnd() * 3)], rnd() < 0.55 ? P.leaf : P.leafOlive]; continue; }
-        const ch = n < 0.5 ? ' ' : g[(r + c) % g.length];
-        if (ch !== ' ') cells[r][c] = [ch, bottom ? P.groundDark : (n > 0.78 ? P.ground : P.groundDark)];
-        // the slope's last rows blend into the ground
-        continue;
-      }
-      if (r < pk) {
-        // sky, maybe the fogged far ridge
-        if (r >= fr) {
-          const n = noise(c * 0.15, r * 0.2);
-          if (n > 0.42) cells[r][c] = [n > 0.75 ? '-' : '.', P.far, 0.6];
-        }
-        continue;
-      }
+    for (let r = Math.max(0, Math.ceil(pk)); r < limit; r++) {
       const depth = r - pk;
       // lighting: which side of the ridge, how far from the crest, facets 4–7 cells wide
       const across = clamp(Math.abs(c - topCol) / (cols * 0.5), 0, 1);
@@ -158,88 +105,12 @@ export function buildWorld(cols, rows, screenRows, D, P) {
         const i = clamp(Math.floor((1 - light) * ramp.length), 0, ramp.length - 1);
         ch = ramp[i];
         color = i <= 2 ? P.rockLight : i <= 5 ? P.rock : P.rockDark;
-        // rock gives way to ground texture near the base
-        const toGround = smooth(groundRow - 12, groundRow, r);
-        if (toGround > 0 && rnd() < toGround) { ch = G.ground[(r + c) % G.ground.length]; color = P.ground; }
         // shadows are airy: the darker the cell, the more often it is left blank
-        else if (rnd() < 0.22 + (1 - light) * 0.4) ch = ' ';
+        if (rnd() < 0.22 + (1 - light) * 0.4) ch = ' ';
       }
       if (ch !== ' ') cells[r][c] = [ch, color];
     }
   }
 
-  // trees: stand on the slope where it is gentle enough, below the treeline
-  const shapes = G.trees;
-  let lastShape = -1;
-  for (let c = 1; c < cols - 8;) {
-    const pk = peak[c];
-    const gentle = Math.abs(slopeS[c]) * 0.5 < 0.7;
-    const below = pk > treelineRow;
-    if (!(gentle && below) || pk >= groundRow - 1) { c++; continue; }
-    const density = smooth(treelineRow, treelineRow + screenRows * 1.6, pk);
-    if (rnd() > 0.35 + 0.5 * density) { c += 2; continue; }
-    let si = Math.floor(rnd() * shapes.length);
-    if (si === lastShape) si = (si + 1) % shapes.length;
-    lastShape = si;
-    const shape = shapes[si];
-    const h = shape.length, w = Math.max(...shape.map((s) => s.length));
-    const baseR = Math.round(pk) + Math.floor(rnd() * 2);
-    const shadow = slopeS[c + Math.floor(w / 2)] > 0;
-    let k = 0;
-    for (let i = 0; i < h; i++) {
-      const line = shape[i];
-      for (let j = 0; j < line.length; j++) {
-        const ch = line[j];
-        if (ch === ' ') continue;
-        const rr = baseR - (h - 1 - i), cc = c + j;
-        if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
-        const trunk = ch === '|' && i === h - 1;
-        const edge = j === 0 || j === line.length - 1;
-        const dark = trunk || (shadow && edge) || (k++ % 4 === 3);
-        cells[rr][cc] = [ch, dark ? P.pineDark : P.pine];
-      }
-    }
-    c += w - 1 + 3 + Math.floor(rnd() * 4);
-  }
-
-  // a forest across the lower face: clusters of 3–6 pines with small gaps,
-  // standing on rock, thickening toward the base
-  const stamp = (c, r, shape, shadow) => {
-    const h = shape.length;
-    for (let i = 0; i < h; i++) for (let j = 0; j < shape[i].length; j++) {
-      const cell = cells[r - (h - 1 - i)]?.[c + j];
-      if (cell && (cell[1] === P.pine || cell[1] === P.pineDark)) return false;
-    }
-    let k = 0;
-    for (let i = 0; i < h; i++) for (let j = 0; j < shape[i].length; j++) {
-      const ch = shape[i][j];
-      if (ch === ' ') continue;
-      const rr = r - (h - 1 - i), cc = c + j;
-      if (rr < 0 || rr >= rows || cc >= cols) continue;
-      const trunk = ch === '|' && i === h - 1;
-      cells[rr][cc] = [ch, trunk || (shadow && (j === 0 || j === shape[i].length - 1)) || k++ % 4 === 3 ? P.pineDark : P.pine];
-    }
-    return true;
-  };
-  const clusters = Math.floor(cols * 0.9);
-  for (let n = 0; n < clusters; n++) {
-    const c0 = Math.floor(rnd() * (cols - 24));
-    const r0 = Math.floor(treelineRow + Math.pow(rnd(), 0.7) * (groundRow - treelineRow - 2));
-    if (r0 < peak[c0 + 6] + 3) continue;
-    const size = 3 + Math.floor(rnd() * 4);
-    let c = c0;
-    for (let i = 0; i < size; i++) {
-      const shape = rnd() < 0.3 ? [' ^ ', '/|\\'] : shapes[Math.floor(rnd() * shapes.length)];
-      const w = Math.max(...shape.map((x) => x.length));
-      const r = r0 + Math.floor((rnd() - 0.5) * 3);
-      if (r < peak[Math.min(cols - 1, c + 2)] + 2 || r >= groundRow - 1 || r >= rows) { c += w; continue; }
-      // the bottom row must sit on something
-      const below = cells[r + 1]?.[c + Math.floor(w / 2)];
-      if (!below && r + 1 < groundRow) { c += w; continue; }
-      stamp(c, r, shape, c > topCol);
-      c += w + 1 + Math.floor(rnd() * 2);
-    }
-  }
-
-  return { cells, peak, groundRow, topCol };
+  return { cells, peak, topCol };
 }

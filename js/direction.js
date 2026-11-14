@@ -6,15 +6,20 @@
 export const D = {
   glyphs: {
     shootHead: '✦', shootTail: ['*', '=', '-', '-', '.', '.'],
-    bird: ['~v~', ' v ', '^v^', ' v '],
     leaves: [',', "'", '~'],
     rock: ['%', '#', '*', '+', '=', ':', '-', '.'],   // light → dark
-    trees: [
+    pines: [
       ['  ^  ', ' /^\\ ', '/^^^\\', '  |  '],
       ['  ^  ', ' /|\\ ', ' /|\\ ', '/|||\\'],
       ['   ^   ', '  / \\  ', ' /^^^\\ ', '/^^^^^\\', '  /|\\  '],
     ],
-    ground: ['.', ',', ':', "'", '.', ','],
+    sapling: [' ^ ', '/|\\'],
+    leafy: [
+      [' ,&&, ', '(&&&&)', '  ||  '],
+      [' &&& ', '(&&&)', '  |  '],
+      ['  ,&,  ', ' (&&&) ', '(&&&&&)', '  \\|/  '],
+    ],
+    hut: ['      ,     ', '   ___|]__  ', '  /       \\ ', ' /_________\\', ' |  []  _  |', ' |_____|_|_|'],
   },
 
   // type size of the painting, in pixels
@@ -25,15 +30,22 @@ export const D = {
     screens: 10.5,
     name: 0.34,
     shooting: [0.35, 3.95],
-    birds: [3.3, 4.4],
     summit: 3.72, apexX: 0.52,
-    snowBottom: 4.4,
-    flakesFrom: 4.1,
-    route: [4.6, 6.2],
-    treeline: 5.4,
-    leavesFrom: 5.6,
-    groundFrom: 8.3, base: 8.6,
+    seam: 4.42,            // the painted peak ends here, inside the clouds
+    deck: [4.1, 4.92],     // the cloud deck
+    snow: [4.62, 6.55],    // snow falls from the cloud base and thins out among the first trees
+    ice: 5.25,             // the route is a fixed rope down to here, a path after
+    treeline: 5.5,         // first trees
+    forest: 6.3,           // closed forest
+    ground: 10,            // about where the ground is; the scene puts the line exactly half a screen from its end
   },
+  // The mountain below the peak is a cluster of cut-outs on a turntable.
+  // turn: it turns between these, by where the middle of the screen is.
+  // turns: how far, in whole turns. depth: how much bigger the nearest
+  // cut-out is drawn than one at the middle. lead: a cut-out faces you when
+  // the middle of the screen is this many screens below its top.
+  // haze: the angle, radians, where one starts to fade as it goes round the side, and where it is gone.
+  massif: { turn: [4.25, 9.6], turns: 0.6, depth: 0.42, lead: 0.14, haze: [1.1, 1.65], moon: -0.95 },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the
@@ -46,12 +58,12 @@ export const D = {
     { id: 'w3c', at: [2.02, 0.26] },
     { id: 'fido', at: [2.67, 0.74] },
     { id: 'shopify', at: [3.32, 0.36] },
-    { id: 'summit', rest: 3.84 },             // somewhere to rest, nothing to read
-    { id: 'climb', at: [4.69, 0.62] },
-    { id: 'subscriptions', at: [5.84, 0.30] },
-    { id: 'fera', at: [6.54, 0.70] },
-    { id: 'first', at: [7.24, 0.34] },
-    { id: 'base', at: [9.7, 0.66] },          // the last stop stays open to the end
+    { id: 'summit', rest: 3.84 },             // somewhere to rest, nothing to read: the flag
+    { id: 'climb', at: [4.69, 0.62], mark: 'axe' },         // on the mountain a stop is a waypoint: a lantern on what stands there
+    { id: 'subscriptions', at: [5.84, 0.30], mark: 'cairn' },
+    { id: 'fera', at: [6.54, 0.70], mark: 'post' },
+    { id: 'first', at: [7.24, 0.34], mark: 'post' },
+    { id: 'base', at: [9.7, 0.66], mark: 'hut' },   // the last stop stays open to the end; its waypoint is the hut's window
   ],
   // when a stop's card is open: the viewport centre, in screens from its light.
   // stack: the card sits under the scene, so it opens once the light is above it.
@@ -61,7 +73,7 @@ export const D = {
   fade: 0.19,                                 // screens a card takes to come and go
 
   // a stop's light. Sizes in pixels at the stack type size; [resting, lit]
-  light: { star: [15, 17], bloom: [25, 31], bloomAlpha: [0.15, 0.22], pitch: 11, ring: 0.45, clear: 27, hollow: [32, 44] },
+  light: { star: [15, 17], bloom: [25, 31], bloomAlpha: [0.15, 0.22], pitch: 11, ring: 0.45, clear: 27 },
 
   // the name's thread: straight, a dot every half cell, alternating bright and dim
   thread: { perCell: 2, bright: 0.95, dim: 0.6 },
@@ -83,12 +95,9 @@ export const D = {
   // the scroll's shove: [how hard per row a second of scroll, the most it ever pushes].
   // The most keeps a star's lean (most / stiffness squared = 2.5 rows) inside its furthest.
   shove: [0.9, 122],
-  // pointer push on things that fall or fly: [radius, strength]
-  // core: rows around the pointer where the push fades to nothing, so a thing
+  // core: rows around the pointer where its push fades to nothing, so a thing
   // right under it rests instead of snapping from one side to the other
-  push: { bird: [4, 3], fall: [5, 2.5], core: 1.2 },
-  // falling: [rows per second, sway]
-  fall: { flake: [2.5, 0.8], leaf: [1.8, 1.5] },
+  push: { core: 1.2 },
   // room kept clear of field stars, in pixels at the stack type size.
   // name: around each of the name's stars, and along its threads.
   // text: around the lines under the name; gone inside the first, back to full by the second.
@@ -108,5 +117,5 @@ export const D = {
   // cross: the longest crossing, in screen widths.
   shoot: { speed: [0.28, 0.54], peak: 1.15, depth: [1.4, 3.2], near: [0.5, 1.0], toward: 0.6, top: 0.5, cross: 1.25 },
   // how often things appear
-  spawn: { shoot: [3.5, 2.5], bird: [4, 6], flake: [9, 90], leaf: [5, 80] },   // [seconds, spread] / [seconds, most] / [per second, most]
+  spawn: { shoot: [3.5, 2.5] },   // [seconds, spread]
 };

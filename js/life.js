@@ -1,0 +1,195 @@
+// What lives on the way down, in the order you meet it: snow under the
+// clouds, a far flock now and then, and in the forest falling leaves, an
+// owl that goes from tree top to tree top, and squirrels.
+//
+// The owl and the squirrels are small drawings made of a few glyphs at
+// different sizes. A part is [glyph, across, down, size, colour]: across
+// and down from the drawing's middle, and size, all in units of the type
+// size where it stands.
+
+import { clamp, smooth, mulberry32 } from './util.js';
+import { D } from './direction.js';
+
+const OWL = [['(', -0.55, 0.1, 1.4, 'snow'], [')', 0.55, 0.1, 1.4, 'snow'], ['v', 0, 0.1, 0.5, 'snow'], ['^', -0.45, -0.8, 0.6, 'snow'], ['^', 0.45, -0.8, 0.6, 'snow'], ['"', 0, 0.85, 0.7, 'dim']];
+const EYES = [['o', -0.25, -0.25, 0.75, 'ember'], ['o', 0.25, -0.25, 0.75, 'ember']], SHUT = [['-', -0.25, -0.2, 0.7, 'ember'], ['-', 0.25, -0.2, 0.7, 'ember']];
+const WINGS = [                                             // up, level, down
+  [['\\', -1.15, -0.5, 1.4, 'snow'], ['/', 1.15, -0.5, 1.4, 'snow']],
+  [['-', -1.2, -0.05, 1.4, 'snow'], ['-', 1.2, -0.05, 1.4, 'snow']],
+  [['/', -1.15, 0.4, 1.4, 'snow'], ['\\', 1.15, 0.4, 1.4, 'snow']],
+];
+const SIT = [['S', -0.8, -0.3, 1.6, 'leaf'], ['o', 0, 0.1, 1.25, 'leaf'], ['o', 0.6, -0.4, 0.8, 'leaf'], ["'", 0.55, -0.9, 0.6, 'leaf']];   // tail, body, head, ear: facing right
+const RUN = [['~', -1.2, -0.1, 1.5, 'leaf'], ['o', -0.2, 0, 1.1, 'leaf'], ['o', 0.45, -0.1, 0.9, 'leaf'], ["'", 0.45, -0.55, 0.6, 'leaf']];
+
+export class Life {
+  constructor(sc) {
+    this.sc = sc;
+    const rnd = this.rnd = mulberry32(31), S = sc.screenRows, L = D.layout;
+    // snow lives in the world, between the cloud base and the upper forest, at three depths.
+    // k is a depth: how large a flake is and how fast it passes, against the page.
+    this.z0 = L.snow[0] * S; this.z1 = L.snow[1] * S;
+    this.tiers = [{ k: 0.72, ch: '.', size: 0.9, a: 0.9, fall: 1.2, color: 'dim' }, { k: 1, size: 1, a: 0.8, fall: 2.3, color: 'snow' }, { k: 1.4, ch: '*', size: 1.5, a: 0.95, fall: 3.6, color: 'snow' }];
+    this.flakes = Array.from({ length: Math.round(sc.cols * (this.z1 - this.z0) / 44) }, () => {
+      const u = rnd(), tier = u < 0.42 ? 0 : u < 0.93 ? 1 : 2;
+      return { x: rnd(), y: this.z0 + rnd() * (this.z1 - this.z0), tier, ch: this.tiers[tier].ch || (rnd() < 0.7 ? '*' : '+'), phase: rnd() * 6.28 };
+    });
+    this.leaves = []; this.leafAcc = 0;
+    this.flock = null; this.nextFlock = 2.5;
+    this.owl = { state: 'away', wait: 1, x: 0, y: 0, s: 1, dir: 1 };
+    this.squirrels = [0, 1].map((i) => ({ state: 'away', wait: 0.5 + i * 3, side: i ? 1 : -1, x: 0, y: 0, s: 1, dir: 1 }));
+  }
+
+  // how thick the snow is at a height
+  snowAt(y) { return smooth(this.z0, this.z0 + this.sc.screenRows * 0.22, y) * (1 - smooth(D.layout.treeline * this.sc.screenRows, this.z1, y)); }
+  // is anything alive on screen: then the scene must keep drawing
+  get showing() { const c = this.sc.centre, L = D.layout; return c > L.snow[0] - 0.6 && c < L.ground + 0.6; }
+
+  update(dt) {
+    const sc = this.sc, g = sc.grid, S = sc.screenRows, t = sc.time, rnd = this.rnd, pick = (a) => a[Math.floor(rnd() * a.length)], L = D.layout, W = g.w, H = g.h;
+    const wind = this.wind = 1.3 * Math.sin(t * 0.21) + 0.5 * Math.sin(t * 0.67 + 1.3);
+
+    // --- snow ---
+    for (const f of this.flakes) {
+      const T = this.tiers[f.tier];
+      f.y += T.fall * dt;
+      f.x += (wind * T.k + Math.sin(t * 1.9 + f.phase) * 0.5 * (f.tier + 1)) * dt / sc.cols;
+      if (f.y > this.z1) { f.y = this.z0; f.x = rnd(); }
+      f.x -= Math.floor(f.x);
+    }
+
+    // trees a creature can use, only worked out where the forest is
+    const inWood = sc.centre > L.forest - 0.3 && sc.centre < L.ground + 0.2;
+    const trees = this.trees = inWood ? sc.massif.perches() : [];
+    const find = (id) => trees.find((q) => q.id === id);
+
+    // --- leaves: off the leafy trees you can see. They fall in the world, a little nearer than the trees. ---
+    const leafy = trees.filter((q) => q.leafy && q.top > 0 && q.top < H);
+    this.leafAcc += dt * Math.min(leafy.length, 16) * 0.1;
+    while (this.leafAcc >= 1) {
+      this.leafAcc--;
+      if (!leafy.length || this.leaves.length > 90) continue;
+      const q = pick(leafy);
+      this.leaves.push({ x: q.x + (rnd() - 0.5) * 3 * g.cellW * q.s, y: sc.centreRow + (q.top + g.cellH * q.s - H / 2) / (g.cellH * q.s), k: q.s, phase: rnd() * 6.28, color: rnd() < 0.55 ? sc.P.leaf : sc.P.leafOlive, age: 0, life: 4 + rnd() * 6, frame: Math.floor(rnd() * 3) });
+    }
+    this.leaves = this.leaves.filter((l) => {
+      l.age += dt;
+      l.y += 1.7 * (0.65 + 0.35 * Math.sin(t * 3 + l.phase)) * dt;
+      l.x += (Math.sin(t * 2.1 + l.phase) * 1.5 + wind * 0.5) * g.cellW * dt;
+      return l.age < l.life && l.y < sc.groundRow;
+    });
+
+    // --- a flock, far off, once in a while, below the clouds ---
+    this.nextFlock -= dt;
+    if (!this.flock && this.nextFlock <= 0 && sc.centre > L.deck[1] - 0.05 && sc.centre < L.ground - 1.5) {
+      const dir = rnd() < 0.5 ? 1 : -1, n = 7 + Math.floor(rnd() * 7), k = 0.3, birds = [{ dx: 0, dy: 0, ph: rnd() * 6.28 }];
+      for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push({ dx: -dir * (j * 2.1 + (rnd() - 0.5) * 0.9), dy: side * j * (0.5 + rnd() * 0.12) + (rnd() - 0.5) * 0.3, ph: rnd() * 6.28 }); }
+      const len = (Math.ceil(n / 2) * 2.1 + 3) * g.cellW;
+      this.flock = { x: dir > 0 ? -20 : W + 20, y: sc.centreRow + ((0.18 + rnd() * 0.4) * H - H / 2) / (g.cellH * k), k, dir, len, birds, v: Math.max(34, W / 20), drift: (rnd() - 0.5) * 0.5 };
+      this.nextFlock = 15 + rnd() * 10;
+    }
+    if (this.flock) { const f = this.flock; f.x += f.dir * f.v * dt; f.y += f.drift * dt; if (f.dir > 0 ? f.x - f.len > W + 20 : f.x + f.len < -20) this.flock = null; }
+
+    // --- the owl: tree top to tree top, following you down. It never jumps:
+    // it flies in from off the screen, and flies off again when it must. ---
+    const O = this.owl, tops = trees.filter((q) => q.top > H * 0.1 && q.top < H * 0.82 && q.x > 30 && q.x < W - 30);
+    const fly = (to, q) => { O.from = [O.x, O.y]; O.to = to; O.aim = q ? q.id : null; O.u = 0; O.dur = clamp(Math.hypot(to[0] - O.x, to[1] - O.y) / (15 * g.cellW), 0.9, 2.6); O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly'; };
+    const perch = (q) => [q.x, q.top - 0.8 * g.size * q.s];
+    if (O.state === 'away') {
+      O.wait -= dt;
+      if (O.wait <= 0 && tops.length > 2) { const q = pick(tops); O.x = rnd() < 0.5 ? -40 : W + 40; O.y = q.top - (4 + rnd() * 8) * g.cellH; O.s = q.s; fly(perch(q), q); }
+    } else if (O.state === 'fly') {
+      const q = O.aim !== null ? find(O.aim) : null;
+      if (q) { O.to = perch(q); O.s += (q.s - O.s) * Math.min(1, dt * 4); }
+      else if (O.aim !== null) { O.aim = null; O.to = [O.x < W / 2 ? -60 : W + 60, O.y - 3 * g.cellH]; }   // its tree has gone: carry on off the screen
+      O.u = Math.min(1, O.u + dt / O.dur);
+      const e = smooth(0, 1, O.u);
+      O.dir = O.to[0] >= O.from[0] ? 1 : -1;
+      O.x = O.from[0] + (O.to[0] - O.from[0]) * e; O.y = O.from[1] + (O.to[1] - O.from[1]) * e - Math.sin(Math.PI * e) * O.arc;
+      if (O.u >= 1) { if (O.aim !== null) { O.state = 'perch'; O.on = O.aim; O.wait = 2.4 + rnd() * 3.2; } else { O.state = 'away'; O.wait = 1.5 + rnd() * 2; } }
+    } else {
+      const q = find(O.on);
+      O.wait -= dt;
+      if (q) { [O.x, O.y] = perch(q); O.s = q.s; }
+      if (!q || O.wait <= 0 || O.y < H * 0.06) {
+        const next = tops.filter((o) => o.id !== O.on && Math.abs(o.x - O.x) > 5 * g.cellW);
+        if (next.length) { const o = pick(next); fly(perch(o), o); }
+        else if (!q || O.y < 0) fly([O.x < W / 2 ? -60 : W + 60, O.y - 4 * g.cellH], null);
+      }
+    }
+
+    // --- squirrels: from the foot of one tree to the next in quick hops.
+    // They come in from the side of the screen and leave the same way. ---
+    const feet = trees.filter((q) => q.y > H * 0.2 && q.y < H * 0.95 && q.x > 20 && q.x < W - 20);
+    const foot = (q, side) => [q.x + side * 1.5 * g.size * q.s, q.y - 0.6 * g.size * q.s];
+    for (const Q of this.squirrels) {
+      const go = (to, q) => { Q.from = [Q.x, Q.y]; Q.to = to; Q.aim = q ? q.id : null; Q.u = 0; Q.dur = clamp(Math.abs(to[0] - Q.x) / (26 * g.cellW), 0.22, 1.4); Q.state = 'hop'; };
+      if (Q.state === 'away') {
+        Q.wait -= dt;
+        if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) { const q = pick(feet); Q.x = q.x < W / 2 ? -30 : W + 30; Q.y = q.y; Q.s = q.s; go(foot(q, Q.side), q); }
+      } else if (Q.state === 'hop') {
+        const q = Q.aim !== null ? find(Q.aim) : null;
+        if (q) { Q.to = foot(q, Q.side); Q.s += (q.s - Q.s) * Math.min(1, dt * 6); }
+        else if (Q.aim !== null) { Q.aim = null; Q.to = [Q.x < W / 2 ? -40 : W + 40, Q.y]; }
+        Q.u = Math.min(1, Q.u + dt / Q.dur);
+        Q.dir = Q.to[0] >= Q.from[0] ? 1 : -1;
+        const hops = Math.max(1, Math.round(Math.abs(Q.to[0] - Q.from[0]) / (5 * g.cellW)));
+        Q.x = Q.from[0] + (Q.to[0] - Q.from[0]) * Q.u; Q.y = Q.from[1] + (Q.to[1] - Q.from[1]) * Q.u - Math.abs(Math.sin(Q.u * Math.PI * hops)) * 0.8 * g.cellH * Q.s;
+        if (Q.u >= 1) { if (Q.aim !== null) { Q.state = 'sit'; Q.on = Q.aim; Q.wait = 0.6 + rnd() * 2.4; } else { Q.state = 'away'; Q.wait = 1 + rnd() * 3; } }
+      } else {
+        const q = find(Q.on);
+        Q.wait -= dt;
+        if (q) { [Q.x, Q.y] = foot(q, Q.side); Q.s = q.s; }
+        if (!q || Q.y < H * 0.08) go([Q.x < W / 2 ? -40 : W + 40, Q.y], null);
+        else if (Q.wait <= 0) {
+          const near = feet.filter((o) => o.id !== Q.on && Math.abs(o.x - q.x) > 3 * g.cellW && Math.abs(o.x - q.x) < 16 * g.cellW && Math.abs(o.y - q.y) < 7 * g.cellH);
+          if (near.length) { const o = pick(near); go(foot(o, Q.side), o); } else Q.wait = 0.6;
+        }
+      }
+    }
+  }
+
+  // one drawing, its middle at (x, y), u pixels to the unit, facing dir
+  sprite(parts, x, y, u, dir = 1, a = 1) {
+    const g = this.sc.grid, P = this.sc.P;
+    for (const [ch, dx, dy, k, color] of parts) g.ink(dir < 0 && ch === '/' ? '\\' : dir < 0 && ch === '\\' ? '/' : ch, P[color], x + dx * u * dir, y + dy * u, k * u, a);
+  }
+
+  // behind the mountain: the furthest snow, the flock
+  behind() {
+    const sc = this.sc, g = sc.grid, P = sc.P, t = sc.time, H = g.h;
+    this.snow(0);
+    const f = this.flock;
+    if (f) for (const b of f.birds) {
+      const y = H / 2 + (f.y - sc.centreRow) * g.cellH * f.k + (b.dy * (1 + 0.08 * Math.sin(t * 0.7 + b.ph)) + 0.3 * Math.sin(t * 1.1 + b.ph)) * g.cellH;
+      g.ink(Math.sin(t * 5.5 + b.ph) > 0.1 ? 'v' : '-', P.bird, f.x + b.dx * g.cellW, y, g.size * 0.8, 0.62);
+    }
+  }
+  snow(tier) {
+    const sc = this.sc, g = sc.grid, T = this.tiers[tier], H = g.h;
+    for (const f of this.flakes) {
+      if (f.tier !== tier) continue;
+      const y = H / 2 + (f.y - sc.centreRow) * g.cellH * T.k;
+      if (y < -10 || y > H + 10) continue;
+      g.ink(f.ch, sc.P[T.color], f.x * (g.w + 20) - 10, y, g.size * T.size, T.a * this.snowAt(f.y));
+    }
+  }
+
+  // in front of it: the nearer snow, leaves, the owl, the squirrels
+  front() {
+    const sc = this.sc, g = sc.grid, t = sc.time, H = g.h;
+    this.snow(1); this.snow(2);
+    for (const l of this.leaves) g.ink(D.glyphs.leaves[(l.frame + Math.floor(t * 3 + l.phase)) % 3], l.color, l.x, H / 2 + (l.y - sc.centreRow) * g.cellH * l.k, g.size * l.k, Math.min(1, l.age * 3, (l.life - l.age) * 1.5));
+    const O = this.owl;
+    if (O.state !== 'away') {
+      const u = g.size * O.s * 0.9, blink = (t * 0.31 + 0.2) % 1 > 0.96;
+      if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
+      this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
+      this.sprite(blink ? SHUT : EYES, O.x, O.y, u);
+    }
+    for (const Q of this.squirrels) {
+      if (Q.state === 'away') continue;
+      const u = g.size * Q.s * 0.72;
+      if (Q.state === 'hop') this.sprite(RUN, Q.x, Q.y, u, Q.dir);
+      else { const flick = Math.sin(t * 7 + Q.side) > 0.82 ? 0.14 : 0; this.sprite([[SIT[0][0], SIT[0][1], SIT[0][2] - flick, SIT[0][3] + flick, 'leaf'], ...SIT.slice(1)], Q.x, Q.y, u, Q.dir); }
+    }
+  }
+}
