@@ -67,8 +67,8 @@ export class Air {
       { Z: 1, drift: -0.55, line: P.dim, body: P.rockDark, la: 0.95, ba: 0.9, veil: 0.7, spread: 0.07, count: Math.ceil(per / 2), w: [5, 10], h: [1.3, 2.4], off: 0.42 },
       { Z: 0.735, drift: 1.0, line: P.rule, body: P.dim, la: 0.8, ba: 0.55, veil: 0.5, spread: 0.16, count: Math.ceil(per * 0.7), w: [9, 20], h: [3, 6] },
       // banks out in the sky, further off: bigger, and seen small
-      { Z: 2.6, drift: 0.2, line: P.dim, body: P.far, la: 0.8, ba: 0.6, sparse: 0.55, veil: 0.85, spread: 0.3, count: Math.ceil(per * 0.8), w: [20, 44], h: [4, 9], off: 0.15 },
-      { Z: 5, drift: 0.12, line: P.dim, body: P.far, la: 0.6, ba: 0.5, sparse: 0.62, veil: 0.8, spread: 0.45, count: Math.ceil(per * 0.8), w: [40, 90], h: [7, 16], off: -0.2 },
+      { Z: 2.6, drift: 0.2, line: P.dim, body: P.far, la: 1, ba: 0.8, sparse: 0.55, veil: 0.85, spread: 0.3, count: Math.ceil(per * 0.8), w: [20, 44], h: [4, 9], off: 0.15 },
+      { Z: 5, drift: 0.12, line: P.dim, body: P.far, la: 0.85, ba: 0.7, sparse: 0.62, veil: 0.8, spread: 0.45, count: Math.ceil(per * 0.8), w: [40, 90], h: [7, 16], off: -0.2 },
     ];
     // each depth of cloud is one wide bank, painted once, and drawn twice side by side as it drifts, so it goes round
     this.clouds = [];
