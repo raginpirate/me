@@ -435,7 +435,7 @@ export class AsciiScene extends HTMLElement {
     // --- draw, from the back to the front ---
     this.sky = P.sky;
     g.clear(this.sky);
-    cam.tidy([this.massif.mountain, ...this.massif.slices, ...this.air.ranges, ...this.air.clouds]);
+    cam.tidy([this.massif.mountain, ...this.massif.slices, ...this.air.ranges, this.air.pinned, ...this.air.clouds.map((c) => c[0])]);
     const began = performance.now();
 
     // field stars

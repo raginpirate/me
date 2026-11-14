@@ -41,12 +41,12 @@ export class Life {
     // fall: rows a second at the page's depth. Each flake or leaf has a rank: it is there only where the fall is thick enough for it.
     this.tiers = [{ d: [1.5, 2.6], ch: '.', a: 0.9, fall: 1.4, color: 'dim' }, { d: [0.85, 1.5], a: 0.85, fall: 2.4, color: 'snow' }, { d: [0.5, 0.85], ch: '*', a: 0.95, fall: 3.4, color: 'snow' }];
     this.depths = [{ d: [1.4, 2.4], a: 0.75, fall: 1.4 }, { d: [0.85, 1.4], a: 0.95, fall: 2 }, { d: [0.5, 0.85], a: 1, fall: 2.6 }];
-    const many = sc.cols * S / 7;
-    this.flakes = Array.from({ length: Math.round(many / 5) }, () => {
+    const many = Math.min(sc.cols * S / 7, 1800);
+    this.flakes = Array.from({ length: Math.round(many / 7) }, () => {
       const u = rnd(), tier = u < 0.42 ? 0 : u < 0.93 ? 1 : 2;
       return { tier, ch: this.tiers[tier].ch || (rnd() < 0.7 ? '*' : '+'), phase: rnd() * 6.28, rank: rnd(), Z: NaN };
     });
-    this.fall = Array.from({ length: Math.round(many / 4.5) }, () => {
+    this.fall = Array.from({ length: Math.round(many / 6) }, () => {
       const u = rnd(), v = rnd();
       return { tier: u < 0.4 ? 0 : u < 0.86 ? 1 : 2, rank: rnd(), phase: rnd() * 6.28, frame: Math.floor(rnd() * 3), color: v < 0.42 ? P.leaf : v < 0.72 ? P.birchLeaf : P.leafOlive, Z: NaN };
     });

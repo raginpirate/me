@@ -40,13 +40,13 @@ export const D = {
   // and jump: how far across the screen a bridge takes it, as shares of the screen's width [wide, narrow]. cross: screens
   // of scroll a bridge takes to cross. slice: screens of scroll on one terrace. apart: a bridge at least this often, in
   // screens. near: how far off the terrace you step onto is, in the page's distances. cliff: rows a column a cliff falls.
-  // fade: the distances over which a terrace goes into the mist. tall: how tall each kind of tree stands, in rows.
+  // fade: the distances over which a terrace goes into the mist; close: over which it comes out of it, too near. tall: how tall each kind of tree stands, in rows.
   // ribs: the mountain's ribs under the peak, each [where across, as a share of its half-width either side of its middle;
   // screens under the seam that it starts]. spread: how much wider they stand for each screen down. cast: how wide a rib's
   // shadow is on the lit flank, and how wide its lit face on the dark one, as shares of the half-width.
   // lamp: the light you carry: how much of everything out of its reach is put out, and where it is full and where it
   // ends, as shares of the screen's shorter side.
-  massif: { sweep: [0.17, 0.26], jump: [0.15, 0.3], cross: 0.08, slice: 0.24, apart: 1.15, near: 0.85, cliff: 1.8, fade: [1.9, 3.4], tall: { pine: 4.6, leafy: 3.8, birch: 5.5 }, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
+  massif: { sweep: [0.17, 0.26], jump: [0.15, 0.3], cross: 0.08, slice: 0.24, apart: 1.15, near: 0.85, cliff: 1.8, fade: [1.9, 3.4], close: [0.38, 0.5], tall: { pine: 4.6, leafy: 3.8, birch: 5.5 }, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the

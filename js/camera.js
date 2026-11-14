@@ -17,17 +17,17 @@
 // What is painted once is a pane, kept as tiles. A pane is painted in
 // cells of type; how big a cell is in the world depends on how near the
 // pane is. Near, it is painted in more, smaller cells, so no glyph is ever
-// larger than type gets; far, its type is smaller, and further still it is
-// painted in fewer cells. Between two ways of painting it the one fades into
-// the other.
+// larger than type gets; far, in fewer. Between two ways of painting it the
+// one fades into the other. In between it is not painted again: its tiles
+// are only drawn smaller, from copies of themselves at half the size, and a
+// half of that, made as they are wanted. What a nearer thing hides is not
+// drawn at all.
 
 import { clamp } from './util.js';
 import { D } from './direction.js';
 
 const T = 256;   // a tile's side, in device pixels
-// the sizes of type a pane is painted at, as shares of the page's: the nearest one at or above what is wanted is used
-const LADDER = [1.25, 1, 0.8, 0.64, 0.51, 0.41, 0.33, 0.26, 0.21];
-export const MOST = LADDER[0];
+export const MOST = 1.25;   // the largest type is ever drawn, as a share of the page's
 
 export class Camera {
   constructor(sc) {
@@ -52,7 +52,7 @@ export class Camera {
     this.slant = clamp(C.slant * g.w / g.h, ...C.within) * g.cellH / g.cellW;
     this.occluders = []; this.kept = 0; this.frame = 0;
     const screen = g.canvas.width * g.canvas.height;
-    this.room = Math.min(6 * screen, 2.8 * screen + 7e6);
+    this.room = Math.min(8 * screen, 3.5 * screen + 14e6);
     this.look(0);
   }
 
@@ -96,13 +96,14 @@ export class Camera {
   }
   level(p, u, gam) {
     const key = u * 1000 + gam; let L = p.levels.get(key);
-    if (!L) { const g = this.g; L = { u, gam, cw: g.cellW * gam, ch: g.cellH * gam, font: Math.max(3, Math.round(g.size * gam * 2) / 2), cols: Math.ceil(p.w / u), rows: Math.ceil(p.h / u), tiles: new Map() }; p.levels.set(key, L); }
+    if (!L) { const g = this.g; L = { u, gam, cw: g.cellW * gam, ch: g.cellH * gam, font: Math.round(g.size * gam * 2) / 2, cols: Math.ceil(p.w / u), rows: Math.ceil(p.h / u), tiles: new Map() }; p.levels.set(key, L); }
     return L;
   }
-  // which levels to draw a pane at, at scale k: [[u, gam, alpha], ...], the first drawn whole
+  // which levels to draw a pane at, at scale k: [[u, gam, alpha], ...], the first drawn whole. A level is painted with its
+  // type at the page's own size if that is as large as it is wanted, else at the largest; it is only ever drawn smaller.
   choose(p, k) {
-    const lam = Math.log2(MOST / k), n = Math.floor(lam), frac = lam - n, w = 0.2;
-    const pick = (u) => { const g = u * k; let gam = LADDER[0]; for (const v of LADDER) if (v >= g * 0.999) gam = v; return [u, gam]; };
+    const lam = Math.log2(MOST / k), n = Math.floor(lam), frac = lam - n, w = 0.08;
+    const pick = (u) => [u, u * k > 1.0001 ? MOST : 1];   // smaller than that it is drawn from halved copies
     const u = clamp(2 ** n, p.uMin, p.uMax), out = [];
     let other = null, t = 1;
     if (u === 2 ** n) {
@@ -113,20 +114,41 @@ export class Camera {
     out.push([...pick(u), other ? t : 1]);
     return out;
   }
-  // one tile of a level, painted if it has not been; null if there is nothing on it
+  // one tile of a level, painted if it has not been: { c: its canvas } or { fill: its one colour }; null if there is nothing on it
   tile(p, L, tx, ty) {
     const key = ty * 4096 + tx; let e = L.tiles.get(key);
     if (e === undefined) {
-      const g = this.g, d = g.dpr, t = T / d, c = this.spare || document.createElement('canvas'), x = c.getContext('2d');
-      c.width = Math.max(1, Math.min(T, Math.ceil(L.cols * L.cw * d) - tx * T)); c.height = Math.max(1, Math.min(T, Math.ceil(L.rows * L.ch * d) - ty * T));
-      x.setTransform(d, 0, 0, d, 0, 0); this.spare = null;
+      const g = this.g, d = g.dpr, t = T / d, u = L.u;
+      const W = Math.max(1, Math.min(T, Math.ceil(L.cols * L.cw * d) - tx * T)), H = Math.max(1, Math.min(T, Math.ceil(L.rows * L.ch * d) - ty * T));
       const c0 = Math.max(0, Math.floor(tx * t / L.cw) - 2), c1 = Math.min(L.cols - 1, Math.ceil((tx + 1) * t / L.cw) + 1);
       const i0 = Math.max(0, Math.floor(ty * t / L.ch) - 2), i1 = Math.min(L.rows - 1, Math.ceil((ty + 1) * t / L.ch) + 1);
-      if (g.into(x, c.width / d, c.height / d, () => p.paint(L, c0, i0, c1, i1, -tx * t, -ty * t))) { e = { c }; this.kept += c.width * c.height; } else { e = null; this.spare = c; }
+      // a tile of nothing but one colour is not painted, but filled where it is drawn
+      const fill = p.plain && p.plain(u, p.x + c0 * u, p.y + i0 * u, p.x + (c1 + 1) * u, p.y + (i1 + 1) * u);
+      if (fill) { L.tiles.set(key, e = { fill, W, H }); e.used = this.frame; return e; }
+      const c = this.spare || document.createElement('canvas'), x = c.getContext('2d');
+      c.width = W; c.height = H; x.setTransform(d, 0, 0, d, 0, 0); this.spare = null;
+      if (g.into(x, c.width / d, c.height / d, () => p.paint(L, c0, i0, c1, i1, -tx * t, -ty * t))) {
+        // only the part of it with something on it is drawn
+        const [a, b, r, s] = g.reach, bb = [Math.max(0, Math.floor(a * d) - 1), Math.max(0, Math.floor(b * d) - 1), Math.min(W, Math.ceil(r * d) + 1), Math.min(H, Math.ceil(s * d) + 1)];
+        e = bb[2] > bb[0] && bb[3] > bb[1] ? { c, W, H, bb } : null;
+      }
+      if (e) { this.kept += c.width * c.height; } else { e = null; this.spare = c; }
       L.tiles.set(key, e);
     }
     if (e) e.used = this.frame;
-    return e && e.c;
+    return e;
+  }
+  // a tile drawn at a scale under a half: a copy of it at a half (and a half of that), made from the one above
+  mip(L, tx, ty, c, m) {
+    if (m <= 0) return c;
+    const key = (ty * 4096 + tx) * 8 + m; let e = (L.mips || (L.mips = new Map())).get(key);
+    if (!e) {
+      const up = this.mip(L, tx, ty, c, m - 1), d = document.createElement('canvas');
+      d.width = Math.max(1, Math.ceil(up.width / 2)); d.height = Math.max(1, Math.ceil(up.height / 2));
+      const x = d.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(up, 0, 0, d.width, d.height);
+      L.mips.set(key, e = d); this.kept += d.width * d.height;
+    }
+    return e;
   }
   // where a pane's top left is on the screen, and its scale
   place(p) { const k = this.k(p.Z); return [this.px(p.x, p.Z), this.py(p.y, p.Z), k]; }
@@ -143,27 +165,47 @@ export class Camera {
     }
     return out;
   }
-  // draw a pane where the camera puts it now
-  show(p, alpha = 1) {
+  // draw a pane where the camera puts it now; nearer: the solid things in front of it, whose cover need not be drawn under
+  show(p, nearer = [], alpha = 1) {
     const [X0, Y0, k] = this.place(p); if (!(k > 0)) return;
     const a0 = alpha * (p.alpha ? p.alpha(1 / k) : 1); if (a0 < 0.01) return;
-    const ctx = this.g.ctx, d = this.g.dpr;
+    const ctx = this.g.ctx, d = this.g.dpr, W = this.g.w, H = this.g.h;
     for (const [u, gam, a] of this.choose(p, k)) {
       const L = this.level(p, u, gam);
       for (const [tx, ty, x, y, w, h, sc] of this.seen(p, L, X0, Y0, k)) {
-        const c = this.tile(p, L, tx, ty); if (!c) continue;
+        if (nearer.length && this.hiddenRect(nearer, Math.max(0, x), Math.max(0, y), Math.min(W, x + w), Math.min(H, y + h))) continue;
+        const e = this.tile(p, L, tx, ty); if (!e) continue;
+        const ww = e.W < T ? e.W / d * sc : w, hh = e.H < T ? e.H / d * sc : h;   // a cut tile at the far edge is smaller
         ctx.globalAlpha = this.g.alpha = a0 * a;
-        ctx.drawImage(c, x, y, c.width < T ? c.width / d * sc : w, c.height < T ? c.height / d * sc : h);   // a cut tile at the far edge is smaller
+        if (e.fill) { ctx.fillStyle = e.fill; ctx.fillRect(x, y, ww, hh); continue; }
+        const m = sc < 0.6 ? Math.min(5, Math.max(1, Math.round(-Math.log2(sc)))) : 0;
+        const src = this.mip(L, tx, ty, e.c, m), f = src.width / e.W, [l, t, r, b] = e.bb, kx = ww / e.W, ky = hh / e.H;
+        ctx.drawImage(src, l * f, t * f, (r - l) * f, (b - t) * f, x + l * kx, y + t * ky, (r - l) * kx, (b - t) * ky);
       }
     }
+  }
+  // is a rectangle of the screen wholly behind the solid part of one of these (each solid from its top down in every column)
+  hiddenRect(nearer, x0, y0, x1, y1) {
+    if (x1 <= x0 || y1 <= y0) return true;
+    const W = this.g.w, cw = this.g.cellW, ch = this.g.cellH, hy = this.h0 * this.g.h;
+    for (const q of nearer) {
+      const dq = this.dist(q.Z), Y = this.y + (y0 - hy) * dq / ch, Yb = this.y + (y1 - hy) * dq / ch;
+      if (Yb >= q.y + q.h) continue;
+      let all = true;
+      for (let i = 0; i <= 6 && all; i++) { const X = this.x + this.mid + (x0 + (x1 - x0) * i / 6 - W / 2) * dq / cw; if (!(X >= q.x && X < q.x + q.w && q.solidAt(X, Y))) all = false; }
+      if (all) return true;
+    }
+    return false;
   }
   // Everything below the sky, from the furthest to the nearest. An item is
   // a pane, or { d, draw() } for something that moves.
   render(items) {
     const list = items.map((it) => it.levels ? { d: this.dist(it.Z), pane: it } : it).filter((it) => it.d > 0.02);
     list.sort((a, b) => b.d - a.d);
-    this.g.ctx.imageSmoothingQuality = 'high';
-    for (const it of list) { if (it.pane) this.show(it.pane); else it.draw(); }
+    this.g.ctx.imageSmoothingQuality = 'low'; this.g.ctx.imageSmoothingEnabled = true;
+    // the solid, unmisted panes, nearest first: what hides what is behind it
+    const solid = list.filter((it) => it.pane && it.pane.solidAt && it.pane.cover && (!it.pane.alpha || it.pane.alpha(it.d) > 0.995));
+    for (const it of list) { if (it.pane) this.show(it.pane, solid.filter((q) => q.d < it.d - 1e-4).map((q) => q.pane)); else it.draw(); }
   }
   // is a pixel hidden by something solid nearer than distance d
   covered(x, y, d) {
@@ -179,9 +221,13 @@ export class Camera {
   tidy(all) {
     if (this.kept > this.room) {
       const old = [];
-      for (const p of all) for (const L of p.levels.values()) for (const [k, e] of L.tiles) if (e && e.used < this.frame) old.push([e.used, L, k, e.c]);
+      for (const p of all) for (const L of p.levels.values()) for (const [k, e] of L.tiles) if (e && e.c && e.used < this.frame) old.push([e.used, L, k, e.c]);
       old.sort((a, b) => a[0] - b[0]);
-      for (const [, L, k, c] of old) { if (this.kept <= this.room * 0.8) break; L.tiles.delete(k); this.kept -= c.width * c.height; }
+      for (const [, L, k, c] of old) {
+        if (this.kept <= this.room * 0.8) break;
+        L.tiles.delete(k); this.kept -= c.width * c.height;
+        if (L.mips) for (let m = 1; m <= 5; m++) { const e = L.mips.get(k * 8 + m); if (e) { L.mips.delete(k * 8 + m); this.kept -= e.width * e.height; } }
+      }
     }
     this.frame++;
   }
@@ -190,7 +236,7 @@ export class Camera {
     if (this.kept >= this.room) return false;
     for (const p of panes) {
       const [X0, Y0, k] = this.place(p); if (!(k > 0) || (p.alpha && p.alpha(1 / k) < 0.01)) continue;
-      for (const kk of [k, k * 0.86]) for (const [u, gam] of this.choose(p, kk)) {
+      for (const kk of [k, k * 0.8]) for (const [u, gam] of this.choose(p, kk)) {
         const L = this.level(p, u, gam);
         for (const [tx, ty] of this.seen(p, L, X0, Y0, kk, 1)) if (!L.tiles.has(ty * 4096 + tx)) { this.tile(p, L, tx, ty); return true; }
       }

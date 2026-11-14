@@ -323,9 +323,17 @@ export class Massif {
     trees.forEach((t, i) => { t.id = (index + 1) * 10000 + i; });
 
     const sh = {
-      kind: valley ? 'valley' : 'slice', Z, x: x0, y: y0, w, h, uMin: 0.25, uMax: 1, t0, t1, route, crest, cAt, trees, fill, landing, departing, wdir, seed,
-      alpha: valley ? null : (d) => 1 - smooth(M.fade[0], M.fade[1], d),
+      kind: valley ? 'valley' : 'slice', cover: true, Z, x: x0, y: y0, w, h, uMin: 0.5, uMax: 1, t0, t1, route, crest, cAt, trees, fill, landing, departing, wdir, seed,
+      alpha: valley ? (d) => smooth(M.close[0], M.close[1], d) : (d) => smooth(M.close[0], M.close[1], d) * (1 - smooth(M.fade[0], M.fade[1], d)),
       solidAt: (X, Yw) => Yw >= cAt(X) && Yw < y0 + h,
+      // is a stretch of it nothing but its fill: deeper under the crest than anything drawn on it
+      plain: (u, X0, Y0, X1, Y1) => {
+        const deep = valley ? 62 : 28;
+        for (let X = X0; X <= X1 + 1e-6; X += Math.min(1, u)) if (!(cAt(Math.min(X, X1)) + deep < Y0)) return null;
+        for (const t of trees) if (t.X + t.wd > X0 && t.X - t.wd < X1 && t.Y + 1 > Y0 && t.Y - t.h < Y1) return null;
+        if (sh.hutAt && sh.hutAt[0] < X1 + 2 && sh.hutAt[0] + 30 > X0 && sh.hutAt[1] + 2 > Y0) return null;
+        return fill;
+      },
       paint: (L, c0, i0, c1, i1, ox, oy) => this.paintSlice(sh, L, c0, i0, c1, i1, ox, oy),
       shapes: new Map(), pathX: [xMin, xMax],
     };
@@ -381,7 +389,7 @@ export class Massif {
       if (can.width < nw || can.height < nh) { can.width = Math.max(can.width, nw); can.height = Math.max(can.height, nh); }
       can.getContext('2d').putImageData(img, 0, 0);
       g.ctx.globalAlpha = g.alpha = 1; g.ctx.imageSmoothingEnabled = true;
-      g.ctx.drawImage(can, 0, 0, nw, nh, ox + c0 * cw, oy + i0 * ch, nw * cw, nh * ch);
+      g.ctx.drawImage(can, 0, 0, nw, nh, ox + c0 * cw, oy + i0 * ch, nw * cw, nh * ch); g.mark(ox + c0 * cw, oy + i0 * ch, nw * cw, nh * ch);
     }
     // the hut's walls hide what is behind them
     const hut = D.glyphs.hut;
@@ -412,7 +420,7 @@ export class Massif {
           if (root) g.set(depth < 1.5 ? '|' : hash(Xi, Math.floor(depth), 9) < 0.5 ? '\\' : '/', P.ground, ox + c * cw, oy + ii * ch, font, 0.7 * f);
           else if (v < 0.08 * f) g.set(v < 0.03 ? '.' : v < 0.05 ? ',' : ':', P.ground, ox + c * cw, oy + ii * ch, font, 0.45 * f);
           else if (v > 0.86 && depth > 6) g.set(GRASS[Math.floor(v * 97) % GRASS.length], v > 0.95 ? P.leaf : P.pineDark, ox + c * cw, oy + ii * ch, font, 0.6);
-        } else if (v < 0.3 * (1 - depth / 11)) g.set(GRASS[Math.floor(v * 97) % GRASS.length], depth < 3 ? P.pine : P.pineDark, ox + c * cw, oy + ii * ch, font, 0.85 - depth * 0.05);
+        } else if (v < 0.3 * u * u * (1 - depth / 11)) g.set(GRASS[Math.floor(v * 97) % GRASS.length], depth < 3 ? P.pine : P.pineDark, ox + c * cw, oy + ii * ch, font, 0.85 - depth * 0.05);
       }
     }
     // trees: each its own drawing, as many characters tall as it is at this level; its body shaded so you do not see through it
