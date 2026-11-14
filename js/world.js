@@ -1,12 +1,13 @@
 // The painted peak: a snow-topped summit with its arêtes, lit from the
 // left. Built once per resize into a row/column buffer of [glyph, colour]
 // or [glyph, colour, strength], down to row `limit`; everything below that
-// is the massif's. P is the page's palette.
+// is the massif's, which paints its rock with face(), the same hand.
+// P is the page's palette.
 //
 // Its outline and its arêtes are still worked out for the whole mountain
 // this peak once topped (FOOT), so the peak is cell for cell what it was.
 
-import { clamp, smooth, mulberry32, makeNoise } from './util.js';
+import { clamp, mulberry32, makeNoise, edge } from './util.js';
 
 const FOOT = { base: 8.6, ground: 8.3, snow: 4.4 };   // screens: where that mountain's slopes ended, and its snowline
 
@@ -113,4 +114,48 @@ export function buildWorld(cols, rows, screenRows, D, P, limit) {
   }
 
   return { cells, peak, topCol };
+}
+
+// The same hand, for the mountain under the peak and for bare rock anywhere
+// on it. Any outline will do: peak[c] is the crest row of column c, and x0
+// is the page column of column 0. It is lit from the left as the peak is:
+// lit(c, r) says how much of the light a place has, 1 on a face that looks
+// left, 0 on one that looks right. Its snow comes down to the peak's own
+// snowline; below that it is rock, with a line round its outline, and its
+// arêtes keep their snow down to row `ice`. arete(r, c): the glyph of an
+// arête passing through a cell. Returns rows r0 to r1 as cells,
+// [glyph, colour] or [glyph, colour, strength].
+const N = makeNoise(20181105);
+export function face({ W, x0, r0, r1, peak, axis, half, lit, arete, ice = 0, lift = 0, seed, S, P }) {
+  const { noise, fbm } = N, rnd = mulberry32(seed);
+  const cells = Array.from({ length: r1 - r0 }, () => new Array(W).fill(null));
+  for (let c = 0; c < W; c++) {
+    const pk = peak[c]; if (!(pk < r1)) continue;
+    const x = x0 + c, across = clamp(Math.abs(x - axis) / half, 0, 1);
+    const line = FOOT.snow * S + (fbm(x * 0.09 + 3, 2.2, 3) - 0.5) * 16;   // the peak's own snowline, carried on
+    for (let r = Math.max(r0, Math.ceil(pk)); r < r1; r++) {
+      const sun = lit(c, r);
+      const facet = (fbm(x * 0.17 + 4.2, r * 0.11 + 1.1, 3) - 0.5) * 0.75, grain = (noise(x * 0.9, r * 0.9) - 0.5) * 0.2;
+      const light = clamp(0.08 + 0.36 * sun + 0.18 * (1 - across) + facet * 1.3 + grain, 0, 1);
+      const on = arete(r, c), edgeRow = Math.round(line + (on ? 11 : 0));
+      // its outline: the top of a column, or a cell with sky beside it
+      const rim = r - pk < 1 ? edge(pk - Math.floor(pk), (peak[c + 1] - peak[c - 1]) / 2 || 0) : !(peak[c - 1] <= r) ? '/' : !(peak[c + 1] <= r) ? '\\' : null;
+      let cell = null;
+      if (r < line + (on ? 11 : 0)) {
+        // snow: bright on lit faces, thin in shadow; the edge is the brightest line
+        const isEdge = r === edgeRow - 1 || r - pk < 1, s = light + 0.25;
+        const ch = isEdge ? (sun >= 0.5 ? '@' : '%') : on || (s > 0.85 ? '#' : s > 0.65 ? '%' : s > 0.45 ? ':' : s > 0.3 ? '.' : ' ');
+        if (ch !== ' ') cell = light > 0.45 || isEdge ? [ch, P.snow] : [ch, P.snow, 0.55];
+      } else if (on) cell = [on, r < ice ? P.snow : sun >= 0.5 ? P.rockLight : P.rock];           // on the ice an arête keeps its snow
+      else if (rim) cell = [rim, P.rockLight, sun >= 0.5 ? 1 : 0.7];
+      else {
+        // rock, in the marks the snow is made of, so the mountain is one texture from top to bottom: dense and pale where
+        // the light falls, thinner and darker in shadow, but there: a face in shadow is still a face
+        const s = clamp(light + lift * sun, 0, 1) + 0.3;
+        if (rnd() >= 0.1 + (1 - s) * 0.35) cell = s > 0.75 ? [s > 0.95 ? '#' : '%', P.rockLight] : s > 0.52 ? [':', P.rock] : [s > 0.4 ? '%' : '#', P.rockDark];
+      }
+      cells[r - r0][c] = cell;
+    }
+  }
+  return cells;
 }

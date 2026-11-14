@@ -1,21 +1,23 @@
 // The bottom of the page: the ground line, the hut the route ends at, and
-// the roots under the mountain. It is the nearest thing there is, so it is
-// set at the size of the nearest cut-out. Painted once.
+// the roots under the mountain. It is one more pane in the camera's world,
+// and the nearest there is.
 
 import { mulberry32, hash, mixHex } from './util.js';
 import { D } from './direction.js';
 
 export class Ground {
-  constructor(sc, hutCol) {
-    this.sc = sc;
-    const { P } = sc, g = sc.grid, rnd = mulberry32(404);
-    const k = this.k = sc.reduced.matches ? 1 : 1 + D.massif.depth;
-    const cols = this.cols = Math.ceil(sc.cols / k) + 2, deep = this.deep = Math.ceil(sc.screenRows / 2 / k) + 2;
-    this.earth = mixHex(P.skyBase, P.groundDark, 0.3);
+  // k: its depth
+  constructor(sc, k) {
+    this.sc = sc; this.k = k;
+    const { P } = sc, g = sc.grid, cam = sc.cam, S = sc.screenRows, rnd = mulberry32(404), last = sc.end + S / 2;
+    // it reaches as far either side as it is ever seen: from when its line first shows, to the end of the page
+    const x0 = this.x0 = Math.floor(cam.wx(0, last - S / 2 / k - 14, k)) - 2;
+    const cols = Math.ceil(cam.wx(g.w, last, k)) + 2 - x0, deep = Math.ceil(S / 2 / k) + 2;
     const wood = mixHex(P.ground, P.leaf, 0.45), timber = mixHex(P.leaf, P.snow, 0.25);
-    // rows count from the ground line: row -1 is the line itself, 0 and on are under it
-    const cells = this.cells = new Map();
-    const set = (r, c, ch, color, a = 1) => { if (c >= 0 && c < cols && r < deep) cells.set(r * 1000 + c, [ch, color, a, c, r]); };
+    // rows count from the ground line: row -1 is the line itself, 0 and on are under it, and the hut stands `up` rows over it
+    const hut = D.glyphs.hut, up = hut.length + 2;
+    const cells = Array.from({ length: deep + up }, () => new Array(cols).fill(null));
+    const set = (r, c, ch, color, a = 1) => { if (c >= 0 && c < cols && r < deep) cells[r + up][c] = [ch, color, a]; };
 
     // the ground line and the litter on it, soil under it, fine roots hanging from the turf
     const litter = [',', "'", '~', ',', '"'];
@@ -51,34 +53,33 @@ export class Ground {
     }
 
     // the hut, standing on the line
-    const hut = D.glyphs.hut, w = hut[0].length;
-    const left = this.hutLeft = Math.round((hutCol + 0.5) * g.cellW / (g.cellW * k) - w / 2);
-    this.hutRows = [];
-    hut.forEach((row, i) => { for (let j = 0; j < w; j++) { const ch = row[j]; if (ch !== ' ') this.hutRows.push([ch, ch === '[' || ch === ']' ? P.ember : timber, left + j, i - hut.length - 1]); } });
-    for (let j = 1; j < w; j++) cells.delete(-2 * 1000 + left + j);
+    // where its stop puts it when the page is at its end
+    const w = hut[0].length, stop = sc.stops.find((s) => s.mark === 'hut');
+    const left = Math.round(cam.wx((stop.hx + 0.5) * g.cellW, last, k) - x0 - w / 2);
+    for (let j = 1; j < w; j++) cells[up - 2][left + j] = null;
+    hut.forEach((row, i) => { for (let j = 0; j < w; j++) if (row[j] !== ' ') set(i - hut.length - 1, left + j, row[j], row[j] === '[' || row[j] === ']' ? P.ember : timber); });
     // where the path comes to it (just left of its wall, on the ground), its window and its chimney, in ground cells
     this.door = [left - 0.5, -2];
     this.window = [left + hut[4].indexOf('[') + 1, 4 - hut.length - 1 + 0.5];
     this.chimney = [left + hut[0].indexOf(',') + 0.5, -hut.length - 1];
+
+    // The pane. From the line down it is earth, and hides everything; the hut hides what is behind it.
+    const earth = mixHex(P.skyBase, P.groundDark, 0.3), font = Math.round(g.size * k);
+    sc.groundPane = cam.pane({
+      x: x0, y: sc.groundRow + 1 - up, z: k, cols, rows: deep + up, solid: (c, i) => i >= up - 1 && i < deep + up && c >= 0 && c < cols,
+      paint(c0, i0, c1, i1, ox, oy) {
+        const { cw, ch } = this, line = up - 1, box = (a, i, b, j, color) => { if (b >= c0 && a <= c1 && j >= i0 && i <= i1) g.box(ox + a * cw - 0.5, oy + i * ch, (b - a + 1) * cw + 1, (j - i + 1) * ch, color); };
+        box(0, line, cols - 1, line, P.skyBase); box(0, up, cols - 1, deep + up - 1, earth); box(left + 1, up - 6, left + w - 1, up - 2, P.skyBase);
+        for (let i = i0; i <= i1; i++) for (let c = c0; c <= c1; c++) { const cell = cells[i][c]; if (cell) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2]); }
+      },
+    });
   }
 
-  // a place on the ground (column, row from the line), in viewport pixels
-  at(c, r) { const g = this.sc.grid; return [c * g.cellW * this.k, g.h / 2 + (this.sc.groundRow + 1 + r - this.sc.centreRow) * g.cellH * this.k]; }
+  // a place on the ground (its own column, row from the line), in viewport pixels
+  at(c, r) { const cam = this.sc.cam; return [cam.px(this.x0 + c, this.k), cam.py(this.sc.groundRow + 1 + r, this.k)]; }
   get showing() { return this.at(0, -8)[1] < this.sc.grid.h; }
 
-  // the part that never changes, into the mountain's layer
-  render() {
-    if (!this.showing) return;
-    const sc = this.sc, g = sc.grid, cw = g.cellW * this.k, size = g.size * this.k, [, y0] = this.at(0, 0);
-    g.box(0, y0, g.w, g.h - y0 + 1, this.earth);
-    for (const [ch, color, a, c, r] of this.cells.values()) { const [x, y] = this.at(c, r); if (y < g.h && y > -size * 2) { if (r === -1) g.box(x - 0.5, y, cw + 1, g.cellH * this.k, sc.sky); g.set(ch, color, x, y, size, a); } }
-    // the hut hides what is behind it
-    const [hx, hy] = this.at(this.hutLeft + 1, -6), [hx2, hy2] = this.at(this.hutLeft + D.glyphs.hut[0].length, -1);
-    g.box(hx, hy, hx2 - hx, hy2 - hy, sc.sky);
-    for (const [ch, color, c, r] of this.hutRows) { const [x, y] = this.at(c, r); g.set(ch, color, x, y, size, 1); }
-  }
-
-  // the part that moves: smoke from the chimney
+  // the one thing here that moves: smoke from the chimney
   draw() {
     if (!this.showing || this.sc.reduced.matches) return;
     const sc = this.sc, g = sc.grid, u = g.size * this.k, [x, y] = this.at(...this.chimney);

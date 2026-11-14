@@ -44,20 +44,18 @@ export const D = {
     forest: 6.3,           // closed forest
     ground: 10,            // about where the ground is; the scene puts the line exactly half a screen from its end
   },
-  // The mountain below the peak is a cluster of cut-outs on a turntable.
-  // turn: it turns between these, by where the middle of the screen is.
-  // turns: how far, in whole turns. depth: how much bigger the nearest
-  // cut-out is drawn than one at the middle. lead: a cut-out faces you when
-  // the middle of the screen is this many screens below its top.
-  // haze: the angle, radians, where one starts to fade as it goes round the side, and where it is gone.
-  // far: how dim a cut-out is when it has turned away, against 1 for the one facing you.
-  // lamp: the light you carry down the route. dark: how much of everything out of
-  // its reach is put out. core, reach: where the light is full and where it ends,
-  // as shares of the screen's shorter side.
-  // near: size is distance. What stands one screen below you is in front of you and is drawn e^near
-  // times the size of what is at your height; what is above you is behind, and smaller by the same rule.
-  // stride: screens between the route's ridges, down to the stop named in `sparse` and from it on.
-  massif: { turn: [4.25, 9.6], turns: 0.6, depth: 0.42, near: 0.42, lead: 0.14, haze: [1.1, 1.65], far: 0.55, stride: [0.3, 1.25], sparse: 'fera', lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
+  // The camera's sideways slide. from: screens down the page where it begins (the cloud line in the middle of the screen).
+  // slant: how far it slides for a screen of scroll at the very end, in screen widths, and the tangents that is
+  // kept within (so on a phone it is not nothing and on a wide screen not a rush). ease, early: by `ease` of the way down
+  // the slant is `early` of that; from there it grows on evenly to the last row of the page. It never lessens.
+  camera: { from: 4.55, slant: 0.3, within: [0.16, 0.5], ease: 0.3, early: 0.55 },
+  // The mountain under the peak. stride: screens of travel between the route's ridges, down to the stop named in `sparse` and from it on.
+  // gap: rows of travel a bridge spans. lamp: the light you carry: how much of everything
+  // out of its reach is put out, and where it is full and where it ends, as shares of the screen's shorter side.
+  // ribs: the mountain's ribs under the peak, each [where across, as a share of its half-width either side of its middle;
+  // screens under the seam that it starts]. spread: how much wider they stand for each screen down. cast: how wide a rib's
+  // shadow is on the lit flank, and how wide its lit face on the dark one, as shares of the half-width.
+  massif: { stride: [0.33, 1.25], sparse: 'fera', gap: 3, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the
