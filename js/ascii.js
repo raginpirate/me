@@ -240,36 +240,44 @@ export class AsciiScene extends HTMLElement {
   // origin looking down +Z; the screen plane is at Z = F (pixels), centred
   // on the viewport. A point (X, Y, Z) lands at (X, Y) * F / Z from the
   // centre, and its glyph is drawn F / Z times the base size.
+  //
+  // Each one is a straight flight through that space, chosen by where it
+  // shows on screen: it comes in from outside an outer edge, crosses, and
+  // leaves past another, never appearing or vanishing in the open. It
+  // starts and ends at different depths, so it grows or shrinks on the way
+  // and moves faster while it is near.
   get focal() { return this.viewW; }
   spawnShooting(rnd) {
-    const L = D.layout, top = this.scrollRows, rows = this.screenRows, g = this.grid;
-    const F = this.focal;
-    const cxPx = this.viewW / 2, cyPx = (top + rows / 2) * g.cellH; // the centre, in world pixels
-    const bandTop = L.shooting[0] * rows;
-    // a direction with real depth: at least 40% of the motion is along Z
-    const toward = rnd() < 0.65;
-    // approaching ones come more head-on, so they grow in place before sliding past
-    const zc = (toward ? 0.72 + rnd() * 0.22 : 0.55 + rnd() * 0.3) * (toward ? -1 : 1);
-    const lat = Math.sqrt(1 - zc * zc), ang = rnd() * Math.PI * 2;
-    const dir = [lat * Math.cos(ang), lat * Math.sin(ang) * 0.6 + lat * 0.35, zc]; // a little downward bias
-    const speed = (1.1 + rnd() * 0.8) * F;                                           // per second, in world pixels
-    let Z, sx, sy;
-    if (toward) {
-      // born deep in the field, somewhere inside the view, as a speck
-      Z = (2.2 + rnd() * 1.4) * F;
-      sx = 4 + rnd() * (this.cols - 8); sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.6);
-    } else {
-      // born near, off an edge, flying away toward the vanishing point
-      Z = (0.55 + rnd() * 0.35) * F;
-      if (top - 3 >= bandTop && rnd() < 0.6) { sx = rnd() * this.cols; sy = top - 3; }
-      else { sx = rnd() < 0.5 ? -5 : this.cols + 5; sy = Math.max(bandTop, top + 2 + rnd() * rows * 0.45); }
-      // aim inward so it crosses the view on its way out
-      dir[0] = (cxPx - sx * g.cellW) / F * 0.6 + (rnd() - 0.5) * 0.3;
-      dir[1] = Math.abs(dir[1]) * 0.6 + (cyPx - sy * g.cellH) / F * 0.4;
-    }
-    const X = (sx * g.cellW - cxPx) * Z / F, Y = (sy * g.cellH - cyPx) * Z / F;
-    const n = Math.hypot(dir[0], dir[1], dir[2]) || 1;
-    const p = { kind: 'shoot', X, Y, Z, vX: speed * dir[0] / n, vY: speed * dir[1] / n, vZ: speed * dir[2] / n, cxPx, cyPx, x: sx, y: sy, life: 6, age: 0, hist: [] };
+    const L = D.layout, S = D.shoot, g = this.grid, F = this.focal, W = this.viewW, H = this.viewH;
+    const topPx = this.scrollRows * g.cellH;
+    const roof = Math.max(0, L.shooting[0] * this.screenRows * g.cellH - topPx); // on screen, nothing flies above this (the name is up there)
+    const out = g.size * 2;                                                        // how far outside the edge a flight begins and ends
+    // In over the top edge when the sky above is open, otherwise over a side;
+    // then a heading across the screen, always falling. (ex, ey) → (qx, qy).
+    let ex, ey, qx, qy, len, tries = 0;
+    do {
+      let heading;
+      if (roof === 0 && rnd() < S.top) { ex = rnd() * W; ey = -out; heading = (30 + rnd() * 35) * Math.PI / 180; if (rnd() < 0.5) heading = Math.PI - heading; }
+      else {
+        const left = rnd() < 0.5;
+        ex = left ? -out : W + out; ey = roof + rnd() * (H - roof) * 0.7;
+        heading = (8 + rnd() * 37) * Math.PI / 180; if (!left) heading = Math.PI - heading;
+      }
+      const dx = Math.cos(heading), dy = Math.sin(heading);
+      // where that line leaves the screen again
+      len = Math.min(dx > 0 ? (W + out - ex) / dx : dx < 0 ? (-out - ex) / dx : Infinity, (H + out - ey) / dy);
+      qx = ex + dx * len; qy = ey + dy * len;
+    } while ((len < 0.35 * Math.min(W, H) + 2 * out || len > S.cross * W) && ++tries < 12); // not a clipped corner, not the long way down a tall screen
+    // depth: from far to near (it grows) or near to far (it shrinks)
+    const ratio = mix(S.depth, rnd()), near = mix(S.near, rnd()) * F, toward = rnd() < S.toward;
+    const z0 = toward ? near * ratio : near, z1 = toward ? near : near * ratio;
+    // Speed is set as it looks: screen widths a second, averaged over the
+    // crossing. At its nearest it moves `ratio` times that, so a deep
+    // flight is slowed until even that moment is no faster than S.peak.
+    const speed = Math.min(mix(S.speed, (rnd() + rnd()) / 2), S.peak / ratio) * W;
+    const T = len / speed;
+    const X0 = (ex - W / 2) * z0 / F, Y0 = (ey - H / 2) * z0 / F, X1 = (qx - W / 2) * z1 / F, Y1 = (qy - H / 2) * z1 / F;
+    const p = { kind: 'shoot', X: X0, Y: Y0, Z: z0, vX: (X1 - X0) / T, vY: (Y1 - Y0) / T, vZ: (z1 - z0) / T, cxPx: W / 2, cyPx: topPx + H / 2, x: 0, y: 0, life: T * 1.5 + 0.5, age: 0, hist: [] };
     this.project3(p);
     return p;
   }
@@ -393,7 +401,7 @@ export class AsciiScene extends HTMLElement {
         p.hist.push([p.X, p.Y, p.Z]); if (p.hist.length > 48) p.hist.shift();
         const F = this.focal;
         if (p.y >= L.birds[0] * rows) this.toBird(p, rnd);
-        else if (!(p.age < p.life && p.x > -20 && p.x < this.cols + 20 && p.Z > 0.28 * F && p.Z < 4.2 * F)) continue;
+        else if (!(p.age < p.life && p.x > -20 && p.x < this.cols + 20 && p.y < bottom + 8 && p.Z > 0.28 * F && p.Z < 4.2 * F)) continue; // gone past the edge
       } else if (p.kind === 'bird') {
         p.morph = Math.max(0, (p.morph || 0) - dt);
         const [px, py] = push(p, ...D.push.bird);
@@ -670,8 +678,8 @@ export class AsciiScene extends HTMLElement {
     const g = this.grid, P = this.P, F = this.focal, tail = D.glyphs.shootTail;
     const base = g.size, topPx = top * g.cellH;
     const headK = F / p.Z;
-    const born = clamp(p.age / 0.5, 0, 1);
-    g.ink(D.glyphs.shootHead, P.starBright, p.px, p.py - topPx, base * clamp(headK, 0.35, 3.6), clamp(headK * 1.15, 0.1, 1) * born);
+    const fade = clamp((p.life - p.age) / 0.3, 0, 1); // one a pointer has held on screen past its time fades instead of blinking out
+    g.ink(D.glyphs.shootHead, P.starBright, p.px, p.py - topPx, base * clamp(headK, 0.35, 3.6), clamp(headK * 1.15, 0.1, 1) * fade);
     // the tail follows the real path through space; spacing is one glyph at each point's own scale
     let acc = 0, k = 0;
     for (let i = p.hist.length - 2; i >= 0 && k < tail.length; i--) {
@@ -680,7 +688,7 @@ export class AsciiScene extends HTMLElement {
       const x1 = p.cxPx + X1 * k1, y1 = p.cyPx + Y1 * k1, x0 = p.cxPx + X0 * k0, y0 = p.cyPx + Y0 * k0;
       acc += Math.hypot(x1 - x0, y1 - y0);
       while (acc >= (k + 1) * base * 0.9 * Math.max(0.5, k0) && k < tail.length) {
-        g.ink(tail[k], P.star, x0, y0 - topPx, base * clamp(k0, 0.35, 3.2), (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.1, 1) * born);
+        g.ink(tail[k], P.star, x0, y0 - topPx, base * clamp(k0, 0.35, 3.2), (k < 2 ? 0.9 : k < 4 ? 0.55 : 0.35) * clamp(k0 * 1.15, 0.1, 1) * fade);
         k++;
       }
     }

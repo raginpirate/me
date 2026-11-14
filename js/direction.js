@@ -100,6 +100,13 @@ export const D = {
   // gap: ms of silence that ends a wheel gesture. coast: ms of silence before it brakes.
   // land: the slowest a braked glide finishes at, px a second. fling: slowest and fastest release that glides.
   glide: { touch: 1.7, wheel: 4, reach: 0.6, near: 0.15, land: 30, line: 33, notch: 40, gap: 120, coast: 70, fling: [80, 7000] },
+  // shooting stars. speed: screen widths a second, averaged over the crossing
+  // (slowest, fastest). peak: the fastest any one may move at its nearest.
+  // depth: how many times further its far end is than its near end.
+  // near: its near end, in focal lengths. toward: share that fly toward you.
+  // top: share that come in over the top edge when the sky above is open.
+  // cross: the longest crossing, in screen widths.
+  shoot: { speed: [0.28, 0.54], peak: 1.15, depth: [1.4, 3.2], near: [0.5, 1.0], toward: 0.6, top: 0.5, cross: 1.25 },
   // how often things appear
   spawn: { shoot: [3.5, 2.5], bird: [4, 6], flake: [9, 90], leaf: [5, 80] },   // [seconds, spread] / [seconds, most] / [per second, most]
 };
