@@ -1,508 +1,582 @@
-// The mountain below the peak: sheets in the camera's world.
+// The mountain and the way down it, in the camera's world.
 //
-// The body is the mountain the peak stands on. It is on the page's own
-// plane, painted by the hand that painted the peak, and under the clouds it
-// spreads. In front of it, lower down, stand wooded ridges and the brows
-// of the slopes between them, one after another, each a step nearer than
-// the last. Nothing changes size as you scroll. A nearer sheet is larger
-// and passes faster, and that is all. Type has a largest size: past it, a
-// nearer tree is a larger drawing, not larger type. Behind each crest
-// there is mist, so what is behind falls away from it. Each sheet is a
-// pane of the camera's: painted once, then only moved.
+// The mountain stands on the page's own plane: the painted peak, and the
+// massif it stands on, painted by the same hand. You come down its face,
+// and from its flank a rope bridge takes you across open air to the first
+// ridge of the forest. From there the way down is along skylines: each
+// ridge is a terrace whose crest is the path, and the path goes along it,
+// then down onto the next terrace, nearer, the other way, as switchbacks
+// do. Where one spur ends and the next begins there is a gap, and a bridge
+// over it, from the edge of one cliff to the edge of the next. The last
+// terrace is the valley floor, with the hut on it.
 //
-// The route is the camera's own track. The light you carry stays at one
-// height on the screen, and the trail is whatever passes under it: on each
-// sheet in turn, from where it lands on it to where a bridge leaves for
-// the next. So a bridge is as long as it is, from wherever you see it.
+// Every one of those is a pane at its own depth. The camera backs away as
+// you go down, so each terrace you leave rises and shrinks and goes into
+// the mist, and the mountain stands further off in the sky.
+//
+// The path is where the light you carry is: at every moment it is the
+// place on the terrace you are on that is under the light. So the crest of
+// each terrace is laid along exactly that.
 
-import { clamp, smooth, mulberry32, edge, mixHex } from './util.js';
+import { clamp, smooth, mulberry32, edge, mixHex, hash } from './util.js';
 import { D } from './direction.js';
 import { face } from './world.js';
 import { tree } from './trees.js';
-import { Ground } from './ground.js';
+import { MOST } from './camera.js';
 
-// straight runs between points [[x, y], ...]
 const line = (pts) => (x) => {
   if (x <= pts[0][0]) return pts[0][1];
   for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) { const [x0, y0] = pts[i - 1], [x1, y1] = pts[i]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); }
   return pts[pts.length - 1][1];
 };
-// the long ridges are no two alike: [the side you come from, the side you go down, level top, how fast it widens, how wide]
-const FORMS = [[1.0, 2.0, 2, 0.62, 3.1], [1.4, 2.3, 8, 0.6, 4.0], [0.9, 2.6, 3, 0.66, 3.5], [1.2, 2.0, 5, 0.6, 3.8]];
+// how much a glyph stands out, for keeping the right one when a painting is drawn in fewer cells
+const WEIGHT = { '@': 6, '#': 5, '%': 4, '/': 4.5, '\\': 4.5, '|': 4.5, '^': 3.5, '&': 3.5, ':': 2.5, '+': 3, '.': 1.5, ',': 1.2, "'": 1.2, '-': 2, '_': 2, '"': 1 };
+const GRASS = [',', '.', "'", '"', ',', '`'];
 
 export class Massif {
   constructor(sc) {
     this.sc = sc;
-    const g = sc.grid, cam = sc.cam, S = sc.screenRows, L = D.layout, M = D.massif, P = sc.P, still = sc.reduced.matches;
-    const kx = this.kx = Math.min(sc.cols, 170) / 60, rnd = mulberry32(3);
-    const rest = D.rest[sc.stack ? 'stack' : 'side'] * S;          // the light is this many rows above the middle of the screen
-    this.lampY = g.h / 2 - rest * g.cellH;
-    const last = sc.end + S / 2, gap = M.gap;                      // the camera's last row; rows of travel a bridge spans
+    const g = sc.grid, cam = sc.cam, S = sc.screenRows, L = D.layout, M = D.massif;
+    this.kx = Math.min(sc.cols, 170) / 60;
+    const rest = D.rest[sc.stack ? 'stack' : 'side'] * S;           // a row is under the light this many rows of scroll after it is in the middle
+    this.lampY = cam.lampFrac * g.h;
+    const W = g.w, cx = W / 2, last = sc.end + S / 2, at = (s) => s.snap + S / 2, pxOf = (s) => (s.hx + 0.5) * g.cellW;
+    const marked = sc.stops.filter((s) => s.mark && s.mark !== 'hut'), hutStop = sc.stops.find((s) => s.mark === 'hut');
+    const narrow = sc.stack ? 1 : 0, sweep = M.sweep[narrow] * W, jump = M.jump[narrow] * W, bl = M.cross * S, step = M.slice * S;
 
-    // The ridges: the camera's row when you step onto each. One at the
-    // treeline; one for each stop, a little before its waypoint; one behind
-    // the hut; and between those enough that none is longer than a stride.
-    // You come to each of these over a bridge. Where that leaves a long way
-    // from one to the next, the slope between them is in steps as well:
-    // brows, a `step` apart, that the path simply goes over.
-    const marked = sc.stops.filter((s) => s.mark && s.mark !== 'hut'), at = (s) => s.snap + S / 2;
-    const anchors = [{ y: (L.treeline - 0.05) * S + rest }, ...marked.filter((s) => s.at > L.ice).map((s) => ({ y: at(s) - 0.12 * S, stop: s })), { y: last - Math.max(0.27 * S - rest, 0.2 * S) / (still ? 1 : M.near) }];
-    const sparse = (anchors.find((a) => a.stop && a.stop.id === M.sparse)?.y ?? Infinity) - 1;
-    const tops = [];
-    for (let i = 0; i + 1 < anchors.length; i++) {
-      const a = anchors[i], b = anchors[i + 1], n = Math.max(1, Math.round((b.y - a.y) / (M.stride[a.y < sparse ? 0 : 1] * S)));
-      for (let k = 0; k < n; k++) {
-        const y0 = a.y + (b.y - a.y) * k / n, y1 = a.y + (b.y - a.y) * (k + 1) / n, m = Math.max(1, Math.round((y1 - y0) / (M.step * S)));
-        tops.push(k ? { y: y0 } : a);
-        for (let j = 1; j < m; j++) tops.push({ y: y0 + (y1 - y0) * j / m, brow: true });
+    // ---------- the trail: where across the screen the light is, at every scroll ----------
+    // Bridges: one onto the forest at the treeline, one a little before each
+    // stop below that, and more where two of those are far apart.
+    const anchors = [];
+    for (const b of [(L.treeline - 0.05) * S + rest, ...marked.filter((s) => s.at > L.ice).map((s) => at(s) - 0.12 * S)].sort((a, b) => a - b)) if (!anchors.length || b - anchors[anchors.length - 1] > M.apart * 0.5 * S) anchors.push(b);
+    const lands = [];
+    anchors.forEach((b, i) => { lands.push(b); const nx = anchors[i + 1] ?? last - 0.55 * S, n = Math.floor((nx - b) / (M.apart * S)); for (let k = 1; k <= n; k++) lands.push(b + (nx - b) * k / (n + 1)); });
+    // a knot: [scroll, pixels across, what leads to it: 'walk' or 'bridge']
+    const knots = this.knots = [[sc.summitRow + 2 + rest, (sc.world.topCol + 1.5) * g.cellW, 'walk'], [sc.bodyTop + rest, (Math.floor(sc.ax + 0.5) + 0.5) * g.cellW, 'walk']];
+    const stopsIn = (a, b) => marked.filter((s) => at(s) > a + 2 && at(s) < b - 2).map((s) => [at(s), pxOf(s)]);
+    // walk on to t1: switchbacks from one side to the other, through any stop on the way; x1 null: head for the middle, to cross
+    const walk = (t1, x1) => {
+      let [pt, px] = knots[knots.length - 1];
+      for (const [tt, xx] of [...stopsIn(pt, t1), [t1, x1]]) {
+        const n = Math.max(1, Math.round((tt - pt) / step));
+        for (let k = 1; k < n; k++) { px = px > cx ? cx - sweep : cx + sweep; knots.push([pt + (tt - pt) * k / n, px, 'walk']); }
+        const x = xx ?? cx - (px > cx ? -1 : 1) * jump / 2;
+        knots.push([tt, x, 'walk']); pt = tt; px = x;
       }
-    }
-    tops.push(anchors[anchors.length - 1]);
-    // each sheet is a step nearer than the one before; the last ridge, and the ground it stands on, are the nearest
-    const depth = (n) => still ? 1 : 1 + (M.near - 1) * n / tops.length;
-    const ground = sc.ground = new Ground(sc, depth(tops.length));
-    cam.look(last);
-    const door = ground.at(...ground.door);
-
-    // The trail: where across the screen the light is, for every place the
-    // camera can be. It is the rope's line on the peak, it is at each
-    // stop's waypoint when that stop's card is open, and at the hut's door
-    // at the end. Between those it eases over, with a swing or two on a
-    // long stretch. Where it crosses to a ridge it goes quickly sideways,
-    // the way it was already going: that is the bridge.
-    // A knot is [the camera's row, pixels across, straight from the last one?, swings on the way].
-    const knots = this.knots = [[sc.summitRow + 2 + rest, (sc.world.topCol + 1.5) * g.cellW], [sc.bodyTop + rest, (Math.floor(sc.ax + 0.5) + 0.5) * g.cellW, true], ...marked.map((s) => [at(s), (s.hx + 0.5) * g.cellW]), [last, door[0]]];
-    tops.forEach((t, i) => {
-      if (t.brow) return;
-      const mid = this.trail(t.y - gap / 2), dir = this.trail(t.y + 0.25 * S) >= this.trail(t.y - 0.25 * S) ? 1 : -1;
-      t.cross = [mid - dir * (t.reach = clamp((5 + rnd() * 3) * kx, 5, 11) * g.cellW * depth(i + 1) / 2), mid + dir * t.reach];
-    });
-    for (const t of tops) if (t.cross) knots.push([t.y - gap, t.cross[0]], [t.y, t.cross[1], true]);
-    knots.sort((p, q) => p[0] - q[0]);
-    knots.forEach((k, i) => { if (i && !k[2] && k[0] - knots[i - 1][0] > 0.5 * S) k[3] = 2 * Math.round((k[0] - knots[i - 1][0]) / (0.45 * S)); });
-    this.swing = 2.2 * kx * g.cellW;
-
-    // ---------- the sheets ----------
-    const sheets = this.sheets = [];
-    const add = (sh) => {
-      sh.index = sheets.length; sh.font = Math.round(g.size * Math.min(sh.z, D.type.most)); sh.cw = g.cellW * sh.z; sh.ch = g.cellH * sh.z; sh.path = []; sh.kept = new Set(); sh.clear = new Set(); sheets.push(sh);
-      // it is a pane, and it hides whatever is behind it from its crest down
-      sh.pane = cam.pane({ x: sh.x0, y: sh.base, z: sh.z, cols: sh.W, rows: sh.rowsN, fill: sh.fill, paint: (...a) => this.draw(sh, ...a), solid: (c, i) => i < sh.rowsN && sh.peak[c] <= sh.base + i });
-      return sh;
     };
-    const fillAt = (y) => mixHex(P.sky, P.skyBase, smooth(8.3, 9.7, y / S));
-
-    // The body. Under the clouds each flank goes out and down in steep
-    // faces and gentler shoulders, and the two are not alike.
-    // [screens below the seam, half-width in the peak's own half-widths]
-    const flank = (pts) => { const f = line(pts); return (n) => sc.seamHalf * f(n / S); };
-    const coreL = flank([[0, 1], [0.16, 1.2], [0.3, 1.85], [0.66, 2.15], [0.9, 2.95], [1.45, 3.45], [1.95, 4.6], [3, 6.2], [4.6, 9.5], [6, 13]]);
-    const coreR = flank([[0, 1], [0.1, 1.45], [0.42, 1.8], [0.58, 2.55], [1.05, 2.95], [1.35, 3.9], [2.2, 4.6], [3, 6], [4.6, 9.5], [6, 13]]);
-    const covered = (L.forest + 1.3) * S;                          // the camera's row by which the ridges have covered it
-    const bx0 = -6, bW = Math.ceil(cam.wx(g.w, covered)) + 6 - bx0, bRows = Math.ceil(cam.wy(g.h, covered)) - sc.bodyTop + 4;
-    add({
-      kind: 'body', z: depth(0), x0: bx0, W: bW, cx: sc.ax - bx0, base: sc.bodyTop - 10, rowsN: bRows + 10, deep: bRows, seed: 1, fill: P.sky,
-      peak: this.outline({ W: bW, cx: sc.ax - bx0, tall: bRows, hL: coreL, hR: coreR, rag: 4, seed: 1 }).map((v) => v + sc.bodyTop),
-      from: sc.bodyTop + rest, to: tops[0].y - gap, stop: marked.find((s) => s.at <= L.ice),
-    });
-
-    // The ridges and the brows. A ridge is a hill whose top is a little way
-    // on from where the trail lands on it, with a long side going down the
-    // way you go. A brow is hardly a hill: a long line, nearly level, that
-    // falls away a little to one side, and the next one to the other.
-    let long = 0, side = 1;
-    tops.forEach((t, i) => {
-      const z = depth(i + 1), e = t.y, nx = tops[i + 1], next = nx?.y ?? last, [Ax, Ay] = this.where(e, z), far = e >= sparse, seed = 100 + i * 13;
-      let hL, hR, flat, u;                             // its sides, its level top, and how far its top is from where the trail lands
-      if (t.brow) { const tilt = (0.06 + rnd() * 0.09) / kx; side = -side; hL = hR = (n) => n / tilt; flat = 6 * kx; u = side * Math.round((14 + rnd() * 10) * kx); }
-      else {
-        const [wl, wr, level, pow, wide] = far ? FORMS[long++ % FORMS.length] : [1, 1.7 + rnd() * 0.4, 0, 0.62, 3.1];
-        hL = (n) => wl * kx * wide * n ** pow; hR = (n) => wr * kx * wide * n ** pow; flat = level * kx; u = Math.round((3 + rnd() * 3) * kx) + Math.round(flat / 2);
-      }
-      const apex = Math.floor(Ax) + u;                 // its top, as a column of the page
-      // it must reach as far either side, and as far down, as it is ever seen; and above its top there is room for its trees and its mist
-      const out = Math.min(last, next + S), head = Math.ceil(Math.max(M.mist[0] * S / z, M.tall.birch * 1.8 * z ** (M.grow - 1))) + 3;   // the tallest tree there can be, in its rows
-      const left = Math.max(8, Math.ceil(apex - cam.wx(0, e - S, z)) + 4), right = Math.max(8, Math.ceil(cam.wx(g.w, out, z) - apex) + 4), tall = Math.ceil(cam.wy(g.h, out, z) - Ay) + 6;
-      const peak = this.outline({ W: left + right + 1, cx: left, tall, hL, hR, flat, rag: t.brow ? 3 : 5, seed });
-      // its height is set so that its crest is one row above where the trail lands
-      const lift = Math.floor(Ay) - 1 - Math.ceil(peak[left - u]), top = Math.floor(lift + Math.min(...peak));
-      add({
-        kind: 'ridge', brow: t.brow, z, x0: apex - left, W: left + right + 1, cx: left, base: top - head, rowsN: Math.floor(Ay) + tall - top + head, deep: Math.round(next - e + S * 0.9), seed, fill: fillAt(e),
-        // the path goes on a little way under the brow of the next, so it is never seen to stop short of it
-        peak: peak.map((v) => v + lift), from: e, to: !nx ? last : nx.brow ? next + M.under * S : next - gap, stop: t.stop,
-      });
-    });
-    this.route = sheets.slice();
-
-    // the route over each sheet, and what it must keep clear
-    const ends = [];
-    for (const sh of sheets) {
-      for (let y = sh.from; y <= sh.to + 1e-6; y++) {
-        const [wx, wy] = this.where(y, sh.z), r = Math.floor(wy), c = this.inside(sh, Math.floor(wx) - sh.x0, r), p = sh.path[sh.path.length - 1];
-        if (p) for (let x = p[0] + Math.sign(c - p[0]); x !== c; x += Math.sign(c - p[0])) sh.path.push([x, r, y]);
-        sh.path.push([c, r, y]);
-      }
-      if (sh.stop) { const s = sh.stop; sh.mark = this.where(at(s), sh.z, (s.hx + 0.5) * g.cellW, (s.hy - s.snap + 0.5) * g.cellH); s.sheet = sh; }
-      ends.push(sh.path[sh.path.length - 1]);
+    for (const b of lands) {
+      walk(b - bl, null);
+      const [, xa] = knots[knots.length - 1], xp = knots[knots.length - 2][1], dir = Math.sign(xa - xp) || 1;
+      knots.push([b, clamp(xa + dir * jump, W * 0.12, W * 0.88), 'bridge']);
     }
-    // from where the trail ends on the last ridge, down to the hut's door
-    {
-      const sh = sheets[sheets.length - 1], [c0, r0] = sh.path[sh.path.length - 1];
-      const cd = Math.floor(cam.wx(door[0], last, sh.z)) - sh.x0, rd = Math.floor(cam.wy(door[1], last, sh.z));
-      for (let r = r0 + 1; r <= rd; r++) sh.path.push([this.inside(sh, Math.round(c0 + (cd - c0) * (r - r0) / Math.max(1, rd - r0)), r), r, last]);
+    walk(last, pxOf(hutStop));
+
+    // ---------- the mountain: the peak's painting and the massif under it, at Z = 1 ----------
+    const firstLand = lands[0], depart = firstLand - bl;
+    const bodyRoute = this.locus(knots[1][0], depart, 1);
+    const [XD, YD] = bodyRoute[bodyRoute.length - 1], dir1 = Math.sign(this.trail(firstLand) - this.trail(depart)) || 1;
+    this.mountain = this.makeMountain(bodyRoute, XD, YD, dir1);
+    this.mountain.t1 = depart;
+
+    // ---------- the terraces: one for every stretch of walking below the first bridge ----------
+    const slices = this.slices = [];
+    for (let i = 1; i < knots.length; i++) {
+      const [t0] = knots[i - 1], [t1, , kind] = knots[i];
+      if (t0 < firstLand - 0.5 || kind === 'bridge') continue;
+      slices.push(this.makeSlice({ t0, t1, landing: knots[i - 1][2] === 'bridge', departing: knots[i + 1]?.[2] === 'bridge', valley: i === knots.length - 1, index: slices.length }));
     }
-    // bridges: from where the trail leaves one sheet to where it lands on the ridge after it
+    this.sheets = [this.mountain, ...slices];
+    this.sheets.forEach((sh, i) => { sh.index = i; });
+    // a stop's waypoint: on the terrace it is on, under the light when its card is open
+    for (const s of marked) {
+      const sh = slices.find((x) => x.t0 <= at(s) && at(s) <= x.t1) ?? this.mountain;
+      s.sheet = sh; sh.mark = this.where(at(s), sh.Z, pxOf(s), (s.hy - s.snap + 0.5) * g.cellH);
+    }
+    // ---------- the bridges: from where the path leaves one to where it takes up on the next ----------
     this.bridges = [];
-    for (let i = 0; i + 1 < sheets.length; i++) {
-      const a = sheets[i], b = sheets[i + 1], [c0, r0] = ends[i], [c1, r1] = b.path[0];
-      if (b.brow) continue;
-      cam.look(b.from);
-      const dir = this.at(b, c1, r1)[0] >= this.at(a, c0, r0)[0] ? 1 : -1;     // which way it runs, as you cross it
-      this.bridges.push({ a, b, from: [c0 + 0.5, r0 + 0.5], to: [c1 + 0.5, r1 + 0.5] });
-      // a clearing where it lands: no trees on the crest there, so the bridge and the path going on from it are not behind them
-      for (let dr = -8; dr <= 1; dr++) for (let dc = -13; dc <= 3; dc++) b.clear.add((r1 + dr) * b.W + c1 + dc * dir);
+    for (let i = 1; i < knots.length; i++) {
+      if (knots[i][2] !== 'bridge') continue;
+      const a = knots[i - 1][0], b = knots[i][0];
+      const from = [...this.sheets].reverse().find((x) => x.t1 <= a + 0.6) ?? this.mountain, to = slices.find((x) => x.t0 >= b - 0.6);
+      if (!to) continue;
+      const pts = [];
+      for (let k = 0; k <= 24; k++) {
+        const t = a + (b - a) * k / 24, Z = from.Z + (to.Z - from.Z) * k / 24;
+        pts.push([...this.where(t, Z, this.trail(t), this.lampY + this.dip(t)), Z]);
+      }
+      this.bridges.push({ a, b, from, to, pts });
     }
-    for (const sh of sheets) for (const [c, r] of sh.path) for (let dr = -1; dr <= 1; dr++) for (let dc = -2; dc <= 2; dc++) sh.kept.add((r + dr) * sh.W + c + dc);
-    cam.look(sc.centreRow || 0);
+    // the valley floor is the last terrace: the hut stands on it, its door where the path ends
+    sc.ground = this.ground = slices[slices.length - 1].hut;
     this.lamps = [];
   }
 
-  // where across the screen the light is when the camera is at row y
-  trail(y) {
+  // ---------- the trail ----------
+  // where across the screen the light is when the middle of the screen is at row s
+  trail(s) {
     const k = this.knots;
-    if (y <= k[0][0]) return k[0][1];
-    for (let i = 1; i < k.length; i++) if (y <= k[i][0]) {
-      const [y0, x0] = k[i - 1], [y1, x1, straight, swings] = k[i], t = (y - y0) / (y1 - y0);
-      return straight ? x0 + (x1 - x0) * t : x0 + (x1 - x0) * smooth(0, 1, t) + (swings ? Math.sin(t * Math.PI) * Math.sin(t * Math.PI * swings) * this.swing : 0);
-    }
+    if (s <= k[0][0]) return k[0][1];
+    for (let i = 1; i < k.length; i++) if (s <= k[i][0]) { const [s0, x0] = k[i - 1], [s1, x1] = k[i]; return x0 + (x1 - x0) * (s - s0) / (s1 - s0); }
     return k[k.length - 1][1];
   }
-  // the place on a sheet of depth z that is under the light (or under another pixel) when the camera is at row y
-  where(y, z, px = this.trail(y), py = this.lampY) { const cam = this.sc.cam; return [cam.wx(px, y, z), cam.wy(py, y, z)]; }
-
-  // An outline: for every column, how many rows below its top the crest is.
-  // hL, hR: how far out each side has got by n rows down; flat: a level top.
-  outline({ W, cx, tall, hL, hR, flat = 0, rag, seed }) {
-    const n = this.sc.noise, peak = new Float32Array(W).fill(Infinity);
-    for (let c = 0; c < W; c++) {
-      const h = c < cx ? hL : hR, a = Math.max(0, Math.abs(c - cx) - flat); if (h(tall) < a) continue;
-      let lo = 0, hi = tall;
-      for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (h(m) >= a) hi = m; else lo = m; }
-      peak[c] = hi + (n.fbm(c * 0.21 + seed, 3.3, 2) - 0.5) * rag * Math.min(1, hi / 5);
-    }
-    return peak;
+  // on a bridge the light dips with the deck as it sags
+  dip(s) {
+    const k = this.knots;
+    for (let i = 1; i < k.length; i++) if (k[i][2] === 'bridge' && s > k[i - 1][0] && s < k[i][0]) { const t = (s - k[i - 1][0]) / (k[i][0] - k[i - 1][0]); return Math.sin(Math.PI * t) * this.sc.grid.cellH * 0.9; }
+    return 0;
   }
-  // the nearest column to c that is inside a sheet at row r
-  inside(sh, c, r) { c = clamp(c, 1, sh.W - 2); for (let i = 0; i < sh.W && !(sh.peak[c] <= r - 1); i++) c += c < sh.cx ? 1 : -1; return c; }
+  lamp(s) { return [this.trail(s), this.lampY + this.dip(s)]; }
+  // the place at depth Z under the light (or another pixel) when the middle of the screen is at row s: [X, Y]
+  where(s, Z, px = this.trail(s), py = this.lampY) { const cam = this.sc.cam; return [cam.wx(px, s, Z), cam.wy(py, s, Z)]; }
+  // the path over a stretch of scroll, on the plane at depth Z: [X, Y, s] every half row
+  locus(t0, t1, Z) { const out = []; for (let t = t0; t <= t1 + 1e-6; t += 0.5) out.push([...this.where(t, Z), t]); if (out[out.length - 1][2] < t1) out.push([...this.where(t1, Z), t1]); return out; }
 
-  // ---------- painting a sheet: done once, the first time it is needed ----------
-  paint(sh) {
-    const sc = this.sc, g = sc.grid, S = sc.screenRows, P = sc.P, n = sc.noise, rnd = mulberry32(sh.seed), Y = D.layout, kx = this.kx;
-    const { W, cx, peak, path, kept, clear, base, rowsN, index } = sh, bottom = base + rowsN, body = sh.kind === 'body', M = D.massif;
-    const cells = sh.cells = Array.from({ length: rowsN }, () => new Array(W).fill(null)), mask = Array.from({ length: rowsN }, () => new Uint8Array(W));
-    const slope = new Float32Array(W);
-    for (let c = 1; c < W - 1; c++) slope[c] = Number.isFinite(peak[c - 1]) && Number.isFinite(peak[c + 1]) ? (peak[c + 1] - peak[c - 1]) / 2 : c < cx ? -2 : 2;
-    let top = Infinity; for (const v of peak) if (v < top) top = v;
-    top = Math.floor(top);
-    const wooded = (r) => smooth(Y.treeline + 0.05, Y.forest, r / S);   // under the trees the ground is dark
-    // past where the route leaves a sheet for a nearer one, the sheet is behind you: it is dimmer there
-    const leave = path[path.length - 1][1], recede = (r) => 1 - M.recede * smooth(leave - 0.05 * S, leave + 0.45 * S, r);
-
-    // --- bare rock and snow, in the peak's hand: lit from the left, down to where the trees close over it ---
-    const rockEnd = Math.min(bottom, Math.round(Y.forest * S) + 1);
-    if (top < rockEnd) {
-      // Ribs come down a face from its top and spread as it spreads. The
-      // one down its middle parts the face that looks left, which is lit,
-      // from the one that looks right, which is not: that is the peak. Each
-      // other rib, from where it starts, throws a shadow to its right on
-      // the lit side, or catches the light on its left on the dark side.
-      const ribs = body ? M.ribs : [[0, 0]], crest = [], own = new Map(), from = body ? sc.bodyTop : top, [shadow, glint] = M.cast;
-      for (let r = top; r < rockEnd; r++) {
-        const down = Math.max(0, r - from) / S, half = body ? sc.seamHalf * (1 + M.spread * down) : 30 * kx, last = crest[crest.length - 1];
-        const row = ribs.map(([t, start], k) => ({ t, on: t ? smooth(start, start + 0.3, down) : 1, x: cx + (t + (n.fbm(r * 0.05, k * 3.7 + sh.seed, 3) - 0.5) * 0.34 * smooth(0, 0.3, down)) * half }));
-        row.half = half; row.mid = row.find((p) => !p.t).x; crest.push(row);
-        if (last && body) row.forEach((p, k) => { const c = Math.round(p.x), dc = c - Math.round(last[k].x); if (p.on > 0.3) own.set(r * W + c, dc < 0 ? '/' : dc > 0 ? '\\' : '|'); });
-      }
-      const lit = (c, r) => {
-        const row = crest[r - top], left = c < row.mid; let sun = left ? 1 : 0;
-        for (const p of row) {
-          const u = left ? (c - p.x) / (shadow * row.half) : (p.x - c) / (glint * row.half);
-          if (p.t && u >= 0 && u < 1) sun = left ? Math.min(sun, 1 - p.on * Math.min(1, (1 - u) * 2.5)) : Math.max(sun, p.on * (1 - 0.5 * u));
-        }
-        return sun;
-      };
-      const rock = face({
-        W, x0: sh.x0, r0: top, r1: rockEnd, peak, S, P, seed: sh.seed + 7, lift: 0.16, ice: Y.ice * S, lit, arete: (r, c) => own.get(r * W + c),
-        axis: sh.x0 + cx, half: body ? sc.cols * 0.5 : Math.max(20, 30 * kx),
-      });
-      for (let r = Math.max(top, base); r < rockEnd; r++) {
-        const wood = wooded(r); if (wood > 0.97) break;
-        const row = rock[r - top], out = cells[r - base];
-        const a = (1 - wood) * recede(r);
-        for (let c = 0; c < W; c++) { const cell = row[c]; if (cell && !kept.has(r * W + c)) out[c] = a < 0.99 ? [cell[0], cell[1], (cell[2] ?? 1) * a] : cell; }
-      }
+  // ---------- the mountain ----------
+  makeMountain(route, XD, YD, dir) {
+    const sc = this.sc, cam = sc.cam, g = sc.grid, S = sc.screenRows, P = sc.P, M = D.massif, n = sc.noise, kx = this.kx, w = sc.world;
+    // its flanks, in the peak's own half-widths: [screens below the seam, half-width]; the side the first bridge leaves from ends in a cliff there
+    const flank = (pts) => { const f = line(pts); return (r) => sc.seamHalf * f(r / S); };
+    let hL = flank([[0, 1], [0.16, 1.2], [0.3, 1.85], [0.66, 2.15], [0.9, 2.95], [1.45, 3.45], [1.95, 4.6], [3, 6.2], [4.6, 9.5], [6, 13]]);
+    let hR = flank([[0, 1], [0.1, 1.45], [0.42, 1.8], [0.58, 2.55], [1.05, 2.95], [1.35, 3.9], [2.2, 4.6], [3, 6], [4.6, 9.5], [6, 13]]);
+    const cx = sc.ax, rowD = YD - sc.bodyTop, need = Math.abs(XD - cx) + 0.5, orig = dir > 0 ? hR : hL;
+    // the path must stay on the face until it gets there
+    const off = new Map(); for (const [X, Y] of route) { const r = Math.round(Y - sc.bodyTop); off.set(r, Math.max(off.get(r) ?? 0, Math.abs(X - cx) + 2)); }
+    const cliff = 0.22 * kx, wall = 0.32 * S;
+    const side = (r) => r <= rowD ? Math.max(Math.min(orig(r) * (1 + (need / Math.max(1, orig(rowD)) - 1) * smooth(0, rowD, r)), need), off.get(Math.round(r)) ?? 0)
+      : r < rowD + wall ? need + cliff * (r - rowD) : Math.max(need + cliff * wall + (r - rowD - wall) * 0.9 * kx, orig(r) * 0.85);
+    if (dir > 0) hR = side; else hL = side;
+    // as deep as it is ever seen: below the ground line when you are at the hut
+    const bottom = Math.ceil(cam.wy(cam.lampFrac * g.h, sc.end + S / 2, 1)) + Math.round(0.4 * S), top = sc.bodyTop, tall = bottom - top;
+    const half = Math.ceil(Math.max(hL(tall), hR(tall))) + 4, x0 = Math.floor(cx - half), Wd = 2 * half;
+    const crest = new Float32Array(Wd).fill(Infinity), cxi = cx - x0;
+    for (let c = 0; c < Wd; c++) {
+      const h = c < cxi ? hL : hR, a = Math.abs(c + 0.5 - cxi);
+      if (h(tall) < a) continue;
+      let lo = 0, hi = tall; for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (h(m) >= a) hi = m; else lo = m; }
+      crest[c] = top + hi + (n.fbm(c * 0.21 + 1, 3.3, 2) - 0.5) * 4 * Math.min(1, hi / 5);
     }
-
-    // --- under the trees: the crest as a line, ground cover thinning out below it, and the ground itself as a
-    // soft wash, one pixel to a cell, brightest just under the crest and gone a few rows below: it is what makes
-    // a ridge a shape and not only the trees on it. Over the crest the same wash is mist, thickest at the crest
-    // and thinning upward: whatever is behind the ridge goes into it, and the ridge stands clear of that. ---
-    const img = new ImageData(W, rowsN), px = img.data, rgb = (hex) => [1, 3, 5].map((k) => parseInt(hex.slice(k, k + 2), 16)), tone = rgb(P.pineDark), air = rgb(mixHex(sh.fill, P.far, M.mist[2]));
-    const moss = mixHex(P.pine, P.leafOlive, 0.45), GRASS = [',', '.', "'", '"', ',', '`'];
-    const deep = sh.deep, mist = sh.mist = body ? 0 : Math.round(M.mist[0] * S / sh.z);
-    for (let r = base; r < bottom; r++) {
-      const i = r - base, wood = wooded(r);
-      for (let x = 0; x < W; x++) {
-        const depth = r - peak[x], p4 = (i * W + x) * 4;
-        if (!(depth >= 0)) {
-          if (depth > -mist) { px[p4] = air[0]; px[p4 + 1] = air[1]; px[p4 + 2] = air[2]; px[p4 + 3] = 255 * M.mist[1] * (1 + depth / mist) ** 2; }
-          continue;
-        }
-        mask[i][x] = 1;
-        if (wood < 0.5) continue;
-        if (depth < 26) { px[p4] = tone[0]; px[p4 + 1] = tone[1]; px[p4 + 2] = tone[2]; px[p4 + 3] = 255 * 0.32 * Math.exp(-depth / 6.5) * Math.min(1, depth + 0.3) * smooth(0.5, 0.8, wood); }
-        if (depth > deep || wood < 0.6 || kept.has(r * W + x)) continue;
-        if (depth < 1) cells[i][x] = [edge(peak[x] - Math.floor(peak[x]), slope[x]), slope[x] < 0.05 ? moss : P.pine, 0.95];
-        else if (depth < 11 && rnd() < 0.3 * (1 - depth / 11)) cells[i][x] = [GRASS[Math.floor(rnd() * GRASS.length)], slope[x] < 0.05 ? P.pine : P.pineDark, 0.85 - depth * 0.05];
-      }
+    // the whole of it, peak and massif, in one grid of cells, painted once
+    const X0 = Math.min(0, x0), X1 = Math.max(sc.cols, x0 + Wd), mw = X1 - X0, mh = bottom;
+    const cells = new Array(mh), inside = new Array(mh);
+    for (let r = 0; r < mh; r++) { cells[r] = new Array(mw).fill(null); inside[r] = new Uint8Array(mw); }
+    for (let r = 0; r <= sc.seamRow + sc.blend && r < mh; r++) {
+      const span = sc.peakSpan[r]; if (span && r < sc.bodyTop) for (let X = span[0]; X < span[1]; X++) inside[r][X - X0] = 1;
+      for (let X = 0; X < sc.cols; X++) { const cell = w.cells[r]?.[X]; if (cell) cells[r][X - X0] = cell; }
     }
-
-    // --- trees: a line of them on the crest, so the outline is trees, then
-    // ranks that thin out into the dark below it. Each is its own drawing
-    // (trees.js), in the sheet's type. The nearer the sheet, the taller its
-    // trees stand: in more rows, once the type is as large as type gets. ---
-    const trees = sh.trees = [], k = sh.font / (g.size * sh.z);   // a cell of a tree, in cells of the sheet
-    const plant = (c, r, kind, dark, snow) => {
-      // now and then one that has stood a long time
-      const down = smooth(0, sh.deep, r - peak[c]);   // a tree further down the face is nearer: larger, and brighter
-      const { rows: shape, stem } = tree(kind, M.tall[kind] * (0.7 + 0.5 * rnd()) * (rnd() < 0.07 ? 1.5 : 1) * (1 + M.face * down) * sh.z ** M.grow * g.size / sh.font, rnd), dim = recede(r) * (1 - M.face * 0.5 * (1 - down));
-      const h = shape.length, w2 = shape[0].length, olive = rnd() < 0.5, snowy = Math.ceil(h * [0, 0.22, 0.45][snow]);
-      // the route stays clear, and trees keep their distance, by their size
-      for (let rr = Math.floor(r - h * k * 1.1); rr <= r; rr++) for (let x = Math.floor(c - w2 * k * 0.55); x <= Math.ceil(c + w2 * k * 0.55); x++) if (kept.has(rr * W + x) || clear.has(rr * W + x)) return;
-      for (const o of trees) if (Math.abs(o.row - r) < 0.5 * Math.max(h, o.h) * k + 1 && Math.abs(o.c - c) < 0.45 * (w2 + o.w) * k) return;
-      const rows = shape.map((ln, i) => {
-        let f = 0, e = w2 - 1;
-        while (f < w2 && ln[f] === ' ') f++; while (e >= 0 && ln[e] === ' ') e--;
-        const marks = [], foot = i >= h - stem;        // a row of bare trunk
-        for (let j = f; j <= e; j++) {
-          const ch = ln[j]; if (ch === ' ') continue;
-          const shade = dark || j > (w2 - 1) / 2 + 0.6;
-          if (kind === 'pine') marks.push([j, ch, !foot && (i < snowy || (i === snowy && snowy > 1 && j === f)) ? P.snow : foot || shade ? P.pineDark : P.pine, dim]);
-          else if (kind === 'birch') { const bark = ch === '|' || ch === '!'; marks.push([j, ch, bark ? P.birch : P.birchLeaf, (bark ? 0.92 : shade ? 0.6 : 0.95) * dim]); }   // a white trunk, right up through its leaves
-          else marks.push([j, ch, foot ? P.ground : olive ? P.leafOlive : P.leaf, (!foot && shade ? 0.6 : 1) * dim]);
-        }
-        return { f, e, marks };
-      });
-      trees.push({ c, row: r, h, w: w2, k, font: sh.font, rows, kind, stem });
+    // rock and snow below the seam, lit as the peak is: ribs fan down from it, lit on their left, shaded on their right
+    const wooded = (r) => smooth(D.layout.treeline + 0.05, D.layout.forest, r / S);
+    const rockEnd = Math.min(bottom, top + Math.round(1.3 * S));
+    const ribRows = [], own = new Map(), [shadow, glint] = M.cast;
+    for (let r = top; r < rockEnd; r++) {
+      const down = (r - top) / S, hw = sc.seamHalf * (1 + M.spread * down), lastR = ribRows[ribRows.length - 1];
+      const row = M.ribs.map(([t, start], k) => ({ t, on: t ? smooth(start, start + 0.3, down) : 1, x: cxi + (t + (n.fbm(r * 0.05, k * 3.7 + 1, 3) - 0.5) * 0.34 * smooth(0, 0.3, down)) * hw }));
+      row.half = hw; row.mid = row.find((p) => !p.t).x; ribRows.push(row);
+      if (lastR) row.forEach((p, k) => { const c = Math.round(p.x), dc = c - Math.round(lastR[k].x); if (p.on > 0.3) own.set(r * Wd + c, dc < 0 ? '/' : dc > 0 ? '\\' : '|'); });
+    }
+    const lit = (c, r) => {
+      const row = ribRows[r - top], left = c < row.mid; let sun = left ? 1 : 0;
+      for (const p of row) { const u = left ? (c - p.x) / (shadow * row.half) : (p.x - c) / (glint * row.half); if (p.t && u >= 0 && u < 1) sun = left ? Math.min(sun, 1 - p.on * Math.min(1, (1 - u) * 2.5)) : Math.max(sun, p.on * (1 - 0.5 * u)); }
+      return sun;
     };
-    // What grows where. Pines at the treeline give way slowly to broadleaves
-    // and birches all the way down, and at the foot of the mountain there is
-    // hardly a pine.
-    const pines = (at) => 1 - 0.96 * smooth(Y.forest - 0.5, Y.ground - 0.8, at);
-    const pick = (at) => rnd() < pines(at) ? 'pine' : rnd() < 0.42 ? 'birch' : 'leafy';
-    // how much snow a pine carries: laden near the treeline, dusted lower, bare in the forest proper
-    const snowOn = (at) => at < Y.forest - 0.15 ? 2 : at < Y.forest + 0.3 ? (rnd() < 0.75 ? 2 : 1) : at < Y.forest + 0.95 ? (rnd() < 0.6 ? 1 : 0) : 0;
-    const density = (at) => smooth(Y.treeline - 0.1, Y.forest + 0.2, at);
-    const set = (c, r) => { const at = r / S, kind = pick(at); plant(c, r, kind, slope[c] > 0.05, kind === 'pine' ? snowOn(at) : 0); };
-    for (let c = 2 + Math.floor(rnd() * 3); c < W - 3; c += 3 + Math.floor(rnd() * 3)) {
-      const r = Math.round(peak[c]);
-      if (Number.isFinite(peak[c]) && r < bottom - 1 && rnd() < density(r / S) * 1.1) set(c, r);
-    }
-    for (let r = Math.max(top, Math.round(Y.treeline * S)); r < bottom; r += 3) {
-      for (let c = 2 + (r * 7) % 5; c < W - 3; c += 5 + Math.floor(rnd() * 5)) {
-        const depth = r - peak[c];
-        if (depth >= 4 && depth <= deep && rnd() < density(r / S) * 0.92 * (1 - 0.6 * smooth(10, 44, depth))) set(c, r);
+    const rock = face({ W: Wd, x0, r0: top, r1: rockEnd, peak: crest, S, P, seed: 8, lift: 0.16, ice: D.layout.ice * S, lit, arete: (r, c) => own.get(r * Wd + c), axis: cx, half: Math.max(20, sc.cols * 0.5) });
+    const moss = mixHex(P.pine, P.leafOlive, 0.45), kept = new Set();
+    for (const [X, Y] of route) for (let dr = -1; dr <= 1; dr++) for (let dc = -2; dc <= 2; dc++) kept.add((Math.floor(Y) + dr) * mw + Math.floor(X) + dc - X0);
+    for (let r = top; r < bottom; r++) {
+      const wood = wooded(r), inRock = r < rockEnd;
+      for (let c = 0; c < Wd; c++) {
+        if (!(crest[c] <= r)) continue;
+        const X = x0 + c, i = X - X0; inside[r][i] = 1;
+        if (r <= sc.seamRow + sc.blend && cells[r][i] && sc.painted(r, X)) continue;   // through the seam the peak's own painting stands
+        if (kept.has(r * mw + i)) { cells[r][i] = null; continue; }
+        const depth = r - crest[c];
+        let cell = inRock ? rock[r - top][c] : null;
+        if (cell && wood > 0.01) cell = [cell[0], cell[1], (cell[2] ?? 1) * (1 - wood)];
+        if (wood > 0.5) {
+          // the forest, as it is seen from far off: a crown here and there, the crest a line
+          const v = hash(X, r, 77);
+          if (depth < 1) cell = [edge(crest[c] - Math.floor(crest[c]), (crest[c + 1] - crest[c - 1]) / 2 || 0), moss, 0.9];
+          else if (v < 0.07 * wood) cell = ['^', v < 0.035 ? P.pine : P.pineDark, 0.85];
+          else if (v < 0.1 * wood) cell = ['&', v < 0.085 ? P.leafOlive : P.leaf, 0.6];
+          else if (v < 0.16 * wood) cell = [GRASS[Math.floor(v * 97) % GRASS.length], P.pineDark, 0.5];
+        }
+        cells[r][i] = cell;
       }
     }
-    sh.reach = Math.ceil(Math.max(0, ...trees.map((t) => t.h)) * k) + 2;   // none is taller than this, in rows of the sheet
-    trees.sort((p, q) => p.row - q.row);   // further up the face first, so the nearer ones are drawn over them
-    trees.forEach((t, i) => { t.id = index * 10000 + i; });
-    // A tree hides what is behind it: nothing of the sheet's own is drawn
-    // under it, and a tree further up the face loses the marks a nearer one
-    // stands over.
-    const over = new Int32Array(rowsN * W).fill(-1), leftOf = (t) => t.c + 0.5 - t.w / 2 * t.k;
-    trees.forEach((t, id) => t.rows.forEach((row, j) => {
-      const y = t.row + 1 - (t.h - j) * t.k - base, x = leftOf(t);
-      if (row.e >= row.f) for (let i = Math.max(0, Math.floor(y)); i < Math.min(rowsN, y + t.k); i++) for (let c = Math.max(0, Math.floor(x + (row.f - 0.6) * t.k)); c < Math.min(W, x + (row.e + 1.6) * t.k); c++) { over[i * W + c] = id; cells[i][c] = null; }
-    }));
-    trees.forEach((t, id) => t.rows.forEach((row, j) => {
-      const i = Math.floor(t.row + 1 - (t.h - j - 0.5) * t.k - base);
-      row.marks = row.marks.filter(([col]) => !(over[i * W + Math.floor(leftOf(t) + (col + 0.5) * t.k)] > id));
-    }));
+    // the path on the face: faint here; the scene lights the stretch you are on
+    route.forEach(([X, Y], k) => { const r = Math.floor(Y), i = Math.floor(X) - X0; if (r >= 0 && r < mh && i >= 0 && i < mw) { cells[r][i] = Y / S < D.layout.ice ? (k % 4 === 0 ? ['+', P.muted, 0.8] : [':', P.muted, 0.5]) : [k % 3 ? '.' : ',', P.muted, 0.6]; inside[r][i] = 1; } });
+    const mt = {
+      kind: 'mountain', Z: 1, x: X0, y: 0, w: mw, h: mh, uMin: 1, uMax: 32, t0: -Infinity, t1: 0, cells, inside, route: route.map(([X, Y, t]) => [X, Y + 0.6, t]),
+      fill: P.sky, alpha: (d) => 1 - 0.32 * smooth(1.5, 9, d), coarse: new Map(),
+      solidAt: (X, Y) => { const r = Math.floor(Y), i = Math.floor(X) - X0; return r >= 0 && r < mh && i >= 0 && i < mw && inside[r][i] === 1; },
+      paint: (L, c0, i0, c1, i1, ox, oy) => this.paintGrid(mt, L, c0, i0, c1, i1, ox, oy),
+    };
+    return cam.pane(mt);
+  }
 
-    // --- the route's own marks: a fixed rope on the ice, a path of stones on
-    // the rock, a trodden path in the forest. They are faint here; the scene
-    // lights the stretch you are on. ---
-    path.forEach(([c, r], k) => {
-      const i = r - base, at = r / S; if (i < 0 || i >= rowsN || c < 0 || c >= W) return;
-      mask[i][c] = 1;
-      cells[i][c] = at < Y.ice ? (k % 4 === 0 ? ['+', P.muted, 0.8] : [':', P.muted, 0.5])
-        : at < Y.forest ? [k % 3 ? '.' : ',', P.muted, 0.6]
-        : k % 7 === 3 ? ['=', P.muted, 0.6] : [k % 2 ? ':' : '.', P.muted, 0.68];
+  // A grid of cells, at any level: at its own cells as it is, and coarser by keeping, of every block of cells, the one that stands out most.
+  paintGrid(p, L, c0, i0, c1, i1, ox, oy) {
+    const g = this.sc.grid, u = L.u, { cw, ch, font } = L, snow = this.sc.P.snow;
+    let G = p.coarse.get(u);
+    if (!G) {
+      if (u === 1) G = { cells: p.cells, inside: p.inside };
+      else {
+        const rows = Math.ceil(p.h / u), cols = Math.ceil(p.w / u), cells = new Array(rows), inside = new Array(rows);
+        for (let i = 0; i < rows; i++) {
+          cells[i] = new Array(cols).fill(null); inside[i] = new Uint8Array(cols);
+          for (let c = 0; c < cols; c++) {
+            let best = null, wb = 0, n = 0;
+            for (let r = i * u; r < Math.min(p.h, (i + 1) * u); r++) for (let x = c * u; x < Math.min(p.w, (c + 1) * u); x++) {
+              if (p.inside[r][x]) n++;
+              const cell = p.cells[r][x]; if (!cell) continue;
+              const wv = (WEIGHT[cell[0]] ?? 2) * (cell[2] ?? 1) * (cell[1] === snow ? 1.3 : 1);
+              if (wv > wb) { wb = wv; best = cell; }
+            }
+            cells[i][c] = best; inside[i][c] = n * 2 >= u * u ? 1 : 0;
+          }
+        }
+        G = { cells, inside };
+      }
+      p.coarse.set(u, G);
+    }
+    for (let i = i0; i <= i1; i++) {
+      const ins = G.inside[i], row = G.cells[i]; if (!ins) continue;
+      let a = -1;
+      for (let c = c0; c <= c1 + 1; c++) { const on = c <= c1 && ins[c]; if (on && a < 0) a = c; else if (!on && a >= 0) { g.box(ox + a * cw - 0.5, oy + i * ch - 0.5, (c - a) * cw + 1, ch + 1, p.fill); a = -1; } }
+      for (let c = c0; c <= c1; c++) { const cell = row[c]; if (cell) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2] ?? 1); }
+    }
+  }
+
+  // ---------- a terrace ----------
+  makeSlice({ t0, t1, landing, departing, valley, index }) {
+    const sc = this.sc, cam = sc.cam, g = sc.grid, S = sc.screenRows, P = sc.P, M = D.massif, n = sc.noise, kx = this.kx, Y = D.layout;
+    const rnd = mulberry32(500 + index * 31), seed = 100 + index * 13;
+    const Z = cam.path(t0)[2] + M.near;
+    const route = this.locus(t0, t1, Z);
+    const [XS, YS] = route[0], [XE, YE] = route[route.length - 1], wdir = Math.sign(XE - XS) || 1;
+    const slope = valley ? 0 : clamp((YE - YS) / Math.max(1, Math.abs(XE - XS)), 0.05, 1.6);
+    // deep enough to reach the bottom of the screen while it is the nearest thing there
+    const bottom = Math.ceil(cam.wy(g.h, t0 + 0.15 * S, Z)) + 6;
+    // its crest: along the path, and beyond it at either end
+    const xMin = Math.min(XS, XE), xMax = Math.max(XS, XE);
+    const cliff = M.cliff, E1 = (5 + rnd() * 6) * kx, E2 = (8 + rnd() * 10) * kx;
+    const beyond = (X) => {
+      if (valley) return Math.min(YS, YE) - 0.6 + (n.fbm(X * 0.07 + seed, 2.1, 2) - 0.5) * 1.6;
+      const back = (X - XS) * -wdir, fwd = (X - XE) * wdir;
+      if (back > 0) return landing ? YS - 0.6 + cliff * back : YS - 0.6 - slope * back + (slope + 0.4) * back * back / (2 * E1) + (n.fbm(X * 0.15 + seed, 1.3, 2) - 0.5) * 1.5 * Math.min(1, back / 4);
+      if (fwd > 0) return departing ? YE - 0.6 + cliff * fwd : YE - 0.6 + slope * fwd + 0.6 * fwd * fwd / (2 * E2) + (n.fbm(X * 0.15 + seed, 4.7, 2) - 0.5) * 1.5 * Math.min(1, fwd / 4);
+      return Infinity;
+    };
+    // it reaches out to either side until its crest has gone down past its foot
+    let a = Math.floor(xMin), b = Math.ceil(xMax);
+    while (beyond(a - 1) < bottom && xMin - a < 900) a--;
+    while (beyond(b + 1) < bottom && b - xMax < 900) b++;
+    if (valley) { a = Math.min(a, Math.floor(cam.wx(0, t1, Z)) - 40); b = Math.max(b, Math.ceil(cam.wx(g.w, t1, Z)) + 40); }
+    const x0 = a - 2, w = b - a + 5, crest = new Float32Array(w + 2).fill(Infinity);
+    // along the path the crest is the path itself: of the path's points over each column, the highest
+    for (let i = 1; i < route.length; i++) {
+      const [ax, ay] = route[i - 1], [bx, by] = route[i];
+      for (let X = Math.ceil(Math.min(ax, bx)); X <= Math.floor(Math.max(ax, bx)); X++) {
+        const t = bx === ax ? 0 : (X - ax) / (bx - ax), c = X - x0;
+        if (c >= 0 && c <= w + 1) crest[c] = Math.min(crest[c], ay + (by - ay) * t - 0.6);
+      }
+    }
+    for (let c = 0; c <= w + 1; c++) if (!Number.isFinite(crest[c])) { const X = x0 + c; crest[c] = X >= xMin && X <= xMax ? (crest[c - 1] ?? YS) : beyond(X); }
+    const cAt = (X) => { const f = X - x0, i = Math.floor(f); if (i < 0 || i > w) return Infinity; return crest[i] + (crest[i + 1] - crest[i]) * (f - i); };
+    let top = Infinity; for (const v of crest) if (v < top) top = v;
+    const y0 = Math.floor(top - M.tall.birch * 1.6 * 1.35 - 2), h = bottom - y0;
+    const fill = mixHex(P.sky, valley ? P.groundDark : P.pineDark, valley ? 0.12 : 0.07);
+
+    // ---------- its trees, in the world: where each stands, how tall, what it is ----------
+    const trees = [], at = t0 / S;
+    const pines = 1 - 0.96 * smooth(Y.forest - 0.5, Y.ground - 0.8, at), dens = smooth(Y.treeline - 0.1, Y.forest + 0.2, at);
+    const snow = at < Y.forest - 0.15 ? 2 : at < Y.forest + 0.3 ? 1.5 : at < Y.forest + 0.95 ? 0.6 : 0;
+    const onPath = (X) => X >= xMin - 2 && X <= xMax + 2;
+    const clear = (X, Yt) => {   // nothing may stand over the path, nor in the air a bridge crosses
+      if (onPath(X) && Yt < cAt(X) + 0.6) return false;
+      if (landing && (X - XS) * -wdir > -3 && (X - XS) * -wdir < 14 * kx && Yt < cAt(X) + 3) return false;
+      if (departing && (X - XE) * wdir > -3 && (X - XE) * wdir < 14 * kx && Yt < cAt(X) + 3) return false;
+      return true;
+    };
+    const kindAt = () => rnd() < pines ? 'pine' : rnd() < 0.42 ? 'birch' : 'leafy';
+    // further down a face is nearer you: a tree there stands taller, the more so on the valley floor, which comes right up to you
+    const plant = (X, Yf, kind) => {
+      const tall = M.tall[kind] * (0.75 + 0.45 * rnd()) * (rnd() < 0.06 ? 1.45 : 1) * (1 + (valley ? 1.3 : 0.35) * smooth(2, valley ? 50 : 40, Yf - cAt(X))), wd = tree(kind, tall, mulberry32(7)).rows[0].length;
+      for (const dx of [-wd / 2, 0, wd / 2]) if (!clear(X + dx, Yf - tall)) return;
+      for (const o of trees) if (Math.abs(o.Y - Yf) < 0.45 * Math.max(tall, o.h) && Math.abs(o.X - X) < 0.42 * (wd + o.wd)) return;
+      trees.push({ X, Y: Yf, h: tall, wd, kind, seed: Math.floor(rnd() * 1e9), dark: rnd() < 0.5, olive: rnd() < 0.5, snow: kind === 'pine' ? snow * (0.6 + 0.4 * rnd()) : 0 });
+    };
+    if (!valley) {
+      // a line along the crest beyond the path, so the outline is trees
+      for (let X = a + rnd() * 3; X < b; X += (3 + rnd() * 3)) { if (onPath(X) || rnd() > dens * 1.1) continue; plant(X, cAt(X) + 0.6, kindAt()); }
+      // ranks down the face, thinning into the dark
+      for (let dy = 3; dy < 48; dy += 2.6) for (let X = a + rnd() * 4; X < b; X += (4 + rnd() * 4)) {
+        const c = cAt(X); if (!Number.isFinite(c) || c + dy > bottom - 1 || rnd() > dens * (1 - 0.6 * smooth(8, 40, dy))) continue;
+        plant(X, c + dy, kindAt());
+      }
+    } else {
+      // the valley: trees about the hut, none in front of it, and the forest going on in front of you
+      const any = () => rnd() < 0.12 ? 'pine' : rnd() < 0.45 ? 'birch' : 'leafy';
+      for (let X = a + rnd() * 5; X < b; X += (5 + rnd() * 7)) { if (X > XE - 14 && X < XE + 26) continue; if (rnd() < 0.55) plant(X, cAt(X) + 0.6 + rnd() * 1.2, any()); }
+      for (let dy = 6; dy < bottom - cAt(XE); dy += 3.2) for (let X = a + rnd() * 6; X < b; X += (6 + rnd() * 7)) { if (Math.abs(X - XE - 6) < 16 && dy < 14) continue; if (rnd() < 0.5 * smooth(4, 14, dy)) plant(X, cAt(X) + dy, any()); }
+    }
+    trees.sort((p, q) => p.Y - q.Y);   // further up the face first, so the nearer ones are drawn over them
+    trees.forEach((t, i) => { t.id = (index + 1) * 10000 + i; });
+
+    const sh = {
+      kind: valley ? 'valley' : 'slice', Z, x: x0, y: y0, w, h, uMin: 0.25, uMax: 1, t0, t1, route, crest, cAt, trees, fill, landing, departing, wdir, seed,
+      alpha: valley ? null : (d) => 1 - smooth(M.fade[0], M.fade[1], d),
+      solidAt: (X, Yw) => Yw >= cAt(X) && Yw < y0 + h,
+      paint: (L, c0, i0, c1, i1, ox, oy) => this.paintSlice(sh, L, c0, i0, c1, i1, ox, oy),
+      shapes: new Map(), pathX: [xMin, xMax],
+    };
+    if (valley) sh.hut = this.makeHut(sh, XE, cAt(XE));
+    return cam.pane(sh);
+  }
+
+  // the hut: where it stands, its window, its chimney
+  makeHut(sh, XE, Yg) {
+    const sc = this.sc, hut = D.glyphs.hut, left = XE + 1.5;
+    sh.hutAt = [left, Yg + 0.6];
+    const window = [left + hut[4].indexOf('[') + 1, Yg + 0.6 - (hut.length - 4) + 0.5], chimney = [left + hut[0].indexOf(',') + 0.5, Yg + 0.6 - hut.length];
+    return {
+      Z: sh.Z, sheet: sh, door: [XE, Yg], window, chimney,
+      at(X, Yw) { const cam = sc.cam; return [cam.px(X, sh.Z), cam.py(Yw, sh.Z)]; },
+      get k() { return sc.cam.size(sh.Z); },
+      get showing() { return sc.cam.dist(sh.Z) > 0.05 && sc.cam.py(Yg - 8, sh.Z) < sc.grid.h; },
+      // smoke from the chimney
+      draw() {
+        if (!this.showing || sc.reduced.matches) return;
+        const g = sc.grid, u = g.size * this.k, [x, y] = this.at(...chimney);
+        for (let i = 0; i < 4; i++) {
+          const t = (sc.time * 0.22 + i / 4) % 1;
+          g.ink(t < 0.3 ? '.' : t < 0.65 ? 'o' : 'O', sc.P.dim, x + (Math.sin(t * 5 + i) * 0.5 + t * 1.6) * u, y - t * 3.4 * u, u * (0.6 + t * 0.9), 0.75 * (1 - t) ** 1.2);
+        }
+      },
+    };
+  }
+
+  // A terrace at one level: what it covers, the ground's wash, its crest,
+  // its ground cover, its trees, its path. Cell (c, i) is u world columns
+  // and rows from its top left.
+  paintSlice(sh, L, c0, i0, c1, i1, ox, oy) {
+    const sc = this.sc, g = sc.grid, P = sc.P, { u, cw, ch, font } = L, { x, y, cAt, fill } = sh, valley = sh.kind === 'valley';
+    const crestC = new Float32Array(c1 - c0 + 3);
+    for (let c = c0 - 1; c <= c1 + 1; c++) crestC[c - c0 + 1] = cAt(x + (c + 0.5) * u);
+    const cr = (c) => crestC[c - c0 + 1];
+    // what it covers
+    let any = false;
+    for (let i = i0; i <= i1; i++) {
+      const Yc = y + (i + 0.5) * u; let a = -1;
+      for (let c = c0; c <= c1 + 1; c++) { const on = c <= c1 && cr(c) <= Yc; if (on && a < 0) a = c; else if (!on && a >= 0) { g.box(ox + a * cw - 0.5, oy + i * ch - 0.5, (c - a) * cw + 1, ch + 1, fill); a = -1; any = true; } }
+    }
+    // the wash: the ground just under the crest, soft, one pixel a cell, stretched
+    const nw = c1 - c0 + 1, nh = i1 - i0 + 1;
+    if (any && !valley) {
+      const img = new ImageData(nw, nh), px = img.data, tone = [1, 3, 5].map((k) => parseInt(P.pineDark.slice(k, k + 2), 16));
+      for (let i = i0; i <= i1; i++) for (let c = c0; c <= c1; c++) {
+        const depth = y + (i + 0.5) * u - cr(c); if (!(depth >= 0 && depth < 26)) continue;
+        const p4 = ((i - i0) * nw + c - c0) * 4; px[p4] = tone[0]; px[p4 + 1] = tone[1]; px[p4 + 2] = tone[2]; px[p4 + 3] = 255 * 0.3 * Math.exp(-depth / 6.5) * Math.min(1, depth / u + 0.3);
+      }
+      const can = this.scratch || (this.scratch = document.createElement('canvas'));
+      if (can.width < nw || can.height < nh) { can.width = Math.max(can.width, nw); can.height = Math.max(can.height, nh); }
+      can.getContext('2d').putImageData(img, 0, 0);
+      g.ctx.globalAlpha = g.alpha = 1; g.ctx.imageSmoothingEnabled = true;
+      g.ctx.drawImage(can, 0, 0, nw, nh, ox + c0 * cw, oy + i0 * ch, nw * cw, nh * ch);
+    }
+    // the hut's walls hide what is behind them
+    const hut = D.glyphs.hut;
+    if (valley && sh.hutAt) {
+      const [hl, hg] = sh.hutAt, bx = ox + (hl - x) / u * cw, by = oy + (hg - y) / u * ch - hut.length * ch / u;
+      hut.forEach((ln, i) => {
+        const a = ln.indexOf('/') >= 0 ? ln.indexOf('/') : ln.indexOf('|'), b = Math.max(ln.lastIndexOf('\\'), ln.lastIndexOf('|'));
+        if (a >= 0 && b > a) { g.box(bx + a * cw / u, by + i * ch / u, (b - a + 1) * cw / u, ch / u + 0.5, fill); any = true; }
+      });
+    }
+    if (!any) return;
+    const moss = mixHex(P.pine, P.leafOlive, 0.45), [pa, pb] = sh.pathX, onPath = (X) => X >= pa - 1 && X <= pb + 1;
+    // the crest as a line, and ground cover under it
+    for (let c = c0; c <= c1; c++) {
+      const X = x + (c + 0.5) * u, k = cr(c); if (!Number.isFinite(k)) continue;
+      const i = Math.floor((k - y) / u);
+      if (i >= i0 && i <= i1 && !(onPath(X) && !valley)) {
+        const slope = (cr(c + 1) - cr(c - 1)) / (2 * u);
+        if (valley) { const v = hash(Math.floor(X / u), 1, 21); g.set(v < 0.46 ? '_' : v < 0.6 ? '.' : v < 0.74 ? ',' : v < 0.86 ? '-' : '~', v < 0.6 ? P.ground : v < 0.8 ? P.leaf : P.leafOlive, ox + c * cw, oy + i * ch, font, 1); }
+        else g.set(edge((k - y) / u - i, Number.isFinite(slope) ? slope : 0), slope < 0.05 ? moss : P.pine, ox + c * cw, oy + i * ch, font, 0.95);
+      }
+      const deep = Math.ceil((valley ? 60 : 11) / u);
+      for (let ii = Math.max(i0, i + 1); ii <= Math.min(i1, i + deep); ii++) {
+        const depth = y + (ii + 0.5) * u - k, v = hash(c, ii, 31 + u * 8);
+        if (valley) {
+          // under the ground: soil, and roots hanging from the turf, going into the dark
+          const f = 1 - 0.85 * smooth(0, 12, depth), Xi = Math.floor(X), root = hash(Xi, 6, 21) < 0.3 && depth < 1.5 + hash(Xi, 7, 21) * 6;
+          if (root) g.set(depth < 1.5 ? '|' : hash(Xi, Math.floor(depth), 9) < 0.5 ? '\\' : '/', P.ground, ox + c * cw, oy + ii * ch, font, 0.7 * f);
+          else if (v < 0.08 * f) g.set(v < 0.03 ? '.' : v < 0.05 ? ',' : ':', P.ground, ox + c * cw, oy + ii * ch, font, 0.45 * f);
+          else if (v > 0.86 && depth > 6) g.set(GRASS[Math.floor(v * 97) % GRASS.length], v > 0.95 ? P.leaf : P.pineDark, ox + c * cw, oy + ii * ch, font, 0.6);
+        } else if (v < 0.3 * (1 - depth / 11)) g.set(GRASS[Math.floor(v * 97) % GRASS.length], depth < 3 ? P.pine : P.pineDark, ox + c * cw, oy + ii * ch, font, 0.85 - depth * 0.05);
+      }
+    }
+    // trees: each its own drawing, as many characters tall as it is at this level; its body shaded so you do not see through it
+    for (const t of sh.trees) {
+      const fi = (t.Y - y) / u, fc = (t.X - x) / u, hc = t.h / u;
+      if (fi < i0 - 1 || fi - hc > i1 + 1 || fc + t.wd / u < c0 - 1 || fc - t.wd / u > c1 + 1) continue;
+      const key = t.id * 64 + u * 8; let shape = sh.shapes.get(key); if (!shape) { shape = this.treeShape(t, u); sh.shapes.set(key, shape); }
+      const left = ox + (fc - shape.w / 2) * cw, foot = oy + (Math.floor(fi) + 1) * ch;
+      shape.rows.forEach((row, j) => {
+        if (row.e < row.f) return;
+        const ty = foot - (shape.h - j) * ch;
+        g.box(left + (row.f + 0.1) * cw, ty - 0.3, (row.e - row.f + 0.8) * cw, ch + 0.6, fill);
+        for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, left + col * cw, ty, font, a);
+      });
+    }
+    // the path
+    const every = Math.max(1, Math.round(1 / u));
+    sh.route.forEach(([X, Yw], k) => {
+      if (k % every) return;
+      const c = Math.floor((X - x) / u), i = Math.floor((Yw - 0.6 - y) / u + 0.5); if (c < c0 || c > c1 || i < i0 || i > i1) return;
+      const n = Math.floor(k / every);
+      g.set(n % 7 === 3 ? '=' : n % 2 ? ':' : '.', P.muted, ox + c * cw, oy + i * ch, font, n % 7 === 3 ? 0.6 : 0.68);
     });
-    // every glyph the sheet is set in is made now, not while you scroll
-    for (const t of trees) for (const row of t.rows) for (const [, ch, color] of row.marks) g.sprite(ch, color, t.font);
-    for (const row of cells) for (const cell of row) if (cell) g.sprite(cell[0], cell[1], sh.font);
+    // the hut on the valley floor
+    if (valley && sh.hutAt) {
+      const [hl, hg] = sh.hutAt, timber = mixHex(P.leaf, P.snow, 0.25), hf = font / u, hcw = cw / u, hch = ch / u;
+      const bx = ox + (hl - x) / u * cw, by = oy + (hg - y) / u * ch - hut.length * hch;
+      hut.forEach((ln, i) => { for (let j = 0; j < ln.length; j++) if (ln[j] !== ' ') g.set(ln[j], ln[j] === '[' || ln[j] === ']' ? P.ember : timber, bx + j * hcw, by + i * hch, hf, 1); });
+    }
+  }
 
-    // a dark margin round everything on it, one cell either side and one
-    // above, so its edge reads against whatever is behind it
-    const wide = mask.map((m) => Uint8Array.from(m));
-    for (let i = 0; i < rowsN; i++) for (let c = 0; c < W; c++) if (mask[i][c]) { if (c > 0) wide[i][c - 1] = 1; if (c + 1 < W) wide[i][c + 1] = 1; if (i > 0) wide[i - 1][c] = 1; }
-    // what each row covers, as runs, for hiding whatever is behind
-    sh.wash = document.createElement('canvas'); sh.wash.width = W; sh.wash.height = rowsN;
-    sh.wash.getContext('2d').putImageData(img, 0, 0);
-    sh.runs = wide.map((m) => { const out = []; let a = -1; for (let c = 0; c <= W; c++) { const on = c < W && m[c]; if (on && a < 0) a = c; else if (!on && a >= 0) { out.push([a, c]); a = -1; } } return out; });
+  // a tree's drawing at a level: rows of marks, and where in each row its body is
+  treeShape(t, u) {
+    const P = this.sc.P, { rows: shape, stem } = tree(t.kind, t.h / u, mulberry32(t.seed)), h = shape.length, w = shape[0].length;
+    const snowy = Math.ceil(h * 0.22 * t.snow);
+    const rows = shape.map((ln, i) => {
+      let f = 0, e = w - 1; while (f < w && ln[f] === ' ') f++; while (e >= 0 && ln[e] === ' ') e--;
+      const marks = [], foot = i >= h - stem;
+      for (let j = f; j <= e; j++) {
+        const ch = ln[j]; if (ch === ' ') continue;
+        const shade = t.dark || j > (w - 1) / 2 + 0.6;
+        if (t.kind === 'pine') marks.push([j, ch, !foot && (i < snowy || (i === snowy && snowy > 1 && j === f)) ? P.snow : foot || shade ? P.pineDark : P.pine, 1]);
+        else if (t.kind === 'birch') { const bark = ch === '|' || ch === '!'; marks.push([j, ch, bark ? P.birch : P.birchLeaf, bark ? 0.92 : shade ? 0.62 : 0.95]); }
+        else marks.push([j, ch, foot ? P.ground : t.olive ? P.leafOlive : P.leaf, !foot && shade ? 0.62 : 1]);
+      }
+      return { f, e, marks };
+    });
+    return { rows, h, w };
   }
 
   // ---------- each frame ----------
-  // a place on a sheet (its own column, the page's row; fractions allowed) → viewport pixels
-  at(sh, c, r) { const cam = this.sc.cam; return [cam.px(sh.x0 + c, sh.z), cam.py(r, sh.z)]; }
-  // is any of a sheet on the screen
-  shows(sh) { const g = this.sc.grid, [x0, y0] = this.at(sh, 0, sh.base), [x1, y1] = this.at(sh, sh.W, sh.base + sh.rowsN); return x1 > 0 && x0 < g.w && y1 > 0 && y0 < g.h; }
-
-  // A sheet's cells c0..c1 of rows i0..i1, for a tile of its pane: what it
-  // covers, the ground's wash, its marks, its trees.
-  draw(sh, c0, i0, c1, i1, ox, oy) {
-    if (!sh.cells) this.paint(sh);
-    const sc = this.sc, g = sc.grid, { cw, ch, W, base, font } = sh, seam = sc.seamRow + sc.blend, body = sh.kind === 'body';
-    for (let i = i0; i <= i1; i++) for (const [a, b] of sh.runs[i]) if (b >= c0 && a <= c1) g.box(ox + a * cw - 0.5, oy + i * ch - 0.5, (b - a) * cw + 1, ch + 1, sh.fill);
-    // each row of each tree that is here, and where it goes
-    const drawTrees = (draw) => {
-      for (const t of sh.trees) {
-        const i = t.row - base;
-        if (i < i0 - 1) continue;
-        if (i - sh.reach > i1) break;                  // sorted by the row they stand on; none is taller than that
-        const k = t.font / g.size, cwk = g.cellW * k, chk = g.cellH * k, left = ox + (t.c + 0.5) * cw - t.w / 2 * cwk, foot = oy + (i + 1) * ch;
-        if (left < g.vw && left + t.w * cwk > 0) t.rows.forEach((row, j) => { if (row.e >= row.f) draw(t, row, left, foot - (t.h - j) * chk, cwk, chk); });
-      }
-    };
-    // the wash, stretched to size: smoothing makes it a soft edge, not blocks (and where only its mist is here, that is still something drawn)
-    if (c1 >= c0 && sh.mist && Math.min(...sh.peak.subarray(c0, c1 + 1)) - sh.mist < base + i1) g.drawn++;
-    g.ctx.globalAlpha = g.alpha = 1;
-    g.ctx.drawImage(sh.wash, ox, oy, W * cw, sh.rowsN * ch);
-    for (let i = i0; i <= i1; i++) {
-      const cells = sh.cells[i], row = base + i;
-      for (let c = c0; c <= c1; c++) {
-        const cell = cells[c];
-        // through the seam the peak's own painting still stands
-        if (cell && !(body && row <= seam && !sh.kept.has(row * W + c) && sc.painted(row, sh.x0 + c))) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2] ?? 1);
-      }
-    }
-    // trees further up the face first; a glyph has no background, so a tree covers only the marks it stands over (taken out when painted)
-    drawTrees((t, row, x, y, cwk, chk) => { for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a); });
-  }
-
-  // Once you have crossed onto a wooded sheet, all that is behind it is a little further off in the dark: a veil
-  // the camera draws under that sheet. Sheet after sheet, so the furthest is the faintest.
-  haze() {
-    const S = this.sc.screenRows, y = this.sc.cam.y, [a, b] = [D.layout.forest - 0.4, D.layout.forest + 0.3];
-    for (const sh of this.sheets) sh.pane.veil = sh.index ? D.massif.veil * smooth(a, b, sh.from / S) * smooth(sh.from - 0.1 * S, sh.from + 0.25 * S, y) : 0;
-  }
-
-  // is a pixel hidden by a sheet nearer than the one at `index`
-  hidden(x, y, index) {
-    const cam = this.sc.cam;
-    const over = (q) => q.solid(Math.floor((x - cam.px(q.x, q.z)) / q.cw), Math.floor((y - cam.py(q.y, q.z)) / q.ch));
-    return this.sheets.some((f, m) => m > index && over(f.pane)) || over(this.sc.groundPane);
-  }
-
-  // a bridge as it shows now: its planks in pixels, and the size it is drawn at
-  span(b) {
-    const g = this.sc.grid, [x0, y0] = this.at(b.a, ...b.from), [x1, y1] = this.at(b.b, ...b.to);
-    if (Math.max(y0, y1) < -40 || Math.min(y0, y1) > g.h + 40 || Math.max(x0, x1) < -40 || Math.min(x0, x1) > g.w + 40) return null;
-    const u = g.size * Math.min((b.a.z + b.b.z) / 2, D.type.most), dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy);
-    const n = Math.max(2, Math.round(len / (u * 0.6))), sag = Math.min(len * 0.16, u * 1.5), pts = [];
-    for (let k = 0; k <= n; k++) { const t = k / n; pts.push([x0 + dx * t, y0 + dy * t + sag * 4 * t * (1 - t)]); }
-    return { pts, u };
-  }
-  // The route crosses from one sheet to the next on a rope bridge: a
-  // sagging deck of planks, a hand rope over it, a post at either end. The
-  // scene draws them after it has put the mountain out, so a bridge shows
-  // plainly wherever it is; the light only warms the one you are on.
-  drawBridges() {
-    const sc = this.sc, g = sc.grid, P = sc.P, wood = mixHex(P.ground, P.rockLight, 0.45);
+  // what to draw, for the camera to put in order: the mountain, the terraces still in sight, the bridges, the lamps
+  items() {
+    const cam = this.sc.cam, out = [];
+    for (const sh of this.sheets) { const d = cam.dist(sh.Z); if (d > 0.05 && (!sh.alpha || sh.alpha(d) > 0.01)) out.push(sh); }
     for (const b of this.bridges) {
-      const B = this.span(b); if (!B) continue;
-      const { pts, u } = B;
-      pts.forEach(([x, y], k) => {
-        g.ink('=', wood, x, y, u * 0.95);
-        g.ink('·', P.muted, x, y - u * 0.95, u, 0.85);
-        if (k % 3 === 1) g.ink(':', P.muted, x, y - u * 0.48, u * 0.7, 0.6);
-      });
-      for (const [x, y] of [pts[0], pts[pts.length - 1]]) g.ink('|', wood, x, y - u * 0.5, u * 1.35);
+      const da = cam.dist(b.from.Z), db = cam.dist(b.to.Z);
+      if (db > 0.05) out.push({ d: db + Math.min(1e-3, (da - db) / 2), draw: () => this.drawBridge(b) });
     }
+    for (const m of this.lamps) out.push({ d: cam.dist(m.sh.Z) - 2e-3, draw: () => this.drawLamp(m) });
+    return out;
   }
+  // a bridge as it shows now: its planks in pixels and the size of each
+  span(b) {
+    const cam = this.sc.cam, g = this.sc.grid;
+    if (b.pts.some(([, , Z]) => cam.dist(Z) < 0.05)) return null;
+    const pts = b.pts.map(([X, Y, Z]) => [cam.px(X, Z), cam.py(Y, Z), g.size * Math.min(cam.k(Z), MOST)]);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    if (Math.max(...ys) < -60 || Math.min(...ys) > g.h + 60 || Math.max(...xs) < -60 || Math.min(...xs) > g.w + 60) return null;
+    let len = 0; for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    const u = pts.reduce((s, p) => s + p[2], 0) / pts.length, n = Math.max(3, Math.round(len / (u * 0.62))), out = [];
+    for (let k = 0; k <= n; k++) {
+      const f = k / n * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f)), t = f - i, p = pts[i], q = pts[i + 1];
+      out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t]);
+    }
+    return out;
+  }
+  // A rope bridge: a sagging deck of planks, a hand rope over it, a post at
+  // either end. Nothing is behind its planks: you see between them.
+  drawBridge(b) {
+    const sc = this.sc, cam = sc.cam, g = sc.grid, P = sc.P, wood = mixHex(P.ground, P.rockLight, 0.45), pts = this.span(b); if (!pts) return;
+    const a = smooth(0.5, 0.72, cam.dist(b.to.Z)); if (a < 0.02) return;   // a bridge still under you, in the foreground, is not drawn: it would only be a streak
+    pts.forEach(([x, y, u], k) => {
+      g.ink('=', wood, x, y, u * 0.95, a);
+      g.ink('·', P.muted, x, y - u * 0.95, u, 0.85 * a);
+      if (k % 3 === 1) g.ink(':', P.muted, x, y - u * 0.48, u * 0.7, 0.6 * a);
+    });
+    for (const [x, y, u] of [pts[0], pts[pts.length - 1]]) g.ink('|', wood, x, y - u * 0.5, u * 1.35, a);
+  }
+  drawLamp(m) {
+    const sc = this.sc, cam = sc.cam, x = cam.px(m.X, m.sh.Z), y = cam.py(m.Y, m.sh.Z);
+    if (y < -10 || y > sc.grid.h + 10) return;
+    const pulse = sc.reduced.matches ? 1 : 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(sc.time * 3.1 + m.phase));
+    sc.grid.ink('o', sc.P.ember, x, y, sc.grid.size * cam.size(m.sh.Z), pulse);
+  }
+
+  // is a pixel hidden by something nearer than the sheet at `index`
+  hidden(x, y, index) { const sh = this.sheets[index] ?? this.mountain, cam = this.sc.cam; return cam.covered(x, y, cam.dist(sh.Z)); }
 
   // The route's marks within `reach` pixels of the light at (x, y), each as
   // [left, top, glyph, size, whether it is placed by its middle], for the
   // scene to light.
   light(x, y, reach) {
-    const sc = this.sc, cam = sc.cam, near = [], rows = reach / sc.grid.cellH + 2;
-    for (const sh of this.route) {
-      if (!sh.cells || sh.from - rows > cam.y || sh.path[sh.path.length - 1][2] + rows < cam.y) continue;
-      for (const [c, r, at] of sh.path) {
-        if (Math.abs(at - cam.y) > rows) continue;
-        const [px, py] = this.at(sh, c, r);
-        if (Math.hypot(px + sh.cw / 2 - x, py + sh.ch / 2 - y) > reach || this.hidden(px + sh.cw / 2, py + sh.ch / 2, sh.index)) continue;
-        near.push([px, py, sh.cells[r - sh.base][c][0], sh.font, false]);
-      }
+    const sc = this.sc, cam = sc.cam, g = sc.grid, near = [], s = cam.s, win = 0.45 * sc.screenRows;
+    for (const sh of this.sheets) {
+      if (sh.t1 < s - win || sh.t0 > s + win) continue;
+      const k = cam.k(sh.Z); if (!(k > 0)) continue;
+      const size = g.size * Math.min(k, MOST), d = cam.dist(sh.Z), every = Math.max(1, Math.round(1 / Math.max(k, 0.3) / 1.2));
+      sh.route.forEach(([X, Yw, t], i) => {
+        if (Math.abs(t - s) > win || i % every) return;
+        const px = cam.px(X, sh.Z), py = cam.py(Yw - 0.6, sh.Z) - size * 0.55;
+        if (Math.hypot(px - x, py - y) > reach || cam.covered(px + size * 0.3, py + size * 0.5, d)) return;
+        const n = Math.floor(i / every);
+        near.push([px - size * 0.3, py, sh.kind === 'mountain' ? (n % 4 === 0 ? '+' : ':') : n % 7 === 3 ? '=' : n % 2 ? ':' : '.', size, false]);
+      });
     }
     for (const b of this.bridges) {
-      const B = this.span(b); if (!B) continue;
-      for (const [px, py] of B.pts) if (Math.hypot(px - x, py - y) <= reach) near.push([px, py, '=', B.u * 0.95, true], [px, py - B.u * 0.95, '·', B.u, true]);
+      const pts = this.span(b); if (!pts) continue;
+      for (const [px, py, u] of pts) if (Math.hypot(px - x, py - y) <= reach) near.push([px, py, '=', u * 0.95, true], [px, py - u * 0.95, '·', u, true]);
     }
     return near;
   }
 
-  // One tree as it stands now: its foot and its top on the screen; near:
-  // the size of things where it stands, which is what a creature at it
-  // takes; and whether it can be seen, with nothing nearer over it.
+  // One tree as it stands now: its foot and its top on the screen; size:
+  // the size of type where it stands, which is what a creature at it takes;
+  // and whether its crown can be seen, with nothing nearer over it.
   stand(sh, t) {
-    const g = this.sc.grid, [x, y] = this.at(sh, t.c + 0.5, t.row + 1);
-    return { id: t.id, x, y, top: y - t.h * g.cellH * t.font / g.size, bole: y - t.stem * g.cellH * t.font / g.size, near: sh.z, size: t.font / g.size, kind: t.kind, sheet: sh.index, row: t.row, seen: !this.hidden(x, y - t.h * g.cellH * t.font / g.size * 0.85, sh.index) };   // its crown can be seen, whatever is in front of its foot
+    const cam = this.sc.cam, k = cam.k(sh.Z), x = cam.px(t.X, sh.Z), y = cam.py(t.Y + 0.5, sh.Z), top = cam.py(t.Y - t.h + 0.5, sh.Z);
+    return { id: t.id, x, y, top, bole: y - (y - top) * 0.3, near: k, size: Math.min(k, MOST), kind: t.kind, sheet: sh.index, row: sh.t0, seen: !cam.covered(x, top + (y - top) * 0.15, cam.dist(sh.Z)) && (!sh.alpha || sh.alpha(1 / k) > 0.6) };
   }
-  tree(id) { const sh = this.sheets[Math.floor(id / 10000)], t = sh?.trees?.[id % 10000]; return t ? this.stand(sh, t) : null; }
+  // where a tree's foot and top will be on the screen when the middle of the screen is at row s
+  later(id, s) {
+    const sh = this.slices[Math.floor(id / 10000) - 1], t = sh?.trees[id % 10000]; if (!t) return [NaN, NaN];
+    const cam = this.sc.cam, g = this.sc.grid, [cx, cy, cz] = cam.path(s), k = 1 / Math.max(0.02, sh.Z - cz);
+    return [g.w / 2 + (t.X - cx - cam.mid) * g.cellW * k, cam.h0 * g.h + (t.Y - t.h + 0.5 - cy) * g.cellH * k];
+  }
+  tree(id) { const sh = this.slices[Math.floor(id / 10000) - 1], t = sh?.trees[id % 10000]; return t ? this.stand(sh, t) : null; }
   // trees something could sit on: those on the screen or about to be, that can be seen
   perches() {
-    const g = this.sc.grid, out = [];
-    for (const sh of this.sheets) {
-      if (!sh.trees || !this.shows(sh)) continue;
+    const cam = this.sc.cam, g = this.sc.grid, out = [];
+    for (const sh of this.slices) {
+      const d = cam.dist(sh.Z); if (!(d > 0.25 && d < 2.2)) continue;
       for (const t of sh.trees) {
-        const [x, y] = this.at(sh, t.c + 0.5, t.row + 1);
+        const x = cam.px(t.X, sh.Z), y = cam.py(t.Y, sh.Z);
         if (y < -g.h * 0.4 || y > g.h * 1.5 || x < -g.w * 0.3 || x > g.w * 1.3) continue;
-        const q = this.stand(sh, t);
-        if (q.seen) out.push(q);
+        const q = this.stand(sh, t); if (q.seen) out.push(q);
       }
     }
     return out;
   }
-  // A tree at or just below a row, on the ridge the route is on at that height: the one that will be nearest the
-  // middle of the screen when you come level with it, a little off the trail. Its id, or null if that ridge is not painted yet.
-  roost(row) {
-    const sc = this.sc, g = sc.grid, S = sc.screenRows, sh = this.route.find((s) => s.kind === 'ridge' && s.path[0][1] <= row && row <= s.path[s.path.length - 1][1]);
-    if (!sh?.trees) return null;
+  // a tree on the terrace you are on at scroll row s, a little off the path: the one nearest the middle of the screen then
+  roost(s) {
+    const cam = this.sc.cam, g = this.sc.grid, sh = this.slices.find((x) => x.t0 <= s && s <= x.t1); if (!sh) return null;
+    const [cx, , cz] = cam.path(s), k = 1 / (sh.Z - cz);
     let best = null, least = Infinity;
-    for (const t of sh.trees) {
-      if (t.row < row || t.row > row + S * 0.5) continue;
-      const p = sh.path.find(([, r]) => r >= t.row); if (!p || Math.abs(t.c - p[0]) < 4) continue;
-      const off = Math.abs(this.trail(p[2]) + (t.c - p[0]) * sh.cw - g.w / 2);   // how far from the middle it will be
-      if (off < least) { least = off; best = t; }
-    }
+    for (const t of sh.trees) { const off = Math.abs((t.X - cx - cam.mid) * g.cellW * k); if (off < least && off > 30) { least = off; best = t; } }
     return best ? best.id : null;
-  }
-
-  // paint one sheet that is not yet painted, the next one down first; true if there was one
-  warm() {
-    const sh = this.sheets.find((x) => !x.cells);
-    if (sh) this.paint(sh);
-    return !!sh;
   }
 
   // lamps on the route's upper stretch, one for every merged commit
   setLamps(n) {
-    const S = this.sc.screenRows, cells = [];
-    for (const sh of this.route) for (const [c, r] of sh.path) if (r > 4.6 * S && r < 6.25 * S) cells.push([sh, c, r]);
+    const S = this.sc.screenRows, pts = [];
+    for (const sh of this.sheets) for (const [X, Y, t] of sh.route) if (t > 4.7 * S && t < 6.4 * S) pts.push([sh, X, Y]);
     this.lamps = [];
-    for (let i = 0; i < n && cells.length; i++) { const [sh, c, r] = cells[Math.floor((i + 0.5) / n * cells.length)]; this.lamps.push({ sh, c, r, phase: i * 2.4 }); }
+    for (let i = 0; i < n && pts.length; i++) { const [sh, X, Y] = pts[Math.floor((i + 0.5) / n * pts.length)]; this.lamps.push({ sh, X, Y: Y - 1.1, phase: i * 2.4 }); }
   }
 }

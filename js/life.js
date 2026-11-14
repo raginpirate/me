@@ -1,15 +1,17 @@
 // What lives on the way down, in the order you meet it: snow under the
 // clouds, a far flock now and then, and in the forest falling leaves, an
-// owl, and once in a while a squirrel.
+// owl, and now and then a squirrel.
 //
-// The snow and the leaves are standing fields in the world: they are
-// falling there whether you are there or not, so they are already falling
-// when you arrive. The owl lives in the world too. It has a tree, and it is
-// on that tree until it flies to another: it does not come and go.
+// The snow and the leaves are falling all round you in the world, near and
+// far: each flake and leaf is at its own place and depth, and when the way
+// you are going leaves one behind, another is falling where you come to.
+// The owl lives in the world too. It has a tree, and it is on that tree
+// until it flies to another: it does not come and go.
 //
 // Size is distance here as everywhere: the owl and the squirrel are the
-// size of the tree they are at, and change size on the way from one to the
-// next; a flock is small and faint by how far off it is.
+// size of type where their tree stands, and change size on the way from one
+// to the next. Each is drawn at its depth, with the terrace it is on, so
+// nothing nearer is ever behind it.
 //
 // The owl and the squirrel are small drawings made of a few glyphs at
 // different sizes. A part is [glyph, across, down, size, colour]: across
@@ -17,6 +19,7 @@
 // size where it stands.
 
 import { clamp, smooth, mulberry32 } from './util.js';
+import { MOST } from './camera.js';
 import { D } from './direction.js';
 
 const OWL = [['(', -0.55, 0.1, 1.4, 'snow'], [')', 0.55, 0.1, 1.4, 'snow'], ['v', 0, 0.1, 0.5, 'snow'], ['^', -0.45, -0.8, 0.6, 'snow'], ['^', 0.45, -0.8, 0.6, 'snow'], ['"', 0, 0.85, 0.7, 'dim']];
@@ -34,31 +37,27 @@ export class Life {
   constructor(sc) {
     this.sc = sc;
     const rnd = this.rnd = mulberry32(31), S = sc.screenRows, L = D.layout, P = sc.P;
-    // Snow, between the cloud base and the upper forest, at three depths in the camera's world.
-    this.z0 = L.snow[0] * S; this.z1 = L.snow[1] * S;
-    this.tiers = [{ k: 0.72, ch: '.', a: 0.9, fall: 1.2, color: 'dim' }, { k: 1, a: 0.8, fall: 2.3, color: 'snow' }, { k: 1.4, ch: '*', a: 0.95, fall: 3.6, color: 'snow' }];
-    this.flakes = Array.from({ length: Math.round(sc.cols * (this.z1 - this.z0) / 44) }, () => {
+    // Snow under the cloud deck and among the first trees, and leaves in the forest: each at three depths, as distances from you.
+    // fall: rows a second at the page's depth. Each flake or leaf has a rank: it is there only where the fall is thick enough for it.
+    this.tiers = [{ d: [1.5, 2.6], ch: '.', a: 0.9, fall: 1.4, color: 'dim' }, { d: [0.85, 1.5], a: 0.85, fall: 2.4, color: 'snow' }, { d: [0.5, 0.85], ch: '*', a: 0.95, fall: 3.4, color: 'snow' }];
+    this.depths = [{ d: [1.4, 2.4], a: 0.75, fall: 1.4 }, { d: [0.85, 1.4], a: 0.95, fall: 2 }, { d: [0.5, 0.85], a: 1, fall: 2.6 }];
+    const many = sc.cols * S / 7;
+    this.flakes = Array.from({ length: Math.round(many / 5) }, () => {
       const u = rnd(), tier = u < 0.42 ? 0 : u < 0.93 ? 1 : 2;
-      return { x: rnd(), y: this.z0 + rnd() * (this.z1 - this.z0), tier, ch: this.tiers[tier].ch || (rnd() < 0.7 ? '*' : '+'), phase: rnd() * 6.28 };
+      return { tier, ch: this.tiers[tier].ch || (rnd() < 0.7 ? '*' : '+'), phase: rnd() * 6.28, rank: rnd(), Z: NaN };
     });
-    // Leaves, from where the broadleaves begin to the ground, at three
-    // depths, thicker the further down. rank: a leaf is there only where
-    // the fall is thick enough for it, so the fall thickens leaf by leaf.
-    this.l0 = (L.forest - 0.25) * S; this.l1 = sc.groundRow;
-    this.depths = [{ k: 0.8, a: 0.75, fall: 1.3 }, { k: 1.1, a: 0.95, fall: 1.9 }, { k: 1.5, a: 1, fall: 2.6 }];
-    this.fall = Array.from({ length: Math.round(sc.cols * (this.l1 - this.l0) / 40) }, () => {
+    this.fall = Array.from({ length: Math.round(many / 4.5) }, () => {
       const u = rnd(), v = rnd();
-      return { x: rnd(), y: this.l0 + rnd() * (this.l1 - this.l0), tier: u < 0.4 ? 0 : u < 0.86 ? 1 : 2, rank: rnd(), phase: rnd() * 6.28, frame: Math.floor(rnd() * 3), color: v < 0.42 ? P.leaf : v < 0.72 ? P.birchLeaf : P.leafOlive };
+      return { tier: u < 0.4 ? 0 : u < 0.86 ? 1 : 2, rank: rnd(), phase: rnd() * 6.28, frame: Math.floor(rnd() * 3), color: v < 0.42 ? P.leaf : v < 0.72 ? P.birchLeaf : P.leafOlive, Z: NaN };
     });
     this.flock = null; this.nextFlock = 2.5;
     this.owl = { state: 'none', on: null, met: false, x: 0, y: 0, s: 1, wait: 0, gone: 0 };
     this.squirrel = { state: 'away', wait: 2 + rnd() * 2, side: 1, x: 0, y: 0, s: 1, dir: 1 };
   }
 
-  // how thick the snow is at a height
-  snowAt(y) { return smooth(this.z0, this.z0 + this.sc.screenRows * 0.22, y) * (1 - smooth(D.layout.treeline * this.sc.screenRows, this.z1, y)); }
-  // how thick the leaf fall is at a height: a few where the first broadleaves are, all of them a screen and a half lower
-  leavesAt(y) { const S = this.sc.screenRows; return 0.12 + 0.88 * smooth(this.l0 + 0.2 * S, this.l0 + 1.6 * S, y); }
+  // how thick the snow is, and the leaf fall, where you are (s: the middle of the screen, in rows)
+  snowAt(s) { const S = this.sc.screenRows, L = D.layout; return smooth(L.snow[0] * S, (L.snow[0] + 0.2) * S, s) * (1 - smooth(L.treeline * S, L.snow[1] * S, s)); }
+  leavesAt(s) { const S = this.sc.screenRows, L = D.layout; return smooth((L.forest - 0.3) * S, (L.forest + 0.1) * S, s) * (0.15 + 0.85 * smooth((L.forest - 0.05) * S, (L.forest + 1.4) * S, s)); }
   // is anything alive on screen: then the scene must keep drawing
   get showing() { const c = this.sc.centre, L = D.layout; return c > L.snow[0] - 0.6 && c < L.ground + 0.6; }
 
@@ -66,23 +65,25 @@ export class Life {
     const sc = this.sc, g = sc.grid, S = sc.screenRows, t = sc.time, rnd = this.rnd, pick = (a) => a[Math.floor(rnd() * a.length)], L = D.layout, W = g.w, H = g.h;
     const wind = this.wind = 1.3 * Math.sin(t * 0.21) + 0.5 * Math.sin(t * 0.67 + 1.3);
 
-    // --- snow ---
-    for (const f of this.flakes) {
-      const T = this.tiers[f.tier];
-      f.y += T.fall * dt;
-      f.x += (wind * T.k + Math.sin(t * 1.9 + f.phase) * 0.5 * (f.tier + 1)) * dt / sc.cols;
-      if (f.y > this.z1) { f.y = this.z0; f.x = rnd(); }
-      f.x -= Math.floor(f.x);
-    }
-
-    // --- leaves: they flutter, so a leaf falls in fits and slides from side to side ---
-    for (const f of this.fall) {
-      const T = this.depths[f.tier];
-      f.y += T.fall * (0.6 + 0.4 * Math.sin(t * 3 + f.phase)) * dt;
-      f.x += (Math.sin(t * 2.1 + f.phase) * 1.6 + wind * 0.6) * T.k * dt / sc.cols;
-      if (f.y > this.l1) { f.y = this.l0; f.x = rnd(); }
-      f.x -= Math.floor(f.x);
-    }
+    // --- snow and leaves: each falls where it is; one left behind, or gone past the edge, falls again where you are going ---
+    const cam = sc.cam;
+    const place = (f, T, edgeY) => {
+      const d = T.d[0] + rnd() * (T.d[1] - T.d[0]), px = rnd() * W, py = edgeY ?? rnd() * H;
+      f.Z = cam.z + d; f.X = cam.x + cam.mid + (px - W / 2) * d / g.cellW; f.Y = cam.y + (py - cam.h0 * H) * d / g.cellH; f.age = edgeY === undefined ? 0 : 1;
+    };
+    const move = (f, T, sway) => {
+      if (Number.isNaN(f.Z)) place(f, T);
+      f.Y += T.fall * dt * (sway ? 0.6 + 0.4 * Math.sin(t * 3 + f.phase) : 1);
+      f.X += (sway ? Math.sin(t * 2.1 + f.phase) * 1.6 + wind * 0.6 : wind * 0.8 + Math.sin(t * 1.9 + f.phase) * 0.5) * dt;
+      f.age += dt;
+      const d = cam.dist(f.Z), x = cam.px(f.X, f.Z), y = cam.py(f.Y, f.Z);
+      if (d < T.d[0] * 0.5 || d > T.d[1] * 1.8) place(f, T);
+      else if (y > H + 12) place(f, T, -10);
+      else if (y < -14) place(f, T, H + 10);
+      else if (x < -14 || x > W + 14) { place(f, T, y); f.X = cam.x + cam.mid + ((x < 0 ? W + 10 : -10) - W / 2) * (f.Z - cam.z) / g.cellW; }
+    };
+    if (this.snowAt(cam.s) > 0.01) for (const f of this.flakes) move(f, this.tiers[f.tier], false);
+    if (this.leavesAt(cam.s) > 0.01) for (const f of this.fall) move(f, this.depths[f.tier], true);
 
     // trees a creature can use, only worked out where the forest is
     const inWood = sc.centre > L.forest - 0.8 && sc.centre < L.ground + 0.2;
@@ -95,10 +96,10 @@ export class Life {
       const dir = rnd() < 0.5 ? 1 : -1, n = 7 + Math.floor(rnd() * 7), k = 0.3, far = 0.45 + rnd() * 0.3, birds = [{ dx: 0, dy: 0, ph: rnd() * 6.28 }];
       for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push({ dx: -dir * (j * 2.1 + (rnd() - 0.5) * 0.9) * far, dy: (side * j * (0.5 + rnd() * 0.12) + (rnd() - 0.5) * 0.3) * far, ph: rnd() * 6.28 }); }
       const len = (Math.ceil(n / 2) * 2.1 + 3) * g.cellW;
-      this.flock = { x: dir > 0 ? -20 : W + 20, y: sc.centreRow + ((0.18 + rnd() * 0.4) * H - H / 2) / (g.cellH * k), k, far, dir, len, birds, v: Math.max(34, W / 20) * (0.5 + far), drift: (rnd() - 0.5) * 0.5 };
+      this.flock = { x: dir > 0 ? -20 : W + 20, y: (0.08 + rnd() * 0.24) * H, k, far, dir, len, birds, v: Math.max(34, W / 20) * (0.5 + far), drift: (rnd() - 0.5) * 0.5 };
       this.nextFlock = 15 + rnd() * 10;
     }
-    if (this.flock) { const f = this.flock; f.x += f.dir * f.v * dt; f.y += f.drift * dt; if (f.dir > 0 ? f.x - f.len > W + 20 : f.x + f.len < -20) this.flock = null; }
+    if (this.flock) { const f = this.flock; f.x += f.dir * f.v * dt; f.y += f.drift * g.cellH * dt; if (f.dir > 0 ? f.x - f.len > W + 20 : f.x + f.len < -20) this.flock = null; }
 
     // --- the owl. It keeps to the forest proper, below the snow. Its tree
     // is a place in the world. When the tree goes out of your sight, up or
@@ -109,14 +110,14 @@ export class Life {
     const perch = (q) => [q.x, q.top - 0.4 * g.size * q.size];
     const roosts = trees.filter((q) => q.row >= home && q.top > H * 0.1 && q.top < H * 0.8 && q.x > 30 && q.x < W - 30);
     // where each tree will have been carried to by the time it could get there: the page is still moving
-    const T = 1.3, rows = clamp(sc.scrollVel * T, -S * 0.45, S * 0.45), cols = sc.cam.slide(sc.cam.y + rows) - sc.cam.x;
-    const then = (o) => [o.x - cols * g.cellW * o.near, o.top - rows * g.cellH * o.near];
+    const T = 1.3, ahead = sc.cam.s + clamp(sc.scrollVel * T, -S * 0.45, S * 0.45), was = new Map();
+    const then = (o) => { let v = was.get(o.id); if (!v) was.set(o.id, v = sc.massif.later(o.id, ahead)); return v; };
     // the trees of the forest that will be well on the screen then, and the one of some trees that will be nearest its middle
-    const ahead = (not) => trees.filter((o) => { if (o.row < home || o.id === not) return false; const [x, y] = then(o); return x > W * 0.12 && x < W * 0.88 && y > H * 0.14 && y < H * 0.74; });
+    const forward = (not) => trees.filter((o) => { if (o.row < home || o.id === not) return false; const [x, y] = then(o); return x > W * 0.12 && x < W * 0.88 && y > H * 0.14 && y < H * 0.74; });
     const middle = (list) => { const off = (q) => { const [x, y] = then(q); return Math.hypot(x - W / 2, (y - H * 0.42) * 0.8); }; return list.reduce((p, q) => off(q) < off(p) ? q : p); };
     // off to a tree: from where it is, or if that is off the screen, from the edge of the screen on that side
     const fly = (o) => {
-      O.from = [clamp(O.x, -40, W + 40), clamp(O.y, -40, H + 40)]; O.s0 = O.s; O.aim = o.id; O.u = 0;
+      O.from = [clamp(O.x, -40, W + 40), clamp(O.y, -40, H + 40)]; O.s0 = O.s; O.aim = o.id; O.u = 0; O.d0 = O.d ?? 1;
       O.dur = clamp(Math.hypot(o.x - O.from[0], o.top - O.from[1]) / (9 * g.cellW), 1.4, 3.4);   // unhurried: it keeps pace with you
       O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly';
     };
@@ -126,7 +127,7 @@ export class Life {
       if (id !== null) { O.on = id; O.state = 'perch'; O.wait = 4 + rnd() * 5; }
     } else if (O.state === 'perch') {
       const q = sc.massif.tree(O.on);
-      [O.x, O.y] = perch(q); O.s = q.size;
+      [O.x, O.y] = perch(q); O.s = q.size; O.d = 1 / q.near;
       // Has its tree gone from you, or is it about to? Off the top or the bottom of the screen (sooner on the side
       // the page is carrying it to), out of sight behind something, or off to a side. But not when you are on your
       // way to it: then it waits for you where it is.
@@ -134,7 +135,7 @@ export class Life {
       const lost = (above && going >= 0) || (below && going <= 0) || (!above && !below && (!q.seen || q.x < 10 || q.x > W - 10));
       if (!above && !below && q.x > 0 && q.x < W) O.met = true;   // until you have come to it once, it waits where it is
       O.gone = lost ? O.gone + dt : 0; O.wait = above || below ? Math.max(O.wait, 4) : O.wait - dt;   // when you come back to it, it sits a while
-      const others = roosts.filter((o) => o.id !== O.on), to = lost && O.met && O.gone > (going ? 0.15 : 1.2) ? ahead(O.on) : [];
+      const others = roosts.filter((o) => o.id !== O.on), to = lost && O.met && O.gone > (going ? 0.15 : 1.2) ? forward(O.on) : [];
       if (to.length) fly(middle(to));   // it has to follow you
       else if (!lost && !above && !below && O.wait <= 0 && others.length) {
         // only restless: a short hop, to a tree that will still be on the screen
@@ -143,12 +144,13 @@ export class Life {
       }
     } else {
       // the page can carry its tree off while it is on its way there: then it turns to one that will be on the screen
-      const [ax, ay] = then(sc.massif.tree(O.aim)), turn = O.u < 0.75 && (ay < H * 0.05 || ay > H * 0.88 || ax < 0 || ax > W) ? ahead(O.aim) : [];
+      const [ax, ay] = then(sc.massif.tree(O.aim)), turn = O.u < 0.75 && (ay < H * 0.05 || ay > H * 0.88 || ax < 0 || ax > W) ? forward(O.aim) : [];
       if (turn.length) fly(middle(turn));
       const q = sc.massif.tree(O.aim), to = perch(q);
       O.u = Math.min(1, O.u + dt / O.dur);
       const e = smooth(0, 1, O.u);
       O.s = O.s0 + (q.size - O.s0) * e;   // it is the size of things where it is going by the time it gets there
+      O.d = O.d0 + (1 / q.near - O.d0) * e;
       O.dir = to[0] >= O.from[0] ? 1 : -1;
       O.x = O.from[0] + (to[0] - O.from[0]) * e; O.y = O.from[1] + (to[1] - O.from[1]) * e - Math.sin(Math.PI * e) * O.arc;
       if (O.u >= 1) { O.state = 'perch'; O.on = O.aim; O.wait = 6 + rnd() * 9; O.gone = 0; }
@@ -207,61 +209,46 @@ export class Life {
     for (const [ch, dx, dy, k, color] of parts) g.ink(dir < 0 && ch === '/' ? '\\' : dir < 0 && ch === '\\' ? '/' : ch, P[color], x + dx * u * dir, y + dy * u * up, k * u, a);
   }
 
-  // A fall of things is as wide as the screen and goes round: where one of
-  // them is across the screen, at depth z, as the camera slides.
-  across(x, z) { const g = this.sc.grid, wide = g.w + 20, v = (x * wide - this.sc.cam.drift(z)) % wide; return (v < 0 ? v + wide : v) - 10; }
-
-  // behind the mountain: the furthest snow, the flock
-  behind() {
-    const sc = this.sc, g = sc.grid, cam = sc.cam, P = sc.P, t = sc.time;
-    this.snow(0);
-    const f = this.flock;
-    if (f) for (const b of f.birds) {
-      const y = cam.py(f.y, f.k) + (b.dy * (1 + 0.08 * Math.sin(t * 0.7 + b.ph)) + 0.3 * Math.sin(t * 1.1 + b.ph)) * g.cellH;
-      g.ink(Math.sin(t * 5.5 + b.ph) > 0.1 ? 'v' : '-', P.bird, f.x + b.dx * g.cellW, y, g.size * f.far, 0.3 + 0.45 * f.far);   // the further off, the smaller and fainter
+  // Everything here, each at its depth, for the camera to put in order
+  // among the mountain and the terraces: flakes and leaves, the flock far
+  // off, the owl and the squirrel with the terrace they are on.
+  items() {
+    const sc = this.sc, g = sc.grid, cam = sc.cam, P = sc.P, t = sc.time, H = g.h, out = [];
+    if (sc.reduced.matches) return out;
+    const snow = this.snowAt(cam.s), leaf = this.leavesAt(cam.s), G = D.glyphs.leaves, [lx, ly, r0, r1] = sc.lampAt || [0, 0, 1, 2];
+    if (snow > 0.01) for (const f of this.flakes) {
+      if (f.rank > snow || Number.isNaN(f.Z)) continue;
+      const T = this.tiers[f.tier], d = cam.dist(f.Z); if (!(d > 0.1)) continue;
+      out.push({ d, draw: () => g.ink(f.ch, P[T.color], cam.px(f.X, f.Z), cam.py(f.Y, f.Z), g.size * Math.min(1 / d, MOST) * (f.tier === 2 ? 1.1 : 1), T.a * Math.min(1, f.age * 2)) });
     }
-  }
-  snow(tier) {
-    const sc = this.sc, g = sc.grid, cam = sc.cam, T = this.tiers[tier], H = g.h, size = g.size * cam.size(T.k) * (tier === 2 ? 1.1 : 1);
-    for (const f of this.flakes) {
-      if (f.tier !== tier) continue;
-      const y = cam.py(f.y, T.k);
-      if (y < -10 || y > H + 10) continue;
-      g.ink(f.ch, sc.P[T.color], this.across(f.x, T.k), y, size, T.a * this.snowAt(f.y));
+    if (leaf > 0.01) for (const f of this.fall) {
+      if (f.rank > leaf || Number.isNaN(f.Z)) continue;
+      const T = this.depths[f.tier], d = cam.dist(f.Z); if (!(d > 0.1)) continue;
+      out.push({ d, draw: () => {
+        const px = cam.px(f.X, f.Z), py = cam.py(f.Y, f.Z), lit = 1 - smooth(r0, r1, Math.hypot(px - lx, py - ly));
+        g.ink(G[(f.frame + Math.floor(t * 3 + f.phase)) % 3], f.color, px, py, g.size * Math.min(1 / d, MOST), T.a * (0.65 + 0.35 * lit) * Math.min(1, f.age * 2));
+      } });
     }
-  }
-  // The leaves are drawn after the mountain has been put out round your
-  // light, so the whole fall shows: brightest in the light (at x, y, from r0
-  // out to r1), and still there in the dark.
-  leaves(x, y, r0, r1) {
-    const sc = this.sc, g = sc.grid, cam = sc.cam, t = sc.time, H = g.h, G = D.glyphs.leaves;
-    for (const f of this.fall) {
-      const T = this.depths[f.tier], py = cam.py(f.y, T.k);
-      if (py < -10 || py > H + 10 || f.rank > this.leavesAt(f.y)) continue;
-      const px = this.across(f.x, T.k), lit = 1 - smooth(r0, r1, Math.hypot(px - x, py - y));
-      // it comes to rest on the ground: gone over its last rows
-      g.ink(G[(f.frame + Math.floor(t * 3 + f.phase)) % 3], f.color, px, py, g.size * cam.size(T.k), T.a * (0.5 + 0.5 * lit) * smooth(this.l0, this.l0 + 6, f.y) * (1 - smooth(this.l1 - 3, this.l1, f.y)));
-    }
-  }
-
-  // in front of it: the nearer snow, the owl, the squirrel
-  front() {
-    const sc = this.sc, g = sc.grid, t = sc.time, H = g.h;
-    this.snow(1); this.snow(2);
+    const fl = this.flock;
+    if (fl) out.push({ d: 40, draw: () => { for (const b of fl.birds) g.ink(Math.sin(t * 5.5 + b.ph) > 0.1 ? 'v' : '-', P.bird, fl.x + b.dx * g.cellW, fl.y + (b.dy * (1 + 0.08 * Math.sin(t * 0.7 + b.ph)) + 0.3 * Math.sin(t * 1.1 + b.ph)) * g.cellH, g.size * fl.far, 0.3 + 0.45 * fl.far); } });
     const O = this.owl;
-    if (O.state !== 'none' && O.y > -60 && O.y < H + 60) {
+    if (O.state !== 'none' && O.y > -60 && O.y < H + 60) out.push({ d: (O.d ?? 1) - 4e-3, draw: () => {
       const u = g.size * O.s * 0.65, blink = (t * 0.31 + 0.2) % 1 > 0.96;
       if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
       this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);
-    }
+    } });
     const Q = this.squirrel;
-    if (Q.state !== 'away' && !sc.massif.hidden(Q.x, Q.y, Q.sheet)) {   // there, and not behind something nearer
-      const grow = Q.state === 'sit' ? Math.min(1, Q.born * 4) : 1, u = g.size * Q.s * 0.58 * (0.5 + 0.5 * grow);
-      if (Q.state === 'hop') this.sprite(RUN, Q.x, Q.y, u, Q.dir);
-      // on a trunk: it goes into the leaves at the top and comes out of them
-      else if (Q.state === 'up' || Q.state === 'down') this.sprite(CLIMB, Q.x, Q.y, u, Q.side, 1 - smooth(0.78, 1, Q.u), Q.state === 'up' ? 1 : -1);
-      else { const flick = Math.sin(t * 7 + Q.side) > 0.82 ? 0.14 : 0; this.sprite([[SIT[0][0], SIT[0][1], SIT[0][2] - flick, SIT[0][3] + flick, 'leaf'], ...SIT.slice(1)], Q.x, Q.y, u, Q.dir, grow); }
+    if (Q.state !== 'away') {
+      const q = sc.massif.tree(Q.state === 'hop' ? Q.aim : Q.on);
+      if (q) out.push({ d: 1 / q.near - 4e-3, draw: () => {
+        const grow = Q.state === 'sit' ? Math.min(1, Q.born * 4) : 1, u = g.size * Q.s * 0.58 * (0.5 + 0.5 * grow);
+        if (Q.state === 'hop') this.sprite(RUN, Q.x, Q.y, u, Q.dir);
+        // on a trunk: it goes into the leaves at the top and comes out of them
+        else if (Q.state === 'up' || Q.state === 'down') this.sprite(CLIMB, Q.x, Q.y, u, Q.side, 1 - smooth(0.78, 1, Q.u), Q.state === 'up' ? 1 : -1);
+        else { const flick = Math.sin(t * 7 + Q.side) > 0.82 ? 0.14 : 0; this.sprite([[SIT[0][0], SIT[0][1], SIT[0][2] - flick, SIT[0][3] + flick, 'leaf'], ...SIT.slice(1)], Q.x, Q.y, u, Q.dir, grow); }
+      } });
     }
+    return out;
   }
 }

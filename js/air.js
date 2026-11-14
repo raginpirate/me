@@ -1,5 +1,12 @@
-// What is behind and around the mountain: the far ranges, the cloud deck.
-// Each is a pane at a depth in the camera's world, like everything else.
+// What is round the mountain: far ranges on the horizon, and cloud. Each is
+// a pane at its own depth in the camera's world, like everything else, and
+// is painted from its own shape at whatever size it is seen, so it is drawn
+// in more cells when near and fewer when far.
+//
+// The cloud deck wraps the mountain's waist. You come down through it, and
+// as the camera backs away it stays there round the mountain, with banks of
+// cloud further off in the sky beyond: there is cloud in sight all the way
+// down.
 
 import { mulberry32, edge, hash, mix } from './util.js';
 import { D } from './direction.js';
@@ -7,119 +14,115 @@ import { D } from './direction.js';
 export class Air {
   constructor(sc) {
     this.sc = sc;
-    const { cols, P } = sc, g = sc.grid, cam = sc.cam, S = sc.screenRows, rnd = mulberry32(2026), L = D.layout, n = sc.noise, last = sc.end + S / 2;
-    // a thing at depth z is set in whole pixels of type: the type's size, and how many times the page's that is
-    const type = (z) => { const font = Math.max(5, Math.round(g.size * cam.size(z))); return [font, font / g.size]; };
+    const { cols, P } = sc, cam = sc.cam, g = sc.grid, S = sc.screenRows, rnd = mulberry32(2026), L = D.layout, n = sc.noise;
+    const last = sc.end + S / 2, [, yEnd] = cam.path(last);
+    // how far either side a thing at depth Z is ever seen
+    const across = (Z) => { const xs = [cam.wx(0, cam.from, Z), cam.wx(g.w, cam.from, Z), cam.wx(0, last, Z), cam.wx(g.w, last, Z)]; return [Math.min(...xs) - 20, Math.max(...xs) + 20]; };
 
-    // Far ranges. Each stands on the horizon you reach at the bottom. It is
-    // far, so it passes slower than the page: low and small from the
-    // summit, standing over you in the valley.
-    // z: its depth. tall: its highest crest above the horizon, in screens. relief: how far its crest dips, in
-    // screens. wave: columns from peak to peak.
-    this.far = [
-      { z: 0.2, tall: 0.8, relief: 0.3, wave: 27, a: 0.55, seed: 3.1, hatch: 7 },
-      { z: 0.42, tall: 1.52, relief: 0.4, wave: 38, a: 0.85, seed: 8.4, hatch: 11 },
-    ].map((d) => {
-      const [font, s] = type(d.z), rows = S / s, up = Math.ceil(rows * d.tall) + 2;   // a screen, and its highest crest, in rows of its own type
-      // it goes on as far as the camera ever sees of it
-      const x = Math.floor(cam.wx(0, 0, d.z)) - 1, width = Math.ceil((cam.wx(g.w, last, d.z) - x) * d.z / s) + 3;
-      const top = Float32Array.from({ length: width + 3 }, (_, c) => { const u = c / d.wave + d.seed; return rows * (d.tall - d.relief * (1 - (0.62 * n.ridged(u, d.seed, 3) ** 1.5 + 0.38 * n.noise(u * 0.4 + 5, d.seed)))); });
-      return cam.pane({
-        x, y: sc.groundRow - up * s / d.z, z: d.z, s, cols: width, rows: Math.ceil(rows * d.relief) + d.hatch + 6,
-        paint(c0, i0, c1, i1, ox, oy) {
-          const { cw, ch } = this, put = (glyph, color, c, r, a) => g.set(glyph, color, ox + c * cw, oy + (up + r) * ch, font, a);
+    // ---------- far ranges ----------
+    // Z: its depth. tall: its highest crest above its foot, in screens; relief: how far its crest dips; wave: columns from peak to peak.
+    const foot = yEnd + 0.3 * S;
+    this.ranges = [
+      { Z: 5.5, tall: 2.3, relief: 0.9, wave: 150, a: 0.7, seed: 3.1, hatch: 7 },
+      { Z: 12, tall: 4.6, relief: 1.6, wave: 260, a: 0.95, seed: 8.4, hatch: 11 },
+    ].map((r) => {
+      const [xa, xb] = across(r.Z), top = (X) => S * (r.tall - r.relief * (1 - (0.62 * n.ridged(X / r.wave + r.seed, r.seed, 3) ** 1.5 + 0.38 * n.noise(X / r.wave * 0.4 + 5, r.seed))));
+      const y0 = Math.floor(foot - r.tall * S - 4), h = Math.ceil(foot - y0 + 0.6 * S);
+      const p = cam.pane({
+        Z: r.Z, x: Math.floor(xa), y: y0, w: Math.ceil(xb - xa), h, uMin: 1, uMax: 64, kind: 'range',
+        paint: (Lv, c0, i0, c1, i1, ox, oy) => {
+          const u = Lv.u, { cw, ch, font } = Lv;
           for (let c = c0; c <= c1; c++) {
-            const h = -top[c + 1], slope = (top[c] - top[c + 2]) / 2, row = Math.floor(h), snowy = top[c + 1] > rows * (d.tall - d.relief * 0.22);
-            put(edge(h - row, slope), snowy ? P.snow : P.dim, c, row, snowy ? d.a * 0.6 : d.a);
-            // a steep run takes more than one cell
-            const next = Math.floor(-top[c + 2]);
-            for (let r = Math.min(row, next) + 1; r < Math.max(row, next); r++) put(slope < 0 ? '/' : '\\', P.dim, c + (slope < 0 ? 1 : 0), r, d.a);
+            const X = p.x + (c + 0.5) * u, t = top(X), slope = (top(X - u) - top(X + u)) / (2 * u), crest = (foot - t - y0) / u, row = Math.floor(crest);
+            if (row > i1) continue;
+            // it hides what is behind it
+            const from = Math.max(i0, row);
+            if (from <= i1) g.box(ox + c * cw - 0.5, oy + from * ch, cw + 1, (i1 - from + 1) * ch + 1, P.sky);
+            const snowy = t > S * (r.tall - r.relief * 0.22);
+            if (row >= i0) g.set(edge(crest - row, slope), snowy ? P.snow : P.dim, ox + c * cw, oy + row * ch, font, snowy ? r.a * 0.6 : r.a);
             // under the crest: the side away from the moon is hatched, and it all fades into haze
-            for (let k = 1; k <= d.hatch; k++) {
-              const fade = 1 - k / (d.hatch + 1), r = row + k;
-              if (slope > 0.1) { if ((c + r) % 2 === 0) put(k < 3 ? ':' : '.', P.dim, c, r, d.a * 0.75 * fade); }
-              else if (hash(c, r, 3) < 0.07) put('.', P.dim, c, r, d.a * 0.6 * fade);
+            for (let k = 1; k <= r.hatch; k++) {
+              const i = row + k; if (i < i0 || i > i1) continue;
+              const fade = 1 - k / (r.hatch + 1);
+              if (slope > 0.06) { if ((c + i) % 2 === 0) g.set(k < 3 ? ':' : '.', P.dim, ox + c * cw, oy + i * ch, font, r.a * 0.75 * fade); }
+              else if (hash(c, i, 3 + u) < 0.07) g.set('.', P.dim, ox + c * cw, oy + i * ch, font, r.a * 0.6 * fade);
             }
           }
         },
       });
+      return p;
     });
 
-    // The cloud deck: three depths of long, flat-bottomed cloud. veil: how
-    // much a cloud hides what is behind it. Those in front of the mountain
-    // are thin, so the mountain goes on through the deck and is not cut off
-    // by it.
+    // ---------- cloud ----------
+    // The deck: three depths of long, flat-bottomed cloud round the mountain.
+    // veil: how much a cloud hides what is behind it. Then banks further off.
     this.deckRow = Math.round((L.deck[0] + L.deck[1]) / 2 * S);
-    this.span = cols + 80;
-    const wide = cols > 100 ? 1.5 : 1;
-    const mk = (count, spread, w, h, off = 0) => Array.from({ length: count }, () => ({ x: rnd() * this.span, y: Math.round(off * S + (rnd() + rnd() + rnd() - 1.5) / 1.5 * spread * S), w: mix(w, rnd()) * wide, h: mix(h, rnd()), s: rnd() * 100 }));
-    const per = Math.max(5, Math.round(cols / 9 / (cols > 100 ? 1.35 : 1)));
-    this.layers = [
-      { z: 0.74, drift: 0.3, line: P.rockDark, body: P.far, la: 1, ba: 0.85, veil: 1, front: false, items: [...mk(per, 0.22, [9, 22], [2.4, 5]), ...mk(Math.ceil(per / 2), 0.08, [4, 9], [1.2, 2.2], -0.5)] },
-      { z: 1, drift: -0.55, line: P.dim, body: P.rockDark, la: 0.95, ba: 0.9, veil: 0.7, front: true, items: [...mk(per, 0.17, [9, 22], [2.8, 6]), ...mk(Math.ceil(per / 2), 0.07, [5, 10], [1.3, 2.4], 0.42)] },
-      { z: 1.36, drift: 1.0, line: P.rule, body: P.dim, la: 0.8, ba: 0.55, veil: 0.5, front: true, items: mk(Math.ceil(per * 0.7), 0.16, [9, 20], [3, 6]) },
+    const wide = cols > 100 ? 1.5 : 1, per = Math.max(5, Math.round(cols / 9 / (cols > 100 ? 1.35 : 1)));
+    const layers = [
+      { Z: 1.35, drift: 0.3, line: P.rockDark, body: P.far, la: 1, ba: 0.85, veil: 1, spread: 0.22, count: per, w: [9, 22], h: [2.4, 5] },
+      { Z: 1.35, drift: 0.3, line: P.rockDark, body: P.far, la: 1, ba: 0.85, veil: 1, spread: 0.08, count: Math.ceil(per / 2), w: [4, 9], h: [1.2, 2.2], off: -0.5 },
+      { Z: 1, drift: -0.55, line: P.dim, body: P.rockDark, la: 0.95, ba: 0.9, veil: 0.7, spread: 0.17, count: per, w: [9, 22], h: [2.8, 6] },
+      { Z: 1, drift: -0.55, line: P.dim, body: P.rockDark, la: 0.95, ba: 0.9, veil: 0.7, spread: 0.07, count: Math.ceil(per / 2), w: [5, 10], h: [1.3, 2.4], off: 0.42 },
+      { Z: 0.735, drift: 1.0, line: P.rule, body: P.dim, la: 0.8, ba: 0.55, veil: 0.5, spread: 0.16, count: Math.ceil(per * 0.7), w: [9, 20], h: [3, 6] },
+      // banks out in the sky, further off: bigger, and seen small
+      { Z: 2.6, drift: 0.2, line: P.dim, body: P.far, la: 0.8, ba: 0.6, sparse: 0.55, veil: 0.85, spread: 0.3, count: Math.ceil(per * 0.8), w: [20, 44], h: [4, 9], off: 0.15 },
+      { Z: 5, drift: 0.12, line: P.dim, body: P.far, la: 0.6, ba: 0.5, sparse: 0.62, veil: 0.8, spread: 0.45, count: Math.ceil(per * 0.8), w: [40, 90], h: [7, 16], off: -0.2 },
     ];
-    // one cloud that never leaves: it sits on the seam between the painted peak and the body under it
-    // (long and low, its top nearly level: flat is how much of its height is the same all along)
-    this.layers[1].items.push({ x: 0, y: Math.round(sc.seamRow + 2 - this.deckRow), w: sc.seamHalf * 1.7 + 10, h: 6.2, s: 7, pinned: sc.ax, flat: 0.86 });
-    // every cloud is a pane of its own, drawn once: the deck only drifts
-    for (const Ly of this.layers) {
-      const [font, s] = type(Ly.z);
-      for (const it of Ly.items) {
-        const W = it.W = Math.ceil(it.w), up = it.up = Math.ceil(it.h) + 1, flat = it.flat ?? 0.5;
-        const topAt = (u) => { const e2 = 1 - (u / it.w) ** 2; return e2 <= 0 ? 0 : -it.h * Math.sqrt(e2) * (flat + (1 - flat) * (0.6 * Math.abs(Math.sin(u * 0.33 + it.s)) + 0.4 * n.noise(it.s + u * 0.21, 1.7))); };
-        it.pane = cam.pane({
-          z: Ly.z, s, cols: 2 * W + 1, rows: up + Math.ceil(it.h * 0.3) + 3,
-          paint(c0, i0, c1, i1, ox, oy) {
-            const { cw, ch } = this, y0 = oy + up * ch;
-            for (let u = c0 - W; u <= c1 - W; u++) {
-              const e2 = 1 - (u / it.w) ** 2; if (e2 <= 0) continue;
-              const x = ox + (u + W) * cw, t = topAt(u), b = it.h * 0.3 * Math.sqrt(e2) * (0.5 + 0.5 * n.noise(it.s + u * 0.13, 9.2)) + 0.4, rt = Math.floor(t), rb = Math.floor(b);
-              g.box(x - 0.4, y0 + rt * ch - 0.5, cw + 0.8, ch + 0.5, P.sky, Ly.veil * 0.5);   // a cloud veils what is behind it, thinly at its top
-              g.box(x - 0.4, y0 + (rt + 1) * ch - 0.5, cw + 0.8, (rb - rt) * ch + 1, P.sky, Ly.veil);
-              g.set(edge(t - rt, (topAt(u + 1) - topAt(u - 1)) / 2), Ly.line, x, y0 + rt * ch, font, Ly.la * (0.8 + 0.2 * (-u / it.w)));
-              // the body: thick in the middle, wispy at the ends, a flat dark base
-              for (let r = rt + 1; r <= rb; r++) {
-                const v = n.noise(it.s + u * 0.3, r * 1.3 + it.s) + 0.35 * Math.sqrt(e2) - 0.2;
-                if (r === rb) g.set(b - rb < 0.5 ? '-' : '_', Ly.body, x, y0 + r * ch, font, Ly.ba);
-                else if (v > 0.3) g.set(v > 0.62 ? '=' : v > 0.45 ? '~' : '-', Ly.body, x, y0 + r * ch, font, Ly.ba * (v > 0.62 ? 1 : 0.8));
-              }
-            }
-          },
-        });
+    this.clouds = [];
+    for (const Ly of layers) {
+      const [xa, xb] = across(Ly.Z), span = xb - xa, mid = sc.ax;
+      // as many as fill it at its widest, more near the mountain
+      const count = Math.round(Ly.count * Math.max(1, span / (cols * 1.2)) * 0.55);
+      for (let i = 0; i < count; i++) {
+        const near = rnd() < 0.45, X = near ? mid + (rnd() - 0.5) * cols * 1.6 : xa + rnd() * span;
+        const it = { X, Y: Math.round((Ly.off ?? 0) * S + (rnd() + rnd() + rnd() - 1.5) / 1.5 * Ly.spread * S), w: mix(Ly.w, rnd()) * wide, h: mix(Ly.h, rnd()), s: rnd() * 100, flat: 0.5 };
+        this.clouds.push(this.cloud(Ly, it, xa, span));
       }
     }
+    // one cloud that never leaves: it sits on the seam between the painted peak and the massif under it
+    this.clouds.push(this.cloud(layers[2], { X: sc.ax, Y: Math.round(sc.seamRow + 2 - this.deckRow), w: sc.seamHalf * 1.7 + 10, h: 6.2, s: 7, flat: 0.86, pinned: true }, 0, 0));
   }
 
-  // is any of it on screen: the deck drifts, so it must be redrawn
-  get showing() { const c = this.sc.centre, [a, b] = D.layout.deck; return c > a - 1.1 && c < b + 1.1; }
-
-  // Mist through the deck, over the mountain: it goes into the clouds and
-  // comes out of them, it is not cut off by them. Thickest through the
-  // middle of the deck, nothing at its top and bottom.
-  drawMist() {
-    const sc = this.sc, g = sc.grid, cam = sc.cam, [a, b] = D.layout.deck, S = sc.screenRows;
-    const y0 = cam.py((a - 0.12) * S), y1 = cam.py((b + 0.2) * S);
-    if (y1 < 0 || y0 > g.h) return;
-    const grad = g.ctx.createLinearGradient(0, y0, 0, y1), hex = (v) => Math.round(v * 255).toString(16).padStart(2, '0');
-    for (const [t, v] of [[0, 0], [0.3, 0.42], [0.5, 0.5], [0.72, 0.36], [1, 0]]) grad.addColorStop(t, sc.sky + hex(v));
-    g.box(0, Math.max(0, y0), g.w, Math.min(g.h, y1) - Math.max(0, y0), grad);
+  // a cloud: a pane whose shape is worked out from its own numbers at whatever size it is painted
+  cloud(Ly, it, xa, span) {
+    const sc = this.sc, g = sc.grid, P = sc.P, n = sc.noise, W = Math.ceil(it.w) + 1, up = Math.ceil(it.h) + 1;
+    const topAt = (U) => { const e2 = 1 - (U / it.w) ** 2; return e2 <= 0 ? 0 : -it.h * Math.sqrt(e2) * (it.flat + (1 - it.flat) * (0.6 * Math.abs(Math.sin(U * 0.33 + it.s)) + 0.4 * n.noise(it.s + U * 0.21, 1.7))); };
+    const baseAt = (U) => { const e2 = 1 - (U / it.w) ** 2; return e2 <= 0 ? 0 : it.h * 0.3 * Math.sqrt(e2) * (0.5 + 0.5 * n.noise(it.s + U * 0.13, 9.2)) + 0.4; };
+    const p = sc.cam.pane({
+      Z: Ly.Z, x: it.X - W, y: this.deckRow + it.Y - up, w: 2 * W + 1, h: up + Math.ceil(it.h * 0.3) + 3, uMin: 0.5, uMax: 64, kind: 'cloud',
+      paint: (L, c0, i0, c1, i1, ox, oy) => {
+        const u = L.u, { cw, ch, font } = L;
+        for (let c = c0; c <= c1; c++) {
+          const U = (c + 0.5) * u - W; if (Math.abs(U) >= it.w) continue;
+          const t = topAt(U) / u + up / u, b = baseAt(U) / u + up / u, rt = Math.floor(t), rb = Math.floor(b), x = ox + c * cw;
+          g.box(x - 0.4, oy + rt * ch - 0.5, cw + 0.8, ch + 0.5, P.sky, Ly.veil * 0.5);   // a cloud veils what is behind it, thinly at its top
+          g.box(x - 0.4, oy + (rt + 1) * ch - 0.5, cw + 0.8, (rb - rt) * ch + 1, P.sky, Ly.veil);
+          g.set(edge(t - rt, (topAt(U + u) - topAt(U - u)) / (2 * u)), Ly.line, x, oy + rt * ch, font, Ly.la * (0.8 + 0.2 * (-U / it.w)));
+          // the body: thick in the middle, wispy at the ends, a flat dark base
+          const e2 = 1 - (U / it.w) ** 2;
+          for (let r = rt + 1; r <= rb; r++) {
+            const v = n.noise(it.s + U * 0.3, r * u * 1.3 + it.s) + 0.35 * Math.sqrt(e2) - 0.2;
+            if (r === rb) g.set(b - rb < 0.5 ? '-' : '_', Ly.body, x, oy + r * ch, font, Ly.ba);
+            else if (v > (Ly.sparse ?? 0.3)) g.set(v > 0.62 ? '=' : v > 0.45 ? '~' : '-', Ly.body, x, oy + r * ch, font, Ly.ba * (v > 0.62 ? 1 : 0.8));
+          }
+        }
+      },
+    });
+    Object.assign(p, { it, Ly, W, xa, span, X0: it.X });
+    return p;
   }
 
-  // The clouds behind the mountain, or those in front of it. Each drifts
-  // along its bank and comes round again; the camera carries the bank.
-  drawClouds(front) {
-    const sc = this.sc, cam = sc.cam, drift = sc.reduced.matches ? 0 : sc.time;
-    for (const Ly of this.layers) {
-      if (Ly.front !== front) continue;
-      const mid = cam.py(this.deckRow, Ly.z);   // the pixel the deck's middle is at
-      for (const it of Ly.items) {
-        const { cw, ch } = it.pane, slid = cam.drift(Ly.z) / cw;   // how far the camera has carried the bank, in its own cells
-        let x0 = (it.x + Ly.drift * drift - slid) % this.span; if (x0 < 0) x0 += this.span; x0 -= 40;
-        if (it.pinned !== undefined) x0 = it.pinned + Math.sin(drift * 0.07) * 3 - slid;
-        it.pane.at = [(x0 - it.W) * cw, mid + (it.y - it.up) * ch];
-      }
-      cam.show(Ly.items.map((it) => it.pane));
+  // is any of it on screen: the cloud drifts, so it must be redrawn
+  get showing() { return this.sc.centre > D.layout.deck[0] - 1.1; }
+
+  // what to draw: the ranges, and every cloud where it has drifted to
+  items() {
+    const sc = this.sc, t = sc.reduced.matches ? 0 : sc.time;
+    for (const p of this.clouds) {
+      if (p.it.pinned) { p.x = p.X0 + Math.sin(t * 0.07) * 3 - p.W; continue; }
+      let X = p.X0 + p.Ly.drift * t - p.xa; X = ((X % p.span) + p.span) % p.span; p.x = p.xa + X - p.W;
     }
+    return [...this.ranges, ...this.clouds];
   }
 }
+

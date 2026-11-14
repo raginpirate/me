@@ -29,24 +29,24 @@ export const D = {
     forest: 6.3,           // closed forest
     ground: 10,            // about where the ground is; the scene puts the line exactly half a screen from its end
   },
-  // The camera's sideways slide. from: screens down the page where it begins (the cloud line in the middle of the screen).
-  // slant: how far it slides for a screen of scroll, in screen widths, and the tangents that is kept within (so on a
-  // phone it is not nothing and on a wide screen not a rush). ramp: screens it takes to come in, to the first bridge.
-  // rise: how much more it is on the last row of the page, as a share of itself. It never lessens.
-  camera: { from: 4.55, slant: 0.12, within: [0.075, 0.2], ramp: 0.9, rise: 0.15 },
-  // The mountain under the peak. stride: screens of travel between the route's ridges, down to the stop named in `sparse` and from it on.
-  // step: between two ridges far apart the slope has a brow this often. under: how far the path goes on under the next brow.
-  // near: the depth of the last ridge and the ground; the sheets come to it in even steps. mist: the mist behind a crest:
-  // how high it stands over the crest, in screens, how thick it is at the crest, and how pale against the dark. tall: how tall each kind of tree
-  // stands at the page's depth, in rows of the page. grow: it stands that many times its depth, to this power, taller.
-  // veil: once you are on a wooded sheet, how much all that is behind it is put out. recede: how much dimmer a sheet is
-  // painted past where the route leaves it. face: how much larger and brighter a tree at the foot of a face is than one on its crest.
-  // gap: rows of travel a bridge spans. lamp: the light you carry: how much of everything
-  // out of its reach is put out, and where it is full and where it ends, as shares of the screen's shorter side.
+  // The camera. from: screens down the page where it starts to back away (the cloud line in the middle of the screen).
+  // above: how far above the light you carry the horizon is, in screens. back: how far it has backed away by the end,
+  // in the page's own distances. ease: screens it takes to get going. top: where the summit stands at the end, in
+  // screens from the top. slant: how far it slides sideways for a screen of scroll, in screen widths, and the tangents
+  // that is kept within. ramp: screens the slant takes to come in, to the first bridge. rise: how much more it is on
+  // the last row, as a share of itself.
+  camera: { from: 4.55, above: 0.17, back: 6.5, ease: 0.45, top: 0.07, slant: 0.12, within: [0.075, 0.2], ramp: 0.9, rise: 0.15 },
+  // The mountain and the terraces below it. sweep: how far either side of the middle the path goes on each terrace,
+  // and jump: how far across the screen a bridge takes it, as shares of the screen's width [wide, narrow]. cross: screens
+  // of scroll a bridge takes to cross. slice: screens of scroll on one terrace. apart: a bridge at least this often, in
+  // screens. near: how far off the terrace you step onto is, in the page's distances. cliff: rows a column a cliff falls.
+  // fade: the distances over which a terrace goes into the mist. tall: how tall each kind of tree stands, in rows.
   // ribs: the mountain's ribs under the peak, each [where across, as a share of its half-width either side of its middle;
   // screens under the seam that it starts]. spread: how much wider they stand for each screen down. cast: how wide a rib's
   // shadow is on the lit flank, and how wide its lit face on the dark one, as shares of the half-width.
-  massif: { stride: [0.33, 1.25], sparse: 'fera', step: 0.34, under: 0.15, near: 1.9, face: 0.45, gap: 3, mist: [0.26, 0.72, 0.5], veil: 0.34, recede: 0.55, tall: { pine: 4.6, leafy: 3.8, birch: 5.5 }, grow: 2.1, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
+  // lamp: the light you carry: how much of everything out of its reach is put out, and where it is full and where it
+  // ends, as shares of the screen's shorter side.
+  massif: { sweep: [0.17, 0.26], jump: [0.15, 0.3], cross: 0.08, slice: 0.24, apart: 1.15, near: 0.85, cliff: 1.8, fade: [1.9, 3.4], tall: { pine: 4.6, leafy: 3.8, birch: 5.5 }, ribs: [[-0.78, 0.5], [-0.55, 0.05], [-0.27, 0.8], [0, 0], [0.2, 0.6], [0.45, 0.05], [0.74, 0.95]], spread: 1.8, cast: [0.09, 0.13], lamp: { dark: 0.62, core: 0.18, reach: 0.78 } },
 
   // The stops, top to bottom. Each id is a card in index.html. `at` is the
   // stop's light in the painting: [screens from the top, fraction across the
