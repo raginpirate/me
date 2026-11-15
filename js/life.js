@@ -93,31 +93,38 @@ export class Life {
     if (this.flock) { const f = this.flock; f.x += f.dir * f.v * dt; f.y += f.drift * dt; if (f.dir > 0 ? f.x - f.len > W + 20 : f.x + f.len < -20) this.flock = null; }
 
     // --- the owl: tree top to tree top, following you down. It never jumps:
-    // it flies in from off the screen, and flies off again when it must. ---
+    // it flies in from off the screen once, and from then on it keeps with
+    // you: when its tree is about to leave the screen it goes, unhurried, to
+    // one well inside it, the nearest the middle. ---
     const O = this.owl, tops = trees.filter((q) => q.top > H * 0.1 && q.top < H * 0.82 && q.x > 30 && q.x < W - 30);
-    const fly = (to, q) => { O.from = [O.x, O.y]; O.s0 = O.s; O.to = to; O.aim = q ? q.id : null; O.u = 0; O.dur = clamp(Math.hypot(to[0] - O.x, to[1] - O.y) / (15 * g.cellW), 0.9, 2.6); O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly'; };
+    const middle = (not) => { const band = tops.filter((o) => o.id !== not && o.top > H * 0.28 && o.top < H * 0.7 && o.x > W * 0.15 && o.x < W * 0.85); if (!band.length) return null; band.sort((a, b) => Math.hypot(a.x - W / 2, a.top - H * 0.45) - Math.hypot(b.x - W / 2, b.top - H * 0.45)); return pick(band.slice(0, 4)); };
+    const fly = (to, q) => { O.from = [O.x, O.y]; O.s0 = O.s; O.to = to; O.aim = q ? q.id : null; O.u = 0; O.dur = clamp(Math.hypot(to[0] - O.x, to[1] - O.y) / (9 * g.cellW), 1.3, 3.0); O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly'; };
     const perch = (q) => [q.x, q.top - 0.8 * g.size * q.s];
     if (O.state === 'away') {
       O.wait -= dt;
       if (O.wait <= 0 && tops.length > 2) { const q = pick(tops); O.x = rnd() < 0.5 ? -40 : W + 40; O.y = q.top - (4 + rnd() * 8) * g.cellH; O.s = q.s * 0.4; fly(perch(q), q); }
     } else if (O.state === 'fly') {
       const q = O.aim !== null ? find(O.aim) : null;
-      if (q) O.to = perch(q);
-      else if (O.aim !== null) { O.aim = null; O.to = [O.x < W / 2 ? -60 : W + 60, O.y - 3 * g.cellH]; }   // its tree has gone: carry on off the screen
+      // the page carries its tree off while it is on its way: it turns to one that will stay on the screen
+      if (q && O.u < 0.8 && (q.top < H * 0.1 || q.top > H * 0.9)) { const o = middle(q.id); if (o) { fly(perch(o), o); } }
+      if (q && O.aim === q.id) O.to = perch(q);
+      else if (O.aim !== null && !find(O.aim)) { const o = middle(O.aim); if (o) fly(perch(o), o); else { O.aim = null; O.to = [O.x < W / 2 ? -60 : W + 60, O.y - 3 * g.cellH]; } }   // its tree has gone: another, or off the screen
       O.u = Math.min(1, O.u + dt / O.dur);
       const e = smooth(0, 1, O.u);
       O.s = O.s0 + ((q ? q.s : O.s0 * 0.4) - O.s0) * e;   // it grows as it comes nearer and shrinks as it goes off
       O.dir = O.to[0] >= O.from[0] ? 1 : -1;
       O.x = O.from[0] + (O.to[0] - O.from[0]) * e; O.y = O.from[1] + (O.to[1] - O.from[1]) * e - Math.sin(Math.PI * e) * O.arc;
-      if (O.u >= 1) { if (O.aim !== null) { O.state = 'perch'; O.on = O.aim; O.wait = 2.4 + rnd() * 3.2; } else { O.state = 'away'; O.wait = 1.5 + rnd() * 2; } }
+      if (O.u >= 1) { if (O.aim !== null) { O.state = 'perch'; O.on = O.aim; O.wait = 4 + rnd() * 5; } else { O.state = 'away'; O.wait = 1.5 + rnd() * 2; } }
     } else {
       const q = find(O.on);
       O.wait -= dt;
       if (q) { [O.x, O.y] = perch(q); O.s = q.s; }
-      if (!q || O.wait <= 0 || O.y < H * 0.06) {
-        const next = tops.filter((o) => o.id !== O.on && Math.abs(o.x - O.x) > 5 * g.cellW);
-        if (next.length) { const o = pick(next); fly(perch(o), o); }
-        else if (!q || O.y < 0) fly([O.x < W / 2 ? -60 : W + 60, O.y - 4 * g.cellH], null);
+      const leaving = !q || O.y < H * 0.14 || O.y > H * 0.88 || O.x < W * 0.04 || O.x > W * 0.96;
+      if (leaving) { const o = middle(O.on); if (o) fly(perch(o), o); else if (!q || O.y < 0 || O.y > H) fly([O.x < W / 2 ? -60 : W + 60, O.y - 4 * g.cellH], null); }
+      else if (O.wait <= 0) {
+        // only restless: a short hop to a tree near by
+        const next = tops.filter((o) => o.id !== O.on && Math.abs(o.x - O.x) > 5 * g.cellW && Math.hypot(o.x - O.x, o.top - O.y) < Math.max(W, H) * 0.4 && o.top > H * 0.2 && o.top < H * 0.75);
+        if (next.length) { const o = pick(next); fly(perch(o), o); } else O.wait = 1;
       }
     }
 
@@ -187,7 +194,7 @@ export class Life {
     for (const l of this.leaves) g.ink(D.glyphs.leaves[(l.frame + Math.floor(t * 3 + l.phase)) % 3], l.color, l.x, H / 2 + (l.y - sc.centreRow) * g.cellH * l.k, g.size * l.size, Math.min(1, l.age * 3, (l.life - l.age) * 1.5));
     const O = this.owl;
     if (O.state !== 'away') {
-      const u = g.size * O.s * 0.9, blink = (t * 0.31 + 0.2) % 1 > 0.96;
+      const u = g.size * Math.min(O.s, 1.8) * 1.0, blink = (t * 0.31 + 0.2) % 1 > 0.96;
       if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
       this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);

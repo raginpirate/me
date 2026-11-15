@@ -439,7 +439,7 @@ export class AsciiScene extends HTMLElement {
     if (!active && !(ambient && this.tick % 2 === 0)) { this.warm(top); return; }
 
     // --- draw, from the back to the front ---
-    this.sky = mixHex(P.sky, P.skyBase, smooth(8.3, 9.7, this.centre));
+    this.sky = mixHex(P.sky, P.skyBase, Math.round(smooth(8.3, 9.7, this.centre) * 24) / 24);   // in steps too small to see, so what is painted in it keeps
     g.clear(this.sky);
 
     // field stars
@@ -525,14 +525,14 @@ export class AsciiScene extends HTMLElement {
       this.air.drawRanges();
       if (!reduced) this.life.behind();
       this.air.drawClouds(false);
-      // the massif and the ground are kept as one layer, redrawn only when the page has moved
+      // The massif and the ground. While the page moves they are placed straight on the screen from what is kept
+      // painted; once it is still they are kept as one layer, drawn once and then only put down again.
       const key = `${top}|${this.sky}`;
-      if (key !== this.mountKey) {
-        this.mountKey = key;
-        this.mount.clearRect(0, 0, g.w, g.h);
-        g.into(this.mount, () => { this.massif.render(); this.ground.render(); });
+      if (key !== this.mountKey) { this.mountKey = key; this.mountFresh = false; this.massif.render(); this.ground.render(); }
+      else {
+        if (!this.mountFresh) { this.mount.clearRect(0, 0, g.w, g.h); g.into(this.mount, () => { this.massif.render(); this.ground.render(); }); this.mountFresh = true; }
+        g.blit(this.mount.canvas, 0);
       }
-      g.blit(this.mount.canvas, 0);
     }
     this.paint(top);
     if (below) {

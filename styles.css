@@ -31,7 +31,7 @@
   --ground: #6b5236;
   --ground-dark: #3d2e21;
 
-  --wash: color-mix(in srgb, var(--sky) 86%, transparent);
+  --wash: color-mix(in srgb, var(--sky) 93%, transparent);
   --hairline: color-mix(in srgb, var(--rule) 35%, transparent);
 
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
