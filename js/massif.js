@@ -71,6 +71,17 @@ export class Massif {
     }
     walk(last, pxOf(hutStop));
 
+    // Over a bridge the next terrace is nearer than the last, and a nearer thing
+    // under the light stands higher: so the camera goes down that much more as
+    // you cross, and a bridge always goes down to the terrace it lands on.
+    const zAt = (s) => cam.path(s)[2], rise = (cam.lampFrac - cam.h0) * S, drops = [];
+    knots.forEach(([b, , kind], i) => {
+      if (kind !== 'bridge') return;
+      const a = knots[i - 1][0], Zf = i === knots.findIndex((k) => k[2] === 'bridge') ? 1 : zAt(knots[i - 2][0]) + M.near, Zt = zAt(b) + M.near;
+      drops.push([a, b, rise * Math.max(0, Zf - Zt) + 0.6]);
+    });
+    cam.descend(drops);
+
     // ---------- the mountain: the peak's painting and the massif under it, at Z = 1 ----------
     const firstLand = lands[0], depart = firstLand - bl;
     const bodyRoute = this.locus(knots[1][0], depart, 1);
@@ -460,7 +471,7 @@ export class Massif {
       for (let j = f; j <= e; j++) {
         const ch = ln[j];
         // inside its outline a tree is needles and leaves, not air
-        if (ch === ' ') { const v = hash(j, i, t.seed % 997); if (v < (t.kind === 'pine' ? 0.5 : 0.3) && !foot) marks.push([j, v < 0.18 ? ':' : v < 0.34 ? "'" : '.', t.kind === 'pine' ? P.pineDark : t.kind === 'birch' ? P.birchLeaf : t.olive ? P.leafOlive : P.leaf, 0.45]); continue; }
+        if (ch === ' ') { const v = hash(j, i, t.seed % 997); if (v < (t.kind === 'pine' ? 0.4 : 0.22) && !foot && (i + j) % 2 === 0) marks.push([j, t.kind === 'pine' ? (v < 0.3 ? '^' : v < 0.5 ? ':' : "'") : v < 0.18 ? ':' : v < 0.34 ? "'" : '.', t.kind === 'pine' ? (j > (w - 1) / 2 ? P.pineDark : P.pine) : t.kind === 'birch' ? P.birchLeaf : t.olive ? P.leafOlive : P.leaf, t.kind === 'pine' ? 0.6 : 0.45]); continue; }
         const shade = t.dark || j > (w - 1) / 2 + 0.6;
         if (t.kind === 'pine') marks.push([j, ch, !foot && (i < snowy || (i === snowy && snowy > 1 && j === f)) ? P.snow : foot || shade ? P.pineDark : P.pine, 1]);
         else if (t.kind === 'birch') { const bark = ch === '|' || ch === '!'; marks.push([j, ch, bark ? P.birch : P.birchLeaf, bark ? 0.92 : shade ? 0.62 : 0.95]); }
@@ -469,7 +480,7 @@ export class Massif {
       return { f, e, marks };
     });
     // its body: darker than the sky behind it, so you never see through it
-    const body = mixHex(P.sky, t.kind === 'pine' ? P.pineDark : t.kind === 'birch' ? P.pineDark : P.ground, t.kind === 'pine' ? 0.45 : 0.3);
+    const body = mixHex(P.sky, t.kind === 'pine' ? P.pineDark : t.kind === 'birch' ? P.pineDark : P.ground, t.kind === 'pine' ? 0.24 : 0.22);
     return { rows, h, w, body };
   }
 

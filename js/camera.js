@@ -23,7 +23,7 @@
 // half of that, made as they are wanted. What a nearer thing hides is not
 // drawn at all.
 
-import { clamp } from './util.js';
+import { clamp, smooth } from './util.js';
 import { D } from './direction.js';
 
 const T = 256;   // a tile's side, in device pixels
@@ -48,6 +48,7 @@ export class Camera {
     const yEnd = sc.summitRow + (this.h0 - C.top) * S / kEnd;
     this.fall = Math.max((yEnd - y0) / S, E * 0.4);
     this.a = clamp((this.fall - E) / (this.U - E), 0.03, 1);
+    this.E = E; this.drops = []; this.dropped = 0;
     // the sideways slant, in columns a row of scroll, once it is in
     this.slant = clamp(C.slant * g.w / g.h, ...C.within) * g.cellH / g.cellW;
     this.occluders = []; this.kept = 0; this.frame = 0;
@@ -61,8 +62,19 @@ export class Camera {
   path(s) {
     const S = this.S, C = D.camera, x = this.slide(s);
     if (s <= this.from) return [x, s - this.yOff, 0];
-    const u = (s - this.from) / S, e = C.ease * (1 - Math.exp(-u / C.ease));
-    return [x, this.from - this.yOff + S * (this.a * u + (1 - this.a) * e), -this.back * (u - e) / this.Fz];
+    const u = (s - this.from) / S, e = C.ease * (1 - Math.exp(-u / C.ease)), a = this.a;
+    // the steady way down, less what is taken in drops; then the drops, one over each bridge
+    let y = this.from - this.yOff + (S * this.fall - this.dropped) * (a * u + (1 - a) * e) / (a * this.U + (1 - a) * this.E);
+    for (const [s0, s1, h] of this.drops) y += h * smooth(s0, s1, s);
+    return [x, y, -this.back * (u - e) / this.Fz];
+  }
+  // Going over a bridge the camera goes down by h more, and less elsewhere, so it ends where it would have:
+  // [[from scroll, to scroll, rows]]. No more than most of the way down is taken.
+  descend(drops) {
+    const want = drops.reduce((t, d) => t + d[2], 0), most = 0.8 * this.S * this.fall, k = want > most ? most / want : 1;
+    this.drops = drops.filter((d) => d[0] > this.from).map(([a, b, h]) => [a, b, h * k]);
+    this.dropped = this.drops.reduce((t, d) => t + d[2], 0);
+    this.look(this.s);
   }
   slide(s) {
     const { ramp, rise } = D.camera, S = this.S, r = ramp * S, d = Math.max(0, s - this.from), t = Math.min(d / r, 1), on = Math.max(0, d - r), rest = this.U * S - r;
