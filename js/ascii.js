@@ -540,6 +540,7 @@ export class AsciiScene extends HTMLElement {
       if (!reduced) this.life.front();
     }
     this.lamp(top);
+    if (below && !reduced) this.life.drawLeaves(...this.lampAt);
     this.drawRoute(top, time, reduced);
     if (below) this.air.drawClouds(true);
 
@@ -572,6 +573,7 @@ export class AsciiScene extends HTMLElement {
     }
     if (lit.weight > 1e-3) this.lampX = lit.sum / lit.weight;
     const x = this.lampX ?? g.w / 2;
+    this.lampAt = [x, y, r0, r1];
     // the dark comes on below the summit: up there the sky is the light
     const dark = K.dark * smooth(L.summit + 0.1, L.seam + 0.45, this.centre);
     if (dark > 0.01) {
@@ -613,9 +615,10 @@ export class AsciiScene extends HTMLElement {
     }
     // waypoints
     const FIX = {
-      axe: [['T', -0.6, 0.15, 1.5, P.rockLight]],
+      // drawn at the page's type size out of a few characters, never one large glyph
+      axe: [['|', -0.7, 0.45, 1, P.rockLight], ['T', -0.7, -0.4, 1, P.rockLight]],
       cairn: [['O', -0.78, 0.3, 1.1, P.rockLight], ['o', -0.82, -0.38, 0.9, P.rockLight], ['o', -0.76, -0.95, 0.6, P.rockLight]],
-      post: [['T', -0.6, 0, 1.7, mixHex(P.ground, P.leaf, 0.45)]],
+      post: [['|', -0.75, 0.5, 1, mixHex(P.ground, P.leaf, 0.45)], ['|', -0.75, -0.35, 1, mixHex(P.ground, P.leaf, 0.45)], ['-', -0.4, -0.95, 1, mixHex(P.ground, P.leaf, 0.45)]],
       hut: [],
     };
     for (const s of this.lights) {
@@ -631,7 +634,7 @@ export class AsciiScene extends HTMLElement {
       }
       for (const [ch, dx, dy, k, color] of FIX[s.mark]) g.ink(ch, color, x + dx * u, y + dy * u, k * u, a);
       // the lantern: a glow, the flame, and when its card is open a ring round it
-      g.ink('o', P.ember, x, y, u * 2.7, (0.1 + 0.2 * live) * a);
+      g.ink('o', P.ember, x, y, u * 1.9, (0.1 + 0.2 * live) * a);
       if (s.mark === 'hut') { for (const [ch, dx] of [['[', -0.5], [']', 0.5]]) g.ink(ch, P.emberHot, x + dx * g.cellW * this.ground.k, y, u, live * a); }
       else { g.ink('o', P.ember, x, y, u * 0.85, a); g.ink('o', P.emberHot, x, y, u * 0.85, lit * a); }
       if (lit > 0.05) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.ink('·', P.ember, x + dx * u * 1.25, y + dy * u * 1.25, u, 0.8 * live * a);

@@ -17,7 +17,7 @@
 import { clamp, smooth, mulberry32, wrapPi, edge, mixHex } from './util.js';
 import { D } from './direction.js';
 
-const TILE = 256, PAINT_MS = 5;   // a tile's side, in device pixels; the time a frame may spend painting tiles
+const TILE = 256, PAINT_MS = 5, MIST = 0.11, MIST_ROWS = 5;   // a tile's side, in device pixels; the time a frame may spend painting tiles
 
 // straight runs between points [[x, y], ...]
 const line = (pts) => (x) => {
@@ -326,7 +326,7 @@ export class Massif {
         const marks = [];
         for (let j = f; j <= e; j++) {
           const ch = line[j]; if (ch === ' ') continue;
-          const foot = i === h - 1 && (ch === '|' || leafy), right = j > (w - 1) / 2 + 0.6;
+          const foot = leafy ? !/[&,()`]/.test(line) : i === h - 1 && ch === '|', right = j > (w - 1) / 2 + 0.6;
           marks.push(leafy ? [j, ch, foot ? P.ground : olive ? P.leafOlive : P.leaf, !foot && (dark || right) ? 0.6 : 1]
             : [j, ch, !foot && (i < snowy || (i === snowy && snowy > 1 && j === f)) ? P.snow : foot || dark || right ? P.pineDark : P.pine, 1]);
         }
@@ -340,7 +340,7 @@ export class Massif {
     const snowOn = (at) => at < Y.forest - 0.15 ? 2 : at < Y.forest + 0.3 ? (rnd() < 0.75 ? 2 : 1) : at < Y.forest + 0.95 ? (rnd() < 0.6 ? 1 : 0) : 0;
     const density = (at) => smooth(Y.treeline - 0.1, Y.forest + 0.2, at);
     // a tree's own size: a little smaller at the treeline, a little chance, and its drawing's rows made up to the common height
-    const sizeOf = (d, shape, leafy) => (0.82 + 0.18 * d) * (0.94 + rnd() * 0.12) * (leafy ? 3.8 : 4.6) / shape.length;
+    const sizeOf = (d, shape, leafy) => (0.82 + 0.18 * d) * (0.94 + rnd() * 0.12) * (leafy ? 4.4 : 4.6) / shape.length;
     for (let c = 2 + Math.floor(rnd() * 3); c < W - 3; c += 3 + Math.floor(rnd() * 3)) {
       if (!Number.isFinite(peak[c])) continue;
       const r = Math.round(peak[c]), at = r / S, d = density(at);
@@ -375,6 +375,19 @@ export class Massif {
     // above, so its edge reads against whatever is behind it
     const wide = l.mask = mask.map((m) => Uint8Array.from(m));
     for (let i = 0; i < rowsN; i++) for (let c = 0; c < W; c++) if (mask[i][c]) { if (c > 0) wide[i][c - 1] = 1; if (c + 1 < W) wide[i][c + 1] = 1; if (i > 0) wide[i - 1][c] = 1; }
+
+    // Mist behind its crest: where the trees are, a pale haze rises off each ridge into the air behind it, thinning
+    // upward, so ridge stands off from ridge and the one behind is that much further away.
+    const haze = rgb(P.dim);
+    for (let x = 0; x < W; x++) {
+      const pk = peak[x]; if (!Number.isFinite(pk)) continue;
+      if (smooth(Y.treeline + 0.05, Y.forest, pk / S) < 0.5 || (l.core && pk <= sc.seamRow + sc.blend + 2)) continue;
+      for (let up = 1; up <= MIST_ROWS; up++) {
+        const i = Math.floor(pk) - up - base; if (i < 0 || i >= rowsN) continue;
+        const p4 = (i * W + x) * 4, a = 255 * MIST * (1 - (up - 0.5) / MIST_ROWS) ** 2;
+        if (a > px[p4 + 3]) { px[p4] = haze[0]; px[p4 + 1] = haze[1]; px[p4 + 2] = haze[2]; px[p4 + 3] = a; }
+      }
+    }
 
     // what each row covers, as runs, for hiding whatever is behind
     l.wash = document.createElement('canvas'); l.wash.width = W; l.wash.height = rowsN;
@@ -477,7 +490,7 @@ export class Massif {
         if (!covers) full = false;
       }
       // is there any of its ground's wash here: it is only just under the crest
-      for (let cc = c0; cc <= c1 && !inked; cc++) { const pk = l.peak[cc]; if (pk > l.base + i0 - 27 && pk <= l.base + i1 + 1) inked = true; }
+      for (let cc = c0; cc <= c1 && !inked; cc++) { const pk = l.peak[cc]; if (pk > l.base + i0 - 27 && pk <= l.base + i1 + 1 + MIST_ROWS) inked = true; }
       g.into(ix, () => {
         ix.drawImage(l.wash, c0, i0, c1 - c0 + 1, i1 - i0 + 1, ox + c0 * cws, oy + i0 * chs, (c1 - c0 + 1) * cws, (i1 - i0 + 1) * chs);
         for (let i = i0; i <= i1; i++) {
@@ -497,9 +510,12 @@ export class Massif {
           if (foot < -2 * chk || foot - (tr.h + 1) * chk > t + 2 || left > t + 2 || left + (tr.w + 2) * cwk < -2) continue;
           tr.rows.forEach((row, i) => {
             if (row.e < row.f) return;
-            const y = foot - (tr.h - i) * chk, bx = left + (row.f - 0.6) * cwk, bw = (row.e - row.f + 2.2) * cwk;
-            dx.fillRect(bx, y - 0.5, bw, chk + 1); boxed = any = inked = true;
-            ix.globalCompositeOperation = 'destination-out'; ix.globalAlpha = 1; ix.fillRect(bx, y - 0.5, bw, chk + 1); ix.globalCompositeOperation = 'source-over'; g.alpha = NaN;
+            // A tree hides what is behind it, but its body is the colour of the ground it stands on, not a black box:
+            // behind it, the dark (in the dark layer) and over that its own ridge's wash again (in the ink), tight to its shape.
+            const y = foot - (tr.h - i) * chk, bx = left + (row.f - 0.1) * cwk, bw = (row.e - row.f + 1.2) * cwk, by = y - 0.5, bh = chk + 1;
+            dx.fillRect(bx, by, bw, bh); boxed = any = inked = true;
+            ix.globalCompositeOperation = 'destination-out'; ix.globalAlpha = 1; ix.fillRect(bx, by, bw, bh); ix.globalCompositeOperation = 'source-over'; g.alpha = NaN;
+            ix.drawImage(l.wash, (bx - ox) / cws, (by - oy) / chs, bw / cws, bh / chs, bx, by, bw, bh);
             for (const [j, glyph, color, a] of row.marks) g.set(glyph, color, left + j * cwk, y, g.size * k, a);
           });
         }

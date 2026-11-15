@@ -27,7 +27,7 @@ const RUN = [['~', -1.2, -0.1, 1.5, 'leaf'], ['o', -0.2, 0, 1.1, 'leaf'], ['o', 
 export class Life {
   constructor(sc) {
     this.sc = sc;
-    const rnd = this.rnd = mulberry32(31), S = sc.screenRows, L = D.layout;
+    const rnd = this.rnd = mulberry32(31), S = sc.screenRows, L = D.layout, P = sc.P;
     // snow lives in the world, between the cloud base and the upper forest, at three depths.
     // k is a depth: how large a flake is and how fast it passes, against the page.
     this.z0 = L.snow[0] * S; this.z1 = L.snow[1] * S;
@@ -36,7 +36,16 @@ export class Life {
       const u = rnd(), tier = u < 0.42 ? 0 : u < 0.93 ? 1 : 2;
       return { x: rnd(), y: this.z0 + rnd() * (this.z1 - this.z0), tier, ch: this.tiers[tier].ch || (rnd() < 0.7 ? '*' : '+'), phase: rnd() * 6.28 };
     });
-    this.leaves = []; this.leafAcc = 0;
+    // Leaves, from where the broadleaves begin to the ground: a standing
+    // field like the snow, at three depths, thicker the further down. rank: a
+    // leaf is there only where the fall is thick enough for it, so the fall
+    // thickens leaf by leaf. They show in the dark too, brightest in your light.
+    this.l0 = (L.forest - 0.25) * S; this.l1 = sc.groundRow;
+    this.depths = [{ k: 0.8, size: 0.85, a: 0.75, fall: 1.3 }, { k: 1.1, size: 1.1, a: 0.95, fall: 1.9 }, { k: 1.5, size: 1.6, a: 1, fall: 2.6 }];
+    this.fall = Array.from({ length: Math.round(sc.cols * (this.l1 - this.l0) / 40) }, () => {
+      const u = rnd(), v = rnd();
+      return { x: rnd(), y: this.l0 + rnd() * (this.l1 - this.l0), tier: u < 0.4 ? 0 : u < 0.86 ? 1 : 2, rank: rnd(), phase: rnd() * 6.28, frame: Math.floor(rnd() * 3), color: v < 0.5 ? P.leaf : P.leafOlive };
+    });
     this.flock = null; this.nextFlock = 2.5;
     this.owl = { state: 'away', wait: 1, x: 0, y: 0, s: 1, dir: 1 };
     this.squirrels = [0, 1].map((i) => ({ state: 'away', wait: 0.5 + i * 3, side: i ? 1 : -1, x: 0, y: 0, s: 1, dir: 1 }));
@@ -65,21 +74,14 @@ export class Life {
     const trees = this.trees = inWood ? sc.massif.perches() : [];
     const find = (id) => trees.find((q) => q.id === id);
 
-    // --- leaves: off the leafy trees you can see. They fall in the world, a little nearer than the trees. ---
-    const leafy = trees.filter((q) => q.leafy && q.top > 0 && q.top < H);
-    this.leafAcc += dt * Math.min(leafy.length, 22) * 0.28;
-    while (this.leafAcc >= 1) {
-      this.leafAcc--;
-      if (!leafy.length || this.leaves.length > 220) continue;
-      const q = pick(leafy);
-      this.leaves.push({ x: q.x + (rnd() - 0.5) * 3 * g.cellW * q.s, y: sc.centreRow + (q.top + g.cellH * q.s - H / 2) / (g.cellH * q.ls), k: q.ls, size: q.s, phase: rnd() * 6.28, color: rnd() < 0.55 ? sc.P.leaf : sc.P.leafOlive, age: 0, life: 5 + rnd() * 7, frame: Math.floor(rnd() * 3) });
+    // --- leaves: they flutter, so a leaf falls in fits and slides from side to side ---
+    for (const f of this.fall) {
+      const T = this.depths[f.tier];
+      f.y += T.fall * (0.6 + 0.4 * Math.sin(t * 3 + f.phase)) * dt;
+      f.x += (Math.sin(t * 2.1 + f.phase) * 1.6 + wind * 0.6) * T.k * dt / sc.cols;
+      if (f.y > this.l1) { f.y = this.l0; f.x = rnd(); }
+      f.x -= Math.floor(f.x);
     }
-    this.leaves = this.leaves.filter((l) => {
-      l.age += dt;
-      l.y += 1.7 * (0.65 + 0.35 * Math.sin(t * 3 + l.phase)) * dt * l.size / l.k;
-      l.x += (Math.sin(t * 2.1 + l.phase) * 1.5 + wind * 0.5) * g.cellW * dt;
-      return l.age < l.life && l.y < sc.groundRow;
-    });
 
     // --- a flock, far off, once in a while, below the clouds ---
     this.nextFlock -= dt;
@@ -187,11 +189,26 @@ export class Life {
     }
   }
 
-  // in front of it: the nearer snow, leaves, the owl, the squirrels
+  // how thick the leaf fall is at a height: a few where the first broadleaves are, all of them a screen and a half lower
+  leavesAt(y) { const S = this.sc.screenRows; return 0.12 + 0.88 * smooth(this.l0 + 0.2 * S, this.l0 + 1.6 * S, y); }
+  // The leaves are drawn after the mountain has been put out round your
+  // light, so the whole fall shows: brightest in the light (at x, y, from r0
+  // out to r1), and still there in the dark.
+  drawLeaves(x, y, r0, r1) {
+    const sc = this.sc, g = sc.grid, t = sc.time, H = g.h, G = D.glyphs.leaves;
+    for (const f of this.fall) {
+      const T = this.depths[f.tier], py = H / 2 + (f.y - sc.centreRow) * g.cellH * T.k;
+      if (py < -10 || py > H + 10 || f.rank > this.leavesAt(f.y)) continue;
+      const px = f.x * (g.w + 20) - 10, lit = 1 - smooth(r0, r1, Math.hypot(px - x, py - y));
+      // it comes to rest on the ground: gone over its last rows
+      g.ink(G[(f.frame + Math.floor(t * 3 + f.phase)) % 3], f.color, px, py, g.size * T.size, T.a * (0.5 + 0.5 * lit) * smooth(this.l0, this.l0 + 6, f.y) * (1 - smooth(this.l1 - 3, this.l1, f.y)));
+    }
+  }
+
+  // in front of it: the nearer snow, the owl, the squirrels
   front() {
     const sc = this.sc, g = sc.grid, t = sc.time, H = g.h;
     this.snow(1); this.snow(2);
-    for (const l of this.leaves) g.ink(D.glyphs.leaves[(l.frame + Math.floor(t * 3 + l.phase)) % 3], l.color, l.x, H / 2 + (l.y - sc.centreRow) * g.cellH * l.k, g.size * l.size, Math.min(1, l.age * 3, (l.life - l.age) * 1.5));
     const O = this.owl;
     if (O.state !== 'away') {
       const u = g.size * Math.min(O.s, 1.8) * 1.0, blink = (t * 0.31 + 0.2) % 1 > 0.96;
