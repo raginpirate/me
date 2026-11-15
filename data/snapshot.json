@@ -1,0 +1,123 @@
+{
+ "fetched": "2026-11-05T00:00:00Z",
+ "items": [],
+ "commits": [
+  {
+   "at": "2026-08-22T11:28:36-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "feat!: Express instrument requirements with request constraints, split PAN and Network Token credential types (#424)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/d25cce308428615061871bc65885435b84273f94",
+   "sha": "d25cce308428615061871bc65885435b84273f94"
+  },
+  {
+   "at": "2026-08-21T22:32:08-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "remove dead account_info.json (#639)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/6907368bee06f67db91881de9629103b3d90b6d2",
+   "sha": "6907368bee06f67db91881de9629103b3d90b6d2"
+  },
+  {
+   "at": "2026-08-21T22:22:34-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "feat: Introduce anyOf constraint with payments example (#757)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/3c4b4684c47c72efa9d422d8b897e7a97535014d",
+   "sha": "3c4b4684c47c72efa9d422d8b897e7a97535014d"
+  },
+  {
+   "at": "2026-08-21T11:17:15-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "remove omitted ids from checkout rest examples (#646)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/6306e72014111ef03da478e8f2325deb995a7fb0",
+   "sha": "6306e72014111ef03da478e8f2325deb995a7fb0"
+  },
+  {
+   "at": "2026-08-14T13:04:31-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "feat: Add Payment Terms (#602)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/a85255ec65a7dd553341156f8277c9e5fc23e008",
+   "sha": "a85255ec65a7dd553341156f8277c9e5fc23e008"
+  },
+  {
+   "at": "2026-08-04T18:10:47-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "feat: Add Payment Authentication Actions (#458)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/99e15a661f217c157b2906f576eddaa13c9d51fc",
+   "sha": "99e15a661f217c157b2906f576eddaa13c9d51fc"
+  },
+  {
+   "at": "2026-05-23T00:27:11-04:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "feat: Introduce the split payments extension (#409)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/e627e4c9c84b5a9b54fa19c7e0c2231e78c00d8e",
+   "sha": "e627e4c9c84b5a9b54fa19c7e0c2231e78c00d8e"
+  },
+  {
+   "at": "2026-02-25T08:48:46-05:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "Fix our breaking change to gracefully leverage our ucp transition schema (#196)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/bdbebfac1545775b265195260e9011f084dea963",
+   "sha": "bdbebfac1545775b265195260e9011f084dea963"
+  },
+  {
+   "at": "2026-02-25T08:29:05-05:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "fix: Mark checkout id as deprecated_required_to_omit for update requests (#145)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/8387480b92662c1f7e0961818ef04271456dde09",
+   "sha": "8387480b92662c1f7e0961818ef04271456dde09"
+  },
+  {
+   "at": "2026-02-25T00:21:26-05:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "feat: add available_instruments to payment handler configurations (#187)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/aa84ce15b5cc575e5c123651d2d62513cd1d2c9a",
+   "sha": "aa84ce15b5cc575e5c123651d2d62513cd1d2c9a"
+  },
+  {
+   "at": "2026-01-22T16:45:03-05:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "Cleanup payment responses from checkout schema (#103)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/5a7648aaa019b1909ece6b20908d023cb82acd6f",
+   "sha": "5a7648aaa019b1909ece6b20908d023cb82acd6f"
+  },
+  {
+   "at": "2026-01-20T15:32:36-05:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "fix last doc diffs (#85)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/cee2b72c34b116d7309c1312af24eeb647c1e441",
+   "sha": "cee2b72c34b116d7309c1312af24eeb647c1e441"
+  },
+  {
+   "at": "2026-01-18T10:50:52-05:00",
+   "repo": "Universal-Commerce-Protocol/ucp",
+   "kind": "commit",
+   "text": "Merged",
+   "detail": "refactor!: organize payments, services, and capabilities under same hierarchy (#49)",
+   "url": "https://github.com/Universal-Commerce-Protocol/ucp/commit/13fdb3d6f3564e51240719dca1ed766c2845d084",
+   "sha": "13fdb3d6f3564e51240719dca1ed766c2845d084"
+  }
+ ]
+}

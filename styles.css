@@ -1,0 +1,82 @@
+/* The page is a text document. Under html.is-scene it becomes the mountain: the scene behind, one card at a time over it.
+   The palette here is the one palette; js/art.js carries the same values for the scene. */
+
+:root {
+  --sky: #070a14; --sky-base: #0b0907; --ink: #e3e9f3; --muted: #8d9bb4; --dim: #5a6a86; --rule: #7f93b4; --star: #c9d8ee; --star-bright: #f2f6ff;
+  --ember: #f3c86b; --leaf: #d08a3a;
+  --wash: rgb(7 10 20 / 0.93); --hairline: rgb(127 147 180 / 0.35);
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --small: 0.8rem; --gutter: clamp(16px, 4vw, 48px); --stage: 1120px;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { background: var(--sky); }
+body { margin: 0; color: var(--ink); font-family: var(--mono); font-size: 0.92rem; line-height: 1.55; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; overflow-x: hidden; }
+a { color: var(--ember); text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 0.2em; }
+a:hover { text-decoration-color: currentColor; }
+:focus-visible { outline: 1px solid var(--ember); outline-offset: 3px; }
+h1, h2 { font: inherit; font-weight: 700; margin: 0; }
+h1 { font-size: 1.6rem; margin-bottom: 0.5rem; }
+h2 { font-size: 1rem; margin-bottom: 0.3rem; color: var(--star-bright); }
+p { margin: 0 0 0.7rem; }
+p:last-child { margin-bottom: 0; }
+time { display: block; color: var(--dim); font-size: var(--small); }
+.sub { color: var(--muted); }
+
+.scene, .hint, .fps { display: none; }
+.story { max-width: 44rem; margin: 0 auto; padding: 5rem var(--gutter) 4rem; }
+.card { padding: 1.6rem 0; border-top: 1px dashed var(--hairline); }
+.card p { max-width: 64ch; }
+.card-sky { border-top: 0; padding-top: 0; }
+.tag { font-size: clamp(0.86rem, 0.8rem + 0.35vw, 1.02rem); color: var(--star); line-height: 1.7; }
+.card-base a { color: var(--leaf); }
+.links { display: flex; gap: 1.4rem; margin-top: 0.9rem; }
+.colophon { margin-top: 1rem; font-size: var(--small); color: var(--muted); }
+.version { color: var(--dim); }
+
+/* the way to the mountain and back; when it cannot be drawn the button is off and says why */
+.mode-bar { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: clamp(12px, 2vw, 28px); z-index: 5; margin: 0; display: flex; align-items: center; gap: 0.7rem; max-width: calc(100% - 24px); font-size: var(--small); color: var(--muted); }
+.mode-note { background: var(--wash); text-align: right; }
+.mode { flex: none; padding: 0.3rem 0.6rem; border: 1px solid var(--dim); background: var(--wash); color: var(--muted); font: inherit; cursor: pointer; }
+.mode:hover:enabled { color: var(--ink); border-color: var(--rule); }
+.mode:disabled { color: var(--dim); border-style: dashed; cursor: default; }
+
+.gh-status { color: var(--muted); font-size: var(--small); margin-top: 0.8rem; }
+.gh-sum strong { color: var(--star-bright); }
+.gh-bars { margin: 0.6rem 0 1rem; font: inherit; line-height: 1.15; color: var(--ember); }
+.gh-bars span { color: var(--dim); }
+.gh-latest { list-style: none; margin: 0; padding: 0; font-size: var(--small); }
+.gh-latest li { padding: 0.25rem 0; border-top: 1px dashed var(--hairline); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gh-latest a { color: var(--ink); }
+
+/* --- the mountain --- */
+.is-scene body { touch-action: pinch-zoom; }
+.is-scene .scene { display: block; position: fixed; top: 0; left: 0; width: 100%; height: 100lvh; z-index: 0; pointer-events: none; background: var(--sky); }
+.is-scene .fps { display: block; position: fixed; left: 8px; bottom: 8px; z-index: 6; margin: 0; padding: 2px 6px; background: var(--wash); color: var(--muted); font: inherit; font-size: var(--small); }
+.is-scene .story { position: relative; z-index: 3; max-width: none; margin: 0; padding: 0; height: var(--world-height, 1050vh); pointer-events: none; }
+.is-scene .card { position: fixed; top: 50%; transform: translateY(-50%); width: min(25rem, 100% - 2 * var(--gutter)); padding: 1.1rem 1.3rem; background: var(--wash); border: 1px solid rgb(127 147 180 / 0.55); opacity: 0; pointer-events: none; }
+.is-scene .card::before, .is-scene .card::after { content: "+"; position: absolute; color: var(--rule); line-height: 1; background: var(--sky); padding: 0 1px; }
+.is-scene .card::before { left: -5px; top: -8px; }
+.is-scene .card::after { right: -5px; bottom: -8px; }
+.is-scene .card p { max-width: 46ch; }
+.is-scene .card[data-side="left"] { left: max(var(--gutter) + 2vw, 50% - var(--stage) / 2); }
+.is-scene .card[data-side="right"] { right: max(var(--gutter) + 4vw, 50% - var(--stage) / 2); }
+.is-scene .card-star { border-color: rgb(243 200 107 / 0.45); }
+.is-scene .card-star::before, .is-scene .card-star::after { color: var(--ember); }
+.is-scene .card-base { border-color: rgb(208 138 58 / 0.45); }
+.is-scene .card-base::before, .is-scene .card-base::after { color: var(--leaf); }
+.is-scene .card-sky { left: 50%; top: 52%; transform: translate(-50%, 0); width: auto; padding: 0; background: none; border: 0; text-align: center; }
+.is-scene .card-sky::before, .is-scene .card-sky::after { content: none; }
+.is-scene .card-sky h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* the name is drawn in stars */
+.is-scene .tag { margin: 0; }
+.is-scene .hint { display: block; margin-top: 2.6rem; font-size: var(--small); color: var(--dim); }
+.is-scene .hint::after { content: "·\A·\A·"; white-space: pre; display: block; line-height: 0.6; margin-top: 2px; background: linear-gradient(var(--dim), transparent); -webkit-background-clip: text; background-clip: text; color: transparent; }
+@media (prefers-reduced-motion: no-preference) {
+  .is-scene .tag, .is-scene .hint { animation: arrive 0.8s ease-out 3.3s both; }
+  .is-scene .hint { animation-delay: 3.9s; }
+}
+@keyframes arrive { from { opacity: 0; } }
+@media (max-width: 600px) {
+  .is-scene .card, .is-scene .card[data-side] { left: 50%; right: auto; top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: calc(100% - 2 * var(--gutter)); }
+  .is-scene .card-sky { top: 56%; bottom: auto; width: auto; }
+}

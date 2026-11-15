@@ -7,6 +7,9 @@ import { LAYOUT, TREES } from '../art.js';
 const GRASS = [',', '.', "'", '"', ',', '`'], TONE = { pineDark: 0, rockDark: 1, dim: 2 };
 const frac = (v) => v - Math.floor(v);
 
+// the route's mark on its k-th cell: a fixed rope on the ice, stones, then a trodden path
+export const pathMark = (k, at) => at < LAYOUT.ice ? (k % 4 === 0 ? ['+', 'muted', 0.8] : [':', 'muted', 0.5]) : at < LAYOUT.forest ? [k % 3 ? '.' : ',', 'muted', 0.6] : k % 7 === 3 ? ['=', 'muted', 0.45] : [k % 2 ? ':' : '.', 'muted', 0.5];
+
 // peakShows(row, col): the painted peak is drawn at this page cell (the core only shows where it is not)
 export function paintLobe(l, d, N, kx, peakShows) {
   const R = mulberry32(l.seed), { S, groundRow: G, bodyTop, seamRow } = d, { W, cx, crest, slope, seed, apex, kept } = l, core = l.kind === 'core', spire = l.kind === 'spire', ridge = l.span != null;
@@ -92,8 +95,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
     }
   }
   // the route's marks replace whatever was there: a fixed rope on the ice, stones, then a trodden path
-  const marks = new Map();
-  l.path.forEach(([c, r], k) => { const at = r / S; marks.set(r * W + c, at < LAYOUT.ice ? (k % 4 === 0 ? [r, c, '+', 'muted', 0.8] : [r, c, ':', 'muted', 0.5]) : at < LAYOUT.forest ? [r, c, k % 3 ? '.' : ',', 'muted', 0.6] : k % 7 === 3 ? [r, c, '=', 'muted', 0.45] : [r, c, k % 2 ? ':' : '.', 'muted', 0.5]); });
+  const marks = new Map(); l.path.forEach(([c, r], k) => marks.set(r * W + c, [r, c, ...pathMark(k, r / S)]));
   const all = new Map(cells.map((c) => [c[0] * W + c[1], c])); for (const [key, m] of marks) all.set(key, m);
   l.cells = [...all.entries()].sort((a, b) => a[0] - b[0]).map((e) => e[1]);
 

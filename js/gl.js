@@ -4,8 +4,8 @@ import { BYTES, FORMAT, LAYERS, LADDER, VERTEX, FRAGMENT } from './glsl.js';
 
 export const GLYPH0 = 2;   // glyph ids 0 and 1 are not characters (0 is a solid)
 
-export function makeGL(canvas, { font, chars }) {
-  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance' });
+export function makeGL(canvas, { font, chars, force = false }) {
+  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: !force });
   if (!gl) return null;
   const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const program = gl.createProgram();
@@ -34,7 +34,7 @@ export function makeGL(canvas, { font, chars }) {
   const atlasTex = gl.createTexture(), metricsTex = gl.createTexture(), washTex = []; let typePx = 0;
   function atlas(type) {
     typePx = type;
-    const [lo, hi] = LADDER, levels = hi - lo + 1, width = 2048, c = document.createElement('canvas'), x = c.getContext('2d', { willReadFrequently: true });
+    const [lo, hi] = LADDER, levels = hi - lo + 1, width = Math.min(4096, gl.getParameter(gl.MAX_TEXTURE_SIZE)), c = document.createElement('canvas'), x = c.getContext('2d', { willReadFrequently: true });
     const metrics = new Float32Array(levels * 2 * 4 * (chars.length + GLYPH0)), place = []; let px = 0, py = 0, shelf = 0;
     for (let l = 0; l < levels; l++) {
       const q = type * 2 ** ((l + lo) / 4); x.font = `${q}px ${font}`;
@@ -43,10 +43,11 @@ export function makeGL(canvas, { font, chars }) {
         const w = left + Math.ceil(m.actualBoundingBoxRight) + 1, h = top + Math.ceil(m.actualBoundingBoxDescent) + 1;
         if (px + w > width) { px = 0; py += shelf; shelf = 0; }
         place.push([ch, q, px + left, py + top]);
-        metrics.set([px, py, w, h, -left, -top, 0, 0], ((g + GLYPH0) * levels + l) * 8);
+        metrics.set([px, py, w, h, -left, -top, (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2, (m.actualBoundingBoxDescent - m.actualBoundingBoxAscent) / 2], ((g + GLYPH0) * levels + l) * 8);
         px += w; shelf = Math.max(shelf, h);
       });
     }
+    if (py + shelf > gl.getParameter(gl.MAX_TEXTURE_SIZE)) throw new Error('the type does not fit a texture');
     c.width = width; c.height = py + shelf; x.fillStyle = '#fff'; x.textBaseline = 'alphabetic';
     for (const [ch, q, gx, gy] of place) { x.font = `${q}px ${font}`; x.fillText(ch, gx, gy); }
     const rgba = x.getImageData(0, 0, c.width, c.height).data, a = new Uint8Array(c.width * c.height);
@@ -59,9 +60,10 @@ export function makeGL(canvas, { font, chars }) {
     for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, p, gl.NEAREST);
   }
 
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, gl.createTexture()); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));   // no ground until a lobe brings one
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthFunc(gl.LEQUAL);
-  const set = { f: (n, v) => gl.uniform1f(U[n], v), v2: (n, a, b) => gl.uniform2f(U[n], a, b), v4: (n, a, b, c, d) => gl.uniform4f(U[n], a, b, c, d), fv3: (n, arr) => gl.uniform3fv(U[n], arr), fv4: (n, arr) => gl.uniform4fv(U[n], arr) };
-  let bound = null, lit = -1, test = -1, wash = -1;
+  const set = { f: (n, v) => gl.uniform1f(U[n], v), v3: (n, a, b, c) => gl.uniform3f(U[n], a, b, c), v2: (n, a, b) => gl.uniform2f(U[n], a, b), v4: (n, a, b, c, d) => gl.uniform4f(U[n], a, b, c, d), fv3: (n, arr) => gl.uniform3fv(U[n], arr), fv4: (n, arr) => gl.uniform4fv(U[n], arr) };
+  let lit = -1, test = -1, wash = -1, mask = -1;
   return {
     gl, layers, set, glyph: (ch) => { const i = chars.indexOf(ch); if (i < 0) throw new Error(`no glyph for ${ch}`); return i + GLYPH0; },
     get typePx() { return typePx; }, atlas,
@@ -81,19 +83,17 @@ export function makeGL(canvas, { font, chars }) {
       gl.depthMask(true); gl.colorMask(true, true, true, true); gl.clearColor(sky[0], sky[1], sky[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.bindBuffer(gl.UNIFORM_BUFFER, ubo); gl.bufferSubData(gl.UNIFORM_BUFFER, 0, layers);
       if (liveCount) { gl.bindBuffer(gl.ARRAY_BUFFER, live.buf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, liveBytes, 0, liveCount * BYTES); }
-      bound = null; lit = test = -1;
+      lit = test = mask = -1;
     },
     // draw a range. o.live: from the live buffer · o.test: hidden behind nearer opaque lobes · o.lit: after the dark · o.wash: [texture, x, y, w, h] · o.mask: depth only
     draw(first, count, o) {
       if (count <= 0) return;
-      const bank = o.live ? live : world; bank.point(first); bound = bank;
-      if (o.mask) { gl.colorMask(false, false, false, false); gl.depthMask(true); gl.enable(gl.DEPTH_TEST); test = -1; }
-      else {
-        if (test === -1) { gl.colorMask(true, true, true, true); gl.depthMask(false); }
-        const t = o.test ? 1 : 0; if (t !== test) { t ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST); test = t; }
-        const l = o.lit ? 1 : 0; if (l !== lit) { gl.uniform1f(U.uLit, l); lit = l; }
-        if (o.wash && o.wash[0] !== wash) { wash = o.wash[0]; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, washTex[wash]); gl.uniform4f(U.uWashBox, o.wash[1], o.wash[2], o.wash[3], o.wash[4]); }
-      }
+      (o.live ? live : world).point(first);
+      const m = o.mask ? 1 : 0, t = o.test || m ? 1 : 0, l = o.lit ? 1 : 0;
+      if (m !== mask) { gl.colorMask(!m, !m, !m, !m); gl.depthMask(!!m); gl.uniform1f(U.uMask, m); mask = m; }
+      if (t !== test) { t ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST); test = t; }
+      if (l !== lit) { gl.uniform1f(U.uLit, l); lit = l; }
+      if (o.wash && o.wash[0] !== wash) { wash = o.wash[0]; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, washTex[wash]); gl.uniform4f(U.uWashBox, o.wash[1], o.wash[2], o.wash[3], o.wash[4]); }
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     },
   };
