@@ -28,7 +28,7 @@ export function makeLive(gl, model, view, scene, cards) {
   const ink = (ch, name, x, y, size, alpha, kind = 0, p = 0) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x / cellW, top + y / cellH, 0, 0, 0, 0, size / typeSize, g(ch), colour(name), Math.min(1, alpha), PAGE, kind, INK | p); };
   const put = (ch, name, c, r, alpha) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(c, r, 0, 0, 0, 0, 1, g(ch), colour(name), Math.min(1, alpha), PAGE, 0, FREE); };
   // on a layer of its own (a lobe, the ground): offsets and sizes in that layer's type
-  const on = (li, x, y, ch, name, dx, dy, size, alpha) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x, y, dx * typeSize / cellW, dy * typeSize / cellH, 0, 0, size, g(ch), colour(name), Math.min(1, alpha), li, 0, INK | BARE); };
+  const on = (li, x, y, ch, name, dx, dy, size, alpha) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x, y, dx * typeSize / cellW / size, dy * typeSize / cellH / size, 0, 0, size, g(ch), colour(name), Math.min(1, alpha), li, 0, INK | BARE); };
   const section = (name, draw) => { const first = w.count; draw(); ranges[name][0] = first; ranges[name][1] = w.count - first; };
 
   function spring(p, [stiff, zeta, far, reach, most, share], held = 1) {

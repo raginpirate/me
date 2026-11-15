@@ -93,9 +93,13 @@ export function packRanges({ air, dims }, glyph) {
   return run(all[0].length + all[1].length, (w) => all.forEach((cells, n) => { for (const [c, row, ch, name, alpha] of cells) w.put(c, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, LAYER.range + n); }));
 }
 
+// How many of its own columns a cloud layer goes round in. The far layer is set small, so the screen is more of its
+// columns than the page has: it goes round over its own width, or its clouds would never reach the right edge.
+export const cloudSpan = (cols, n) => n === 0 ? cols / CLOUDS[0].k + 80 : cols + 80;
+
 // One depth of cloud. Each cloud hides what is behind it, column by column, then its outline and body.
 export function packClouds({ air, N, dims }, n, glyph) {
-  const { line, body, k } = CLOUDS[n], round = (dims.cols / k + 80) / (dims.cols + 80),   // a layer goes round over its own width
+  const { line, body, k } = CLOUDS[n], round = cloudSpan(dims.cols, n) / (dims.cols + 80),   // the far layer goes round over its own width
     shapes = air.clouds[n].map((c) => cloudColumns(c, N)), count = shapes.reduce((t, cols) => t + cols.reduce((m, col) => m + 1 + col[3].length, 0), 0);
   return run(count, (w) => air.clouds[n].forEach(([x, y, , , , , pinned], i) => {
     const li = pinned == null ? LAYER.cloud + n : LAYER.seam, kind = pinned == null ? KIND.cloud : KIND.plain, row = air.deckRow + y, at = pinned == null ? x * round : x;
