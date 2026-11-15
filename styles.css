@@ -65,7 +65,7 @@ time { display: block; color: var(--dim); font-size: var(--small); }
 .is-scene .card-star::before, .is-scene .card-star::after { color: var(--ember); }
 .is-scene .card-base { border-color: rgb(208 138 58 / 0.45); }
 .is-scene .card-base::before, .is-scene .card-base::after { color: var(--leaf); }
-.is-scene .card-sky { left: 50%; top: 52%; transform: translate(-50%, 0); width: auto; padding: 0; background: none; border: 0; text-align: center; }
+.is-scene .card-sky { left: 50%; top: 52%; transform: translate(-50%, 0); width: max-content; max-width: calc(100% - 2 * var(--gutter)); padding: 0; background: none; border: 0; text-align: center; }
 .is-scene .card-sky::before, .is-scene .card-sky::after { content: none; }
 .is-scene .card-sky h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* the name is drawn in stars */
 .is-scene .tag { margin: 0; }
@@ -78,5 +78,5 @@ time { display: block; color: var(--dim); font-size: var(--small); }
 @keyframes arrive { from { opacity: 0; } }
 @media (max-width: 600px) {
   .is-scene .card, .is-scene .card[data-side] { left: 50%; right: auto; top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: calc(100% - 2 * var(--gutter)); }
-  .is-scene .card-sky { top: 56%; bottom: auto; width: auto; }
+  .is-scene .card-sky { top: 56%; bottom: auto; width: max-content; }
 }
