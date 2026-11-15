@@ -17,7 +17,6 @@
 
 import { clamp, smooth, mulberry32, edge, mixHex } from './util.js';
 import { D } from './direction.js';
-import { face } from './world.js';
 import { tree } from './trees.js';
 import { Ground } from './ground.js';
 
@@ -75,12 +74,14 @@ export class Massif {
     tops.forEach((t, i) => {
       if (t.brow) return;
       const mid = this.trail(t.y - gap / 2), dir = this.trail(t.y + 0.25 * S) >= this.trail(t.y - 0.25 * S) ? 1 : -1;
-      t.cross = [mid - dir * (t.reach = clamp((5 + rnd() * 3) * kx, 5, 11) * g.cellW * depth(i + 1) / 2), mid + dir * t.reach];
+      t.cross = [mid - dir * (t.reach = clamp((3.5 + rnd() * 2) * kx, 3.5, 7.5) * g.cellW * depth(i + 1) / 2), mid + dir * t.reach];
     });
     for (const t of tops) if (t.cross) knots.push([t.y - gap, t.cross[0]], [t.y, t.cross[1], true]);
     knots.sort((p, q) => p[0] - q[0]);
-    knots.forEach((k, i) => { if (i && !k[2] && k[0] - knots[i - 1][0] > 0.5 * S) k[3] = 2 * Math.round((k[0] - knots[i - 1][0]) / (0.45 * S)); });
-    this.swing = 2.2 * kx * g.cellW;
+    // switchbacks: [the shortest stretch that has them, screens of travel to each, how wide they swing]
+    const [shortest, each, swing] = M.switchback;
+    knots.forEach((k, i) => { if (i && !k[2] && k[0] - knots[i - 1][0] > shortest * S) k[3] = 2 * Math.round((k[0] - knots[i - 1][0]) / (each * S)); });
+    this.swing = swing * kx * g.cellW;
 
     // ---------- the sheets ----------
     const sheets = this.sheets = [];
@@ -101,7 +102,7 @@ export class Massif {
     const covered = (L.forest + 1.3) * S;                          // the camera's row by which the ridges have covered it
     const bx0 = -6, bW = Math.ceil(cam.wx(g.w, covered)) + 6 - bx0, bRows = Math.ceil(cam.wy(g.h, covered)) - sc.bodyTop + 4;
     add({
-      kind: 'body', z: depth(0), x0: bx0, W: bW, cx: sc.ax - bx0, base: sc.bodyTop - 10, rowsN: bRows + 10, deep: bRows, seed: 1, fill: P.sky,
+      kind: 'body', z: depth(0), x0: bx0, W: bW, cx: sc.ax - bx0, hL: coreL, hR: coreR, base: sc.bodyTop - 10, rowsN: bRows + 10, deep: bRows, seed: 1, fill: P.sky,
       peak: this.outline({ W: bW, cx: sc.ax - bx0, tall: bRows, hL: coreL, hR: coreR, rag: 4, seed: 1 }).map((v) => v + sc.bodyTop),
       from: sc.bodyTop + rest, to: tops[0].y - gap, stop: marked.find((s) => s.at <= L.ice),
     });
@@ -208,38 +209,74 @@ export class Massif {
     // past where the route leaves a sheet for a nearer one, the sheet is behind you: it is dimmer there
     const leave = path[path.length - 1][1], recede = (r) => 1 - M.recede * smooth(leave - 0.05 * S, leave + 0.45 * S, r);
 
-    // --- bare rock and snow, in the peak's hand: lit from the left, down to where the trees close over it ---
+    // --- bare rock and snow, down to where the trees close over it. Light comes from the left: the face to the
+    // left of an arête is lit, the face to its right is in shadow, and where a shadowed face meets the next lit
+    // one there is a fold. A lit face is weathered, bare in patches; one in shadow is a few marks in the dark. ---
     const rockEnd = Math.min(bottom, Math.round(Y.forest * S) + 1);
     if (top < rockEnd) {
-      // Ribs come down a face from its top and spread as it spreads. The
-      // one down its middle parts the face that looks left, which is lit,
-      // from the one that looks right, which is not: that is the peak. Each
-      // other rib, from where it starts, throws a shadow to its right on
-      // the lit side, or catches the light on its left on the dark side.
-      const ribs = body ? M.ribs : [[0, 0]], crest = [], own = new Map(), from = body ? sc.bodyTop : top, [shadow, glint] = M.cast;
-      for (let r = top; r < rockEnd; r++) {
-        const down = Math.max(0, r - from) / S, half = body ? sc.seamHalf * (1 + M.spread * down) : 30 * kx, last = crest[crest.length - 1];
-        const row = ribs.map(([t, start], k) => ({ t, on: t ? smooth(start, start + 0.3, down) : 1, x: cx + (t + (n.fbm(r * 0.05, k * 3.7 + sh.seed, 3) - 0.5) * 0.34 * smooth(0, 0.3, down)) * half }));
-        row.half = half; row.mid = row.find((p) => !p.t).x; crest.push(row);
-        if (last && body) row.forEach((p, k) => { const c = Math.round(p.x), dc = c - Math.round(last[k].x); if (p.on > 0.3) own.set(r * W + c, dc < 0 ? '/' : dc > 0 ? '\\' : '|'); });
-      }
-      const lit = (c, r) => {
-        const row = crest[r - top], left = c < row.mid; let sun = left ? 1 : 0;
-        for (const p of row) {
-          const u = left ? (c - p.x) / (shadow * row.half) : (p.x - c) / (glint * row.half);
-          if (p.t && u >= 0 && u < 1) sun = left ? Math.min(sun, 1 - p.on * Math.min(1, (1 - u) * 2.5)) : Math.max(sun, p.on * (1 - 0.5 * u));
+      const onRidge = new Map(), crossings = new Map();
+      const walk = (c, r, lean, len) => {
+        for (let i = 0; i < len && r < rockEnd - 1; i++) {
+          const v = n.noise(c * 0.11 + i * 0.05 + sh.seed, r * 0.05 + lean * 7);
+          const dc = (v < 0.42 - lean * 0.12 ? -1 : v > 0.58 - lean * 0.12 ? 1 : 0) * (rnd() < 0.7 ? 1 : 0);
+          r++; c = clamp(c + dc, 1, W - 2);
+          if (r < peak[c] + 1) break;
+          onRidge.set(r * W + c, dc < 0 ? '/' : dc > 0 ? '\\' : '|');
+          if (!crossings.has(r)) crossings.set(r, []);
+          crossings.get(r).push(c);
         }
-        return sun;
       };
-      const rock = face({
-        W, x0: sh.x0, r0: top, r1: rockEnd, peak, S, P, seed: sh.seed + 7, lift: 0.16, ice: Y.ice * S, lit, arete: (r, c) => own.get(r * W + c),
-        axis: sh.x0 + cx, half: body ? sc.cols * 0.5 : Math.max(20, 30 * kx),
-      });
+      walk(cx, Math.round(peak[cx]), 0, 9999);
+      if (!body) { walk(cx - 1, Math.round(peak[cx]) + 5, -1.6, 26); walk(cx + 1, Math.round(peak[cx]) + 8, 1.6, 22); }
+      else {
+        walk(cx - 2, sc.bodyTop + Math.round(S * 0.35), -1.3, S * 1.1); walk(cx + 2, sc.bodyTop + Math.round(S * 0.6), 1.3, S);
+        // and one down from each shoulder, so the broad flanks are faces and folds, not one sheet
+        for (const [down, side, lean] of [[0.2, -1, -0.9], [0.34, 1, 0.9], [0.62, 1, 0.8], [0.74, -1, -0.8], [1.0, -1, -0.7], [1.15, 1, 0.7], [1.5, 1, 0.6], [1.6, -1, -0.6]]) {
+          const c = clamp(Math.round(cx + side * (side < 0 ? sh.hL : sh.hR)(down * S) * 0.8), 1, W - 2);
+          walk(c, Math.max(sc.bodyTop + Math.round(down * S), Math.ceil(peak[c]) + 1), lean, S * 0.9);
+        }
+      }
+      // The face the route goes down is the one you see: the rock either side of it falls away into the dark, so the
+      // mountain stands as a column against the sky, and the route and its bridges stand clear of what is behind.
+      const routeAt = new Float32Array(rockEnd - top).fill(NaN);
+      for (const [c, r] of path) if (r >= top && r < rockEnd && Number.isNaN(routeAt[r - top])) routeAt[r - top] = c;
+      for (const way of [1, -1]) { let last = NaN; for (let i = way > 0 ? 0 : routeAt.length - 1; i >= 0 && i < routeAt.length; i += way) if (Number.isNaN(routeAt[i])) routeAt[i] = last; else last = routeAt[i]; }
+      const [FACE, SPREAD] = M.lit;
+      const snowAbs = (c) => (Y.seam + 0.34) * S + (n.fbm(c * 0.09 + sh.seed, 2.2, 3) - 0.5) * 16;   // above this row everything is white
       for (let r = Math.max(top, base); r < rockEnd; r++) {
-        const wood = wooded(r); if (wood > 0.97) break;
-        const row = rock[r - top], out = cells[r - base];
-        const a = (1 - wood) * recede(r);
-        for (let c = 0; c < W; c++) { const cell = row[c]; if (cell && !kept.has(r * W + c)) out[c] = a < 0.99 ? [cell[0], cell[1], (cell[2] ?? 1) * a] : cell; }
+        const at = r / S, wood = wooded(r); if (wood > 0.6) break;
+        const cross = (crossings.get(r) || []).slice().sort((p, q) => p - q), out = cells[r - base], fade = recede(r);
+        const at0 = Number.isNaN(routeAt[r - top]) ? cx : routeAt[r - top], wide = SPREAD * (body ? sc.seamHalf * (1 + M.spread * Math.max(0, r - sc.bodyTop) / S) : 24 * kx);
+        for (let c = 0; c < W;) {
+          if (!(peak[c] <= r)) { c++; continue; }
+          let e = c; while (e + 1 < W && peak[e + 1] <= r) e++;           // one run of this row: c..e
+          for (let x = c; x <= e; x++) {
+            if (kept.has(r * W + x)) continue;
+            const depth = r - peak[x];
+            let k = 0; while (k < cross.length && cross[k] < x) k++;       // which face: count the arêtes to the left
+            const isArete = cross[k] === x, left = k > 0 ? cross[k - 1] : c, right = k < cross.length ? cross[k] : e;
+            const lit = cross.length ? (k === 0 ? 1 : x < (left + right) / 2 ? 0 : k < cross.length ? 1 : 0) : (slope[x] < 0 ? 1 : 0);
+            const patch = n.fbm(x * 0.17 + 4.2 + sh.seed, r * 0.11 + 1.1, 3), fine = n.noise(x * 0.9, r * 0.9 + sh.seed);
+            const snow = at < Y.treeline + 0.1 && r < snowAbs(x) + (isArete ? 11 : 0);
+            const edgeTop = depth < 1 && !(body && r <= sc.bodyTop + 1), gentle = Math.abs(slope[x]) <= 0.8;
+            let ch = ' ', color = P.rock, a = 1;
+            if (edgeTop && gentle && !snow) { ch = edge(peak[x] - Math.floor(peak[x]), slope[x]); color = lit ? P.rockLight : P.rock; a = 1 - wood; }
+            else if (x === c && snow && fine < 0.3) { ch = '@'; color = P.snow; }
+            else if (x === e && !lit && fine < 0.22) { ch = '%'; color = snow ? P.snow : P.rock; a = 0.8 * (1 - wood); }
+            else if (isArete) { ch = onRidge.get(r * W + x); color = snow ? P.snow : P.rockLight; a = 1 - wood; }
+            else {
+              // a ledge now and then, holding a line of snow
+              const ledge = !snow && at < Y.treeline && Math.floor(r + (n.noise(x * 0.05 + sh.seed, 7) - 0.5) * 9) % 9 === 0 && n.noise(x * 0.13 + sh.seed, r * 0.2) > 0.42;
+              if (snow) { ch = lit ? (patch > 0.6 ? '%' : '#') : fine > 0.42 ? ':' : fine > 0.2 ? '.' : ' '; color = P.snow; a = lit ? 1 : 0.55; }
+              else if (ledge) { ch = '_'; color = P.snow; a = lit ? 0.9 : 0.5; }
+              else if (lit) { ch = patch < 0.4 ? (fine < 0.22 ? '.' : ' ') : patch > 0.62 ? '#' : '%'; color = P.rockLight; a = (patch > 0.62 ? 1 : 0.88) * (1 - wood); }
+              else { ch = fine > 0.5 ? ':' : fine > 0.3 ? '.' : ' '; color = P.rock; a = 0.85 * (1 - wood); }
+            }
+            a *= fade * (FACE + (1 - FACE) * Math.exp(-(((x - at0) / wide) ** 2)));
+            if (ch !== ' ' && a > 0.03) out[x] = [ch, color, a];
+          }
+          c = e + 1;
+        }
       }
     }
 
@@ -260,7 +297,7 @@ export class Massif {
         }
         mask[i][x] = 1;
         if (wood < 0.5) continue;
-        if (depth < 26) { px[p4] = tone[0]; px[p4 + 1] = tone[1]; px[p4 + 2] = tone[2]; px[p4 + 3] = 255 * 0.32 * Math.exp(-depth / 6.5) * Math.min(1, depth + 0.3) * smooth(0.5, 0.8, wood); }
+        if (depth < 26) { px[p4] = tone[0]; px[p4 + 1] = tone[1]; px[p4 + 2] = tone[2]; px[p4 + 3] = 255 * M.wash * Math.exp(-depth / 6.5) * Math.min(1, depth + 0.3) * smooth(0.5, 0.8, wood); }
         if (depth > deep || wood < 0.6 || kept.has(r * W + x)) continue;
         if (depth < 1) cells[i][x] = [edge(peak[x] - Math.floor(peak[x]), slope[x]), slope[x] < 0.05 ? moss : P.pine, 0.95];
         else if (depth < 11 && rnd() < 0.3 * (1 - depth / 11)) cells[i][x] = [GRASS[Math.floor(rnd() * GRASS.length)], slope[x] < 0.05 ? P.pine : P.pineDark, 0.85 - depth * 0.05];
@@ -308,10 +345,10 @@ export class Massif {
       const r = Math.round(peak[c]);
       if (Number.isFinite(peak[c]) && r < bottom - 1 && rnd() < density(r / S) * 1.1) set(c, r);
     }
-    for (let r = Math.max(top, Math.round(Y.treeline * S)); r < bottom; r += 3) {
-      for (let c = 2 + (r * 7) % 5; c < W - 3; c += 5 + Math.floor(rnd() * 5)) {
+    for (let r = Math.max(top, Math.round(Y.treeline * S)); r < bottom; r += 2) {
+      for (let c = 2 + (r * 7) % 5; c < W - 3; c += 4 + Math.floor(rnd() * 4)) {
         const depth = r - peak[c];
-        if (depth >= 4 && depth <= deep && rnd() < density(r / S) * 0.92 * (1 - 0.6 * smooth(10, 44, depth))) set(c, r);
+        if (depth >= 4 && depth <= deep && rnd() < density(r / S) * (1 - 0.25 * smooth(10, 44, depth))) set(c, r);
       }
     }
     sh.reach = Math.ceil(Math.max(0, ...trees.map((t) => t.h)) * k) + 2;   // none is taller than this, in rows of the sheet
@@ -338,7 +375,7 @@ export class Massif {
       mask[i][c] = 1;
       cells[i][c] = at < Y.ice ? (k % 4 === 0 ? ['+', P.muted, 0.8] : [':', P.muted, 0.5])
         : at < Y.forest ? [k % 3 ? '.' : ',', P.muted, 0.6]
-        : k % 7 === 3 ? ['=', P.muted, 0.6] : [k % 2 ? ':' : '.', P.muted, 0.68];
+        : k % 7 === 3 ? ['=', P.muted, 0.85] : [k % 2 ? ':' : '.', P.muted, 0.9];
     });
     // every glyph the sheet is set in is made now, not while you scroll
     for (const t of trees) for (const row of t.rows) for (const [, ch, color] of row.marks) g.sprite(ch, color, t.font);
@@ -388,8 +425,13 @@ export class Massif {
         if (cell && !(body && row <= seam && !sh.kept.has(row * W + c) && sc.painted(row, sh.x0 + c))) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2] ?? 1);
       }
     }
-    // trees further up the face first; a glyph has no background, so a tree covers only the marks it stands over (taken out when painted)
-    drawTrees((t, row, x, y, cwk, chk) => { for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a); });
+    // Trees further up the face first. A tree has a body: between its outline's edges each row is shaded, so
+    // nothing behind shows through it and its branches are not sticks against what is behind.
+    const shade = mixHex(sh.fill, sc.P.pineDark, D.massif.body);
+    drawTrees((t, row, x, y, cwk, chk) => {
+      if (row.e > row.f) g.box(x + (row.f + 0.55) * cwk, y - 0.2, (row.e - row.f) * cwk, chk + 0.4, shade);   // inside its outline: the outline itself is its edge
+      for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a);
+    });
   }
 
   // Once you have crossed onto a wooded sheet, all that is behind it is a little further off in the dark: a veil
