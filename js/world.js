@@ -4,6 +4,10 @@ import { clamp } from './math.js';
 import { LAYOUT, STOPS, CARD, TYPE } from './art.js';
 import { makeName, makeStars } from './world/sky.js';
 import { makePeak, finishPeak } from './world/peak.js';
+import { makeGround, GROUND_K } from './world/ground.js';
+import { makeMassif } from './world/massif.js';
+import { paintLobe } from './world/lobe.js';
+import { hash } from './math.js';
 
 export function makeDims({ W, H, typeSize, cellW, cellH, stack }) {
   const S = H / cellH, rows = Math.ceil(LAYOUT.screens * S) + 2, end = rows - S, seamRow = Math.round(LAYOUT.seam * S);
@@ -15,7 +19,7 @@ function makeStops(d) {
   const mode = d.stack ? 'stack' : 'side', stage = Math.min(d.cols, TYPE.stage / d.cellW);
   const toT = (c) => clamp((c - 0.5) / LAYOUT.measure, 0, 1), restRow = (c) => clamp((c - 0.5) * d.S, 0, d.end);
   return STOPS.map((s, i) => {
-    const stop = { id: s.id, x: null, y: null, side: null, band: null, snap: 0, mark: s.mark ?? null, lobe: null };
+    const stop = { id: s.id, at: s.at, x: null, y: null, side: null, band: null, snap: 0, mark: s.mark ?? null, lobe: null };
     if (s.at) {
       const [screen, across] = s.at;
       Object.assign(stop, { x: Math.round(d.cols / 2 + (across - 0.5) * stage), y: Math.round(screen * d.S), side: across > 0.5 ? 'left' : 'right',
@@ -32,6 +36,17 @@ export function makeWorld(params, name = 'daniel wyckoff') {
   Object.assign(d, { topCol: peak.topCol, ax: peak.ax, seamHalf: peak.seamHalf });
   const asterism = makeName(d, name), covered = (x, row) => { const s = peak.span[row]; return !!s && x >= s[0] && x < s[1]; };
   const { stars, firstShot } = makeStars(d, covered, asterism);
-  finishPeak(peak, d.cols, []);
-  return { dims: d, stops, sky: { stars, name: asterism, firstShot }, peak, lobes: [], air: null, ground: null };
+  // the ground and the hut; the last stop's light is the hut's window, as it stands at the end of the page
+  const base = stops[stops.length - 1], ground = makeGround(d, base.x), endRow = d.end + d.S / 2;
+  base.x = ground.window[0] * GROUND_K; base.y = endRow + (d.groundRow + 1 + ground.window[1] - endRow) * GROUND_K;
+  const { lobes, turn, N } = makeMassif(d, stops, ground.door);
+  Object.assign(d, { kx: turn.kx, reach: turn.reach, leadRows: turn.leadRows });
+  // the painted peak thins out through the seam, and the core fills in exactly where it does not
+  const core = lobes.find((l) => l.kind === 'core'), shift = d.ax - core.cx - 0.5, clear = [];
+  for (const key of core.kept) { const r = Math.floor(key / core.W), c = key % core.W; if (r <= d.seamRow + 3) clear.push(r * d.cols + Math.round(shift + c)); }
+  const cleared = new Set(clear), peakShows = (row, col) => { const sp = peak.span[row]; return !!sp && col >= sp[0] && col < sp[1] && !cleared.has(row * d.cols + col) && (row < d.bodyTop || hash(row, col, 5) > (row - d.bodyTop) / 6); };
+  finishPeak(peak, d.cols, clear);
+  const paint = (i) => paintLobe(lobes[i], d, N, turn.kx, peakShows);
+  if (!params.lazy) lobes.forEach((_, i) => paint(i));
+  return { dims: d, stops, sky: { stars, name: asterism, firstShot }, peak, lobes, air: null, ground, turn, paint };
 }
