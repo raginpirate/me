@@ -17,7 +17,7 @@
 import { clamp, smooth, mulberry32, wrapPi, edge, mixHex } from './util.js';
 import { D } from './direction.js';
 
-const TILE = 256;   // a tile's side, in device pixels
+const TILE = 256, PAINT_MS = 5;   // a tile's side, in device pixels; the time a frame may spend painting tiles
 
 // straight runs between points [[x, y], ...]
 const line = (pts) => (x) => {
@@ -401,7 +401,7 @@ export class Massif {
   // picture, placed at its size of the moment.
   render() {
     const sc = this.sc, g = sc.grid, cw = g.cellW, ch = g.cellH, H = g.h, d = g.dpr, t = TILE / d, ctx = g.ctx;
-    this.frameNo = (this.frameNo || 0) + 1;
+    this.frameNo = (this.frameNo || 0) + 1; this.spent = 0;
     for (const l of this.lobes) {
       if (l.vis < 0.02) continue;
       const top = H / 2 + (l.apex - 8 - this.centreRow) * ch * l.s;
@@ -415,17 +415,31 @@ export class Massif {
       // as you go down it, so there they are painted again each time you have come down a little way (in steps of
       // a few percent of their size, too small to see).
       const step = sc.screenRows / 4, ref = Math.round(l.ref / step) * step;
-      const lv = Math.ceil(Math.log2(s) * 2 - 1e-6), sL = 2 ** (lv / 2), f = s / sL, tw = t * f, Y0 = y0 + l.base * chs;
-      const L = this.level(l, `${lv}|${ref}|${sc.sky}`, sL, ref);
-      const nx = Math.ceil(l.W * cw * sL * d / TILE), ny = Math.ceil(l.rowsN * ch * sL * d / TILE);
-      const ty0 = Math.max(0, Math.floor((y0 + r0 * chs - Y0) / tw)), ty1 = Math.min(ny - 1, Math.floor((y0 + (r1 + 1) * chs - Y0) / tw));
-      const tx0 = Math.max(0, Math.floor(-x0 / tw)), tx1 = Math.min(nx - 1, Math.floor((g.w - x0) / tw));
-      const shown = [];
-      for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-        const x = x0 + tx * tw, y = Y0 + ty * tw;
-        if (this.behind(x, y, tw, tw, l.index)) continue;   // wholly behind a nearer cut-out: not painted, not drawn
-        shown.push([this.tile(l, L, tx, ty), x, y]);
+      const lv = Math.ceil(Math.log2(s) * 2 - 1e-6), sL = 2 ** (lv / 2), Y0 = y0 + l.base * chs;
+      const want = this.level(l, `${lv}|${ref}|${sc.sky}`, sL, ref);
+      // the tiles of a level that are on the screen and not behind a nearer cut-out
+      const cover = (L) => {
+        const f = s / L.sL, tw = t * f, nx = Math.ceil(l.W * cw * L.sL * d / TILE), ny = Math.ceil(l.rowsN * ch * L.sL * d / TILE), out = [];
+        const ty0 = Math.max(0, Math.floor((r0 - l.base) * chs / tw)), ty1 = Math.min(ny - 1, Math.floor((r1 + 1 - l.base) * chs / tw));
+        const tx0 = Math.max(0, Math.floor(-x0 / tw)), tx1 = Math.min(nx - 1, Math.floor((g.w - x0) / tw));
+        for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+          const x = x0 + tx * tw, y = Y0 + ty * tw;
+          if (!this.behind(x, y, tw, tw, l.index)) out.push([tx, ty, x, y]);   // wholly behind a nearer cut-out: not painted, not drawn
+        }
+        return out;
+      };
+      // A frame has a little time for painting. If the size it wants is not all painted yet and that time is
+      // gone, it puts down the size it drew last, stretched the little that is left, and paints the new one over
+      // the next few frames: a frame is never held up, and nothing goes missing.
+      let L = want, list = cover(want);
+      const ready = list.every(([tx, ty]) => want.tiles.has(ty * 4096 + tx));
+      if (!ready && l.last && l.last !== want && l.levels.get(l.lastKey) === l.last && this.spent > PAINT_MS) {
+        for (const [tx, ty] of list) { if (this.spent > PAINT_MS * 1.5) break; this.tile(l, want, tx, ty); }   // some of the new, while there is time
+        if (!list.every(([tx, ty]) => want.tiles.has(ty * 4096 + tx))) { L = l.last; list = cover(L); }
       }
+      if (L === want) { l.last = want; l.lastKey = `${lv}|${ref}|${sc.sky}`; }
+      const f = s / L.sL, shown = [];
+      for (const [tx, ty, x, y] of list) shown.push([this.tile(l, L, tx, ty), x, y]);
       // its dark and its ink in one; then, for one turned from you, the dark again over it, so its ink is that much fainter
       ctx.globalAlpha = g.alpha = l.vis; ctx.fillStyle = sc.sky;
       for (const [e, x, y] of shown) if (e.both) ctx.drawImage(e.both, x, y, e.w / d * f, e.h / d * f); else if (e.plain) ctx.fillRect(x, y, e.w / d * f, e.h / d * f);
@@ -447,6 +461,7 @@ export class Massif {
   tile(l, L, tx, ty) {
     const key = ty * 4096 + tx; let e = L.tiles.get(key);
     if (e === undefined) {
+      const started = performance.now();
       const sc = this.sc, g = sc.grid, d = g.dpr, t = TILE / d, sL = L.sL, cws = g.cellW * sL, chs = g.cellH * sL, sky = sc.sky;
       const w = Math.max(1, Math.min(TILE, Math.ceil(l.W * cws * d) - tx * TILE)), h = Math.max(1, Math.min(TILE, Math.ceil(l.rowsN * chs * d) - ty * TILE));
       const make = () => this.canvas(w, h);
@@ -502,6 +517,7 @@ export class Massif {
       e = { dark: any && !plain ? dark : null, both, plain, w, h, used: 0 };
       this.held = (this.held || 0) + (e.dark ? w * h : 0) + (both && both !== e.dark ? w * h : 0);
       L.tiles.set(key, e);
+      this.spent += performance.now() - started;
     }
     e.used = this.frameNo;
     return e;
