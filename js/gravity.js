@@ -44,7 +44,9 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
 
   function step(now) {
     const g = glide;
-    const dt = Math.min(0.04, (now - g.last) / 1000) || 0.016; g.last = now;
+    // A frame's time can be from before the glide began (it is when the frame started, and the glide may have
+    // begun later in it): a step back in time would move the page backwards, against the swipe. Never less than none.
+    const dt = clamp((now - g.last) / 1000, 0, 0.04); g.last = Math.max(g.last, now);
     const dir = Math.sign(g.v) || 1, u = Math.abs(g.v), max = maxScroll();
     // a wheel still turning is a hand still on the page: no braking until it
     // lets go. Once it has, the stop ahead is chosen and kept.
@@ -83,7 +85,7 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
   addEventListener('pointerdown', (e) => {
     halt(); // any press takes the page back
     if (e.pointerType !== 'touch' || !enabled()) return;
-    touch = { id: e.pointerId, y: e.clientY, scroll: scrollY, samples: [[performance.now(), e.clientY]] };
+    touch = { id: e.pointerId, y: e.clientY, scroll: scrollY, samples: [[e.timeStamp, e.clientY]] };
     moved = false;
   }, { passive: true });
 
@@ -92,23 +94,27 @@ export function attachGravity(scene, { enabled = () => true } = {}) {
     const dy = e.clientY - touch.y;
     if (Math.abs(dy) > 6) moved = true;
     scrollTo(0, clamp(touch.scroll - dy, 0, maxScroll()));
-    touch.samples.push([performance.now(), e.clientY]);
-    if (touch.samples.length > 8) touch.samples.shift();
+    // every movement the finger made, at the time it made it: a slow frame delivers several at once
+    for (const p of e.getCoalescedEvents?.() || [e]) touch.samples.push([p.timeStamp, p.clientY]);
+    while (touch.samples.length > 24) touch.samples.shift();
   }, { passive: true });
 
   const release = (e) => {
     if (!touch || e.pointerId !== touch.id) return;
-    const s = touch.samples, from = touch.scroll, now = performance.now();
+    const s = touch.samples, from = touch.scroll;
     touch = null;
-    // velocity over the last 40–120 ms of movement, in page px/s (finger up = page down)
-    const [tl, yl] = s[s.length - 1];
-    if (now - tl > 120) return; // the finger paused before lifting: no glide
-    let i = s.length - 2;
-    while (i > 0 && tl - s[i][0] < 40) i--;
-    if (i < 0) return;
-    const [t0, y0] = s[i], dt = (tl - t0) / 1000;
-    if (dt <= 0) return;
-    const v = -(yl - y0) / dt;
+    // The speed the finger left with: a straight line fitted through where it was over its last 100 ms, by
+    // the times it was there, in page px/s (finger up = page down). A fit is not thrown by one late or jittery
+    // sample, and a finger that wavers back as it lifts does not fling the page the wrong way.
+    const tl = s[s.length - 1][0];
+    if (e.timeStamp - tl > 120) return; // the finger paused before lifting: no glide
+    const pts = s.filter(([t]) => tl - t <= 100);
+    if (pts.length < 2) return;
+    const mt = pts.reduce((a, p) => a + p[0], 0) / pts.length, my = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    let num = 0, den = 0; for (const [t, y] of pts) { num += (t - mt) * (y - my); den += (t - mt) ** 2; }
+    if (den <= 0) return;
+    const v = -num / den * 1000, whole = from - scrollY;
+    if (Math.sign(v) !== Math.sign(-whole) && Math.abs(whole) > 20) return;   // against the way the whole drag went: a waver, not a fling
     if (Math.abs(v) > G.fling[0]) start(clamp(v, -G.fling[1], G.fling[1]), G.touch, false, from);
   };
   addEventListener('pointerup', release, { passive: true });
