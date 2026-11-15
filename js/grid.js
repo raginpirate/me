@@ -23,7 +23,7 @@ export class Grid {
   resize(w = innerWidth, h = innerHeight) {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     this.dpr = dpr;
-    this.w = w; this.h = h; this.vw = w; this.vh = h;   // the screen, and what is being drawn on now: the screen or a tile
+    this.w = w; this.h = h;
     this.canvas.width = Math.round(w * dpr); this.canvas.height = Math.round(h * dpr);
     this.canvas.style.width = w + 'px'; this.canvas.style.height = h + 'px';
     const ctx = this.ctx;
@@ -65,18 +65,19 @@ export class Grid {
     return s;
   }
 
-  stamp(s, x, y, alpha) {
-    if (alpha !== this.alpha) this.ctx.globalAlpha = this.alpha = alpha;
-    this.ctx.drawImage(s.canvas, x, y, s.w, s.h);
+  stamp(ctx, s, x, y, alpha) {
+    if (ctx !== this.ctx) ctx.globalAlpha = alpha;
+    else if (alpha !== this.alpha) ctx.globalAlpha = this.alpha = alpha;
+    ctx.drawImage(s.canvas, x, y, s.w, s.h);
   }
 
   // a glyph set in a cell (col, row may be fractional), like type on a line
-  put(ch, color, col, row, alpha = 1) {
+  put(ch, color, col, row, alpha = 1, ctx = this.ctx) {
     if (!ch || ch === ' ' || alpha < 0.01) return;
     const x = col * this.cellW, y = row * this.cellH;
-    if (x < -this.cellW || y < -this.cellH || x > this.w || y > this.h) return;
+    if (ctx === this.ctx && (x < -this.cellW || y < -this.cellH || x > this.w || y > this.h)) return;
     const s = this.sprite(ch, color, this.size);
-    this.stamp(s, x - s.bx, y + this.ascent - s.by, alpha);
+    this.stamp(ctx, s, x - s.bx, y + this.ascent - s.by, alpha);
   }
 
   // a glyph at any size, centred on its own ink at a pixel
@@ -86,22 +87,19 @@ export class Grid {
     const q = size <= 20 ? Math.max(4, Math.round(size * 2) / 2) : size <= 40 ? Math.round(size) : Math.round(size / 2) * 2;
     if (px < -q || py < -q || px > this.w + q || py > this.h + q) return;
     const s = this.sprite(ch, color, q);
-    this.stamp(s, px - s.ix - s.bx, py + s.iy - s.by, alpha);
+    this.stamp(this.ctx, s, px - s.ix - s.bx, py + s.iy - s.by, alpha);
   }
 
   // a glyph set in a cell of any size, at any pixel: (x, y) is the top left
   // of its cell. This is how a thing nearer or further than the page is drawn.
   set(ch, color, x, y, size, alpha = 1) {
     if (!ch || ch === ' ' || alpha < 0.01) return;
-    if (x < -size || y < -size * 1.3 || x > this.vw || y > this.vh) return;
+    if (x < -size || y < -size * 1.3 || x > this.w || y > this.h) return;
     // one sprite for each whole size, stretched to the exact size asked for:
     // a thing that grows as it comes nearer grows smoothly, not in steps
-    const q = Math.max(4, Math.round(size)), s = this.sprite(ch, color, q), k = size / q, c = this.ctx, d = this.dpr;
+    const q = Math.max(4, Math.round(size)), s = this.sprite(ch, color, q), k = size / q, c = this.ctx;
     if (alpha !== this.alpha) c.globalAlpha = this.alpha = alpha;
-    this.drawn++;
-    // on whole device pixels, so type that is not on the page's grid is as sharp as type that is (a place exactly
-    // between two pixels always goes the same way, whichever tile it is drawn on)
-    c.drawImage(s.canvas, Math.round((x - s.bx * k) * d + 0.02) / d, Math.round((y + (q * 0.9 - s.by) * k) * d + 0.02) / d, s.w * k, s.h * k);
+    c.drawImage(s.canvas, x - s.bx * k, y + (q * 0.9 - s.by) * k, s.w * k, s.h * k);
   }
 
   // a filled box, for hiding what is behind something
@@ -110,16 +108,21 @@ export class Grid {
     if (alpha !== this.alpha) c.globalAlpha = this.alpha = alpha;
     c.fillStyle = color;
     c.fillRect(x, y, w, h);
-    this.drawn++;
   }
 
-  // draw onto another canvas, w by h, for a while; returns how much was drawn
-  into(ctx, w, h, draw) {
-    const keep = [this.ctx, this.vw, this.vh];
-    this.ctx = ctx; this.vw = w; this.vh = h; this.alpha = NaN; this.drawn = 0;
+  // draw onto another canvas for a while: a layer that is kept between frames
+  into(ctx, draw) {
+    const keep = this.ctx;
+    this.ctx = ctx; this.alpha = NaN;
     draw();
-    [this.ctx, this.vw, this.vh] = keep; this.alpha = NaN;
-    return this.drawn;
+    this.ctx = keep; this.alpha = NaN;
+  }
+  layer() {
+    const c = document.createElement('canvas');
+    c.width = this.canvas.width; c.height = this.canvas.height;
+    const x = c.getContext('2d');
+    x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    return x;
   }
 
   clear(color) {
@@ -129,10 +132,10 @@ export class Grid {
     c.fillRect(0, 0, this.w, this.h);
   }
 
-  // a whole pre-painted canvas, at full strength, its corner at a pixel
-  blit(canvas, x, y) {
-    const c = this.ctx, d = this.dpr;
+  // a whole pre-painted canvas, at full strength
+  blit(canvas, y) {
+    const c = this.ctx;
     if (this.alpha !== 1) c.globalAlpha = this.alpha = 1;
-    c.drawImage(canvas, x, y, canvas.width / d, canvas.height / d);
+    c.drawImage(canvas, 0, y, canvas.width / this.dpr, canvas.height / this.dpr);
   }
 }
