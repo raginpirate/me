@@ -40,7 +40,7 @@ export function makeGlide(stops) {
   }
 
   function onWheel(e) {
-    if (e.ctrlKey) return;   // pinch-zoom is the browser's
+    if (e.ctrlKey || !e.deltaY) return;   // pinch-zoom is the browser's; so is going sideways
     e.preventDefault();
     const d = e.deltaY * (e.deltaMode === 1 ? LINE : e.deltaMode === 2 ? innerHeight : 1), size = Math.abs(d), now = performance.now(), fresh = now - wheelAt > GAP;
     wheel = fresh || !wheel ? { size, peak: size, falls: 0 } : { size, peak: Math.max(wheel.peak, size), falls: size <= wheel.size ? wheel.falls + 1 : 0 }; wheelAt = now;

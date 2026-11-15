@@ -42,7 +42,7 @@ function start() {
   const gl = makeGL(canvas, { font, chars: CHARS, force }); if (!gl) throw new Error('no context');
   gl.resize(Math.round(view.w * dpr), Math.round(view.h * dpr)); gl.atlas(params.typeSize * dpr);
   const scene = makeScene(gl, model, view, { prepass: query.get('prepass') !== '0' }), glide = makeGlide(() => model.stops.map((s) => s.snap * params.cellH).sort((a, b) => a - b));
-  const cards = makeCards(model, view, glide.go), live = makeLive(gl, model, view, scene, cards);
+  const cards = makeCards(model, view, (y, smoothly) => glide.go(y, smoothly && !reduced)), live = makeLive(gl, model, view, scene, cards);
   live.setLamps(lamps); glide.on();
   let frame = 0, last = 0;
   const loop = (now) => {
@@ -54,6 +54,7 @@ function start() {
   };
   frame = requestAnimationFrame(loop);
   // the massif, a lobe at a time between frames, the ones nearest the screen first
+  if (model.lobes.length > 19) throw new Error('more lobes than layers');
   const todo = model.lobes.map((_, i) => i), slices = []; let timer = 0;
   const next = () => {
     if (!todo.length) { world.ready = true; return; }
@@ -63,8 +64,8 @@ function start() {
     timer = setTimeout(next, 0);
   };
   timer = setTimeout(next, 0);
-  canvas.addEventListener('webglcontextlost', () => refuse('The mountain lost its graphics card. Reload to try again.'));
-  world = { model, gl, scene, live, cards, params, slices, ready: false, stop() { cancelAnimationFrame(frame); clearTimeout(timer); glide.off(); cards.stop(); gl.gl.getExtension('WEBGL_lose_context')?.loseContext(); } };
+  let stopping = false; canvas.addEventListener('webglcontextlost', () => { if (!stopping) refuse('The mountain lost its graphics card. Reload to try again.'); });
+  world = { model, gl, scene, live, cards, params, slices, ready: false, stop() { stopping = true; cancelAnimationFrame(frame); clearTimeout(timer); glide.off(); cards.stop(); gl.gl.getExtension('WEBGL_lose_context')?.loseContext(); } };
   window.scene = world;
 }
 

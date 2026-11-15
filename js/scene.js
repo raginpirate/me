@@ -26,7 +26,7 @@ export function makeScene(gl, model, view, flags = {}) {
   function addLobe(i) {
     const p = packLobe(lobes[i], i, d, glyph), first = gl.append(p.bytes);
     gl.wash(i, p.wash.w, p.wash.h, p.wash.rgba);
-    made[i] = { first, total: p.route[0], cover: p.cover, route: p.route[1] && [first + p.route[0], p.route[1]], draw: { test: true, wash: [i, 0, p.wash.y0, p.wash.w, p.wash.h] } };
+    made[i] = { first, total: p.route[0], cover: p.cover, solids: p.solids, last: p.last, route: p.route[1] && [first + p.route[0], p.route[1]], draw: { test: true, wash: [i, 0, p.wash.y0, p.wash.w, p.wash.h] } };
   }
   lobes.forEach((l, i) => { if (l.cover) addLobe(i); });
 
@@ -90,23 +90,23 @@ export function makeScene(gl, model, view, flags = {}) {
 
     // draw, back to front
     gl.begin(sky, live?.bytes, count);
-    const L = live?.ranges, drawLive = (name, o) => { if (L && L[name][1]) gl.draw(L[name][0], L[name][1], ALIVE.get(o)); };
+    const snowing = centre > SNOW.z[0] - 0.8 && centre < SNOW.z[1] + 0.8, L = live?.ranges, drawLive = (name, o) => { if (L && L[name][1]) gl.draw(L[name][0], L[name][1], ALIVE.get(o)); };
     if (flags.prepass !== false) for (let i = lobes.length - 1; i >= 0; i--) if (pose[i].on && pose[i].vis >= 0.995) gl.draw(made[i].first, made[i].cover, MASK);
     if (top < LAYOUT.deck[1] * S) gl.draw(...R.stars, TEST);
     drawLive('sky', TEST);
     if (top + S > 2.9 * S) {
-      gl.draw(...R.ranges, TEST); gl.draw(...R.snow0, TEST); drawLive('flock', TEST);
+      gl.draw(...R.ranges, TEST); if (snowing) gl.draw(...R.snow0, TEST); drawLive('flock', TEST);
       if (Math.abs(air.deckRow - centreRow) * CLOUDS[0].k < 1.5 * S) gl.draw(...R.clouds0, TEST);
     }
-    for (let i = 0; i < lobes.length; i++) if (pose[i].on) gl.draw(made[i].first, made[i].total, made[i].draw);
+    for (let i = 0; i < lobes.length; i++) if (pose[i].on) gl.draw(made[i].first, (made[i].last + 3 - centreRow) * pose[i].s > -S / 2 ? made[i].total : made[i].solids, made[i].draw);   // above the screen it is only a dark body
     if ((G - 7 - centreRow) * ground.k < S / 2) gl.draw(...R.ground, PLAIN);
     if (top < d.seamRow + 4) gl.draw(...R.peak, PLAIN);
-    drawLive('smoke', PLAIN); gl.draw(...R.snow12, PLAIN); drawLive('owl', PLAIN); drawLive('squirrels', PLAIN);
+    drawLive('smoke', PLAIN); if (snowing) gl.draw(...R.snow12, PLAIN); drawLive('owl', PLAIN); drawLive('squirrels', PLAIN);
     drawLive('bridges', LIT);
     for (const i of routeLobes) if (pose[i].on && made[i].route) gl.draw(...made[i].route, LIT_TEST);
     if (top < d.bodyTop) gl.draw(...R.rope, LIT);
     drawLive('litBridges', LIT);
-    gl.draw(...R.leaves, LIT);
+    if (centre > LEAVES.from - 0.75) gl.draw(...R.leaves, LIT);
     drawLive('flag', LIT); drawLive('lamps', LIT_TEST); drawLive('waypoints', LIT);
     for (const n of [1, 2]) if (Math.abs(air.deckRow - centreRow) * CLOUDS[n].k < 1.5 * S) gl.draw(...R['clouds' + n], LIT);
     drawLive('tethers', LIT);

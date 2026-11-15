@@ -87,13 +87,13 @@ void main() {
   } else {
     float want = uType * s * k, lv = clamp(ceil(log2(want / uType) * 4. - .001), ${LADDER[0]}., ${LADDER[1]}.), q = uType * exp2(lv / 4.), f = want / q;
     ivec2 m = ivec2(int(lv) - (${LADDER[0]}), int(glyph)) * ivec2(2, 1); vec4 box = texelFetch(uMetrics, m, 0), from = texelFetch(uMetrics, m + ivec2(1, 0), 0);
-    bool page = s == 1. && k == 1. && !ink && (kind == ${KIND.star} || kind == ${KIND.plain}) && (p & ${FREE}) == 0;                   // type at the page's own size is set on the pixel, on the page's baseline
+    bool page = s == 1. && k == 1. && !ink;                   // type at the page's own size sits on the page's baseline, and on the pixel unless it is moving
     if (kind == ${KIND.route}) {                              // the stretch of route in your light
       float r0 = uLamp.z, lit = (1. - smooth01(.55 * r0, 2.1 * r0, distance(ink ? at : at + vec2(.3, .6) * want, uLamp.xy))) * vis;
       vColour.a = alpha * ((p & ${HOT}) != 0 ? .7 * lit * lit : lit);
     } else if (kind != ${KIND.plain} || (p & ${BARE}) == 0) vColour.a *= tone;
     size = box.zw * f; at += ink ? (from.xy - from.zw) * f : vec2(from.x * f, (page ? uAscent : .9 * want) + from.y * f);
-    if (page) at = floor(at + .5);
+    if (page && (p & ${FREE}) == 0) at = floor(at + .5);
     vUV = box.xy + corner * box.zw;
   }
   gl_Position = vec4((at + corner * size) / uRes * vec2(2., -2.) + vec2(-1., 1.), c.x, 1.);

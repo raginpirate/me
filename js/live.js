@@ -18,17 +18,17 @@ const ORDER = ['sky', 'flock', 'smoke', 'owl', 'squirrels', 'bridges', 'litBridg
 
 export function makeLive(gl, model, view, scene, cards) {
   const d = model.dims, { lobes, stops, ground, turn, air } = model, { S, cellW, cellH, cols, typeSize, aspect, u, groundRow: G } = d, { state, made, place, hidden } = scene;
-  const buffer = new ArrayBuffer(8192 * BYTES), w = writer(buffer), ranges = Object.fromEntries(ORDER.map((n) => [n, [0, 0]])), glyphs = {}, RA = air.random;
+  const ROOM = 16384, buffer = new ArrayBuffer(ROOM * BYTES), w = writer(buffer), ranges = Object.fromEntries(ORDER.map((n) => [n, [0, 0]])), glyphs = {}, RA = air.random;
   const g = (ch) => glyphs[ch] ??= gl.glyph(ch), pick = (list) => list[Math.floor(RA() * list.length)], PAGE = LAYER.page, SKY = 0;
   let top = 0, time = 0, dt = 0.016, last = -1, lastTop = 0, vel = 0, shove = 0, lean = 0, leanV = 0, push = 0, lamps = 0;
   const ptr = { x: 0, y: 0, at: -1e9, on: false, c: 0, r: 0 };
   addEventListener('pointermove', (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
 
   // placing: an object by its ink, at a screen point (css px); type on the page's lines, at a cell
-  const ink = (ch, name, x, y, size, alpha, kind = 0, p = 0) => { if (alpha > 0.004) w.put(x / cellW, top + y / cellH, 0, 0, 0, 0, size / typeSize, g(ch), colour(name), Math.min(1, alpha), PAGE, kind, INK | p); };
-  const put = (ch, name, c, r, alpha) => { if (alpha > 0.004) w.put(c, r, 0, 0, 0, 0, 1, g(ch), colour(name), Math.min(1, alpha), PAGE, 0, FREE); };
+  const ink = (ch, name, x, y, size, alpha, kind = 0, p = 0) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x / cellW, top + y / cellH, 0, 0, 0, 0, size / typeSize, g(ch), colour(name), Math.min(1, alpha), PAGE, kind, INK | p); };
+  const put = (ch, name, c, r, alpha) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(c, r, 0, 0, 0, 0, 1, g(ch), colour(name), Math.min(1, alpha), PAGE, 0, FREE); };
   // on a layer of its own (a lobe, the ground): offsets and sizes in that layer's type
-  const on = (li, x, y, ch, name, dx, dy, size, alpha) => { if (alpha > 0.004) w.put(x, y, dx * typeSize / cellW, dy * typeSize / cellH, 0, 0, size, g(ch), colour(name), Math.min(1, alpha), li, 0, INK | BARE); };
+  const on = (li, x, y, ch, name, dx, dy, size, alpha) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x, y, dx * typeSize / cellW, dy * typeSize / cellH, 0, 0, size, g(ch), colour(name), Math.min(1, alpha), li, 0, INK | BARE); };
   const section = (name, draw) => { const first = w.count; draw(); ranges[name][0] = first; ranges[name][1] = w.count - first; };
 
   function spring(p, [stiff, zeta, far, reach, most, share], held = 1) {
@@ -94,7 +94,7 @@ export function makeLive(gl, model, view, scene, cards) {
         if (Number.isNaN(q.hx)) { q.hx = q.x = q.nx; q.hy = q.y = q.ny; }
         fastest = Math.max(fastest, q.free * Math.hypot((q.nx - q.hx) * aspect, q.ny - q.hy) / dt);
       }
-      const share = fastest > 0.01 ? 14 * Math.tanh(fastest / 14) / fastest : 1, floor = d.stack ? top + (A[1] - 2) / cellH - 1 : Infinity;
+      const share = fastest > 0.01 ? 14 * Math.tanh(fastest / 14) / fastest : 1, floor = d.stack ? top + (A[1] + 2) / cellH - 0.5 : Infinity;
       for (const q of dots) {
         const follow = 1 - q.free * share; q.x += (q.nx - q.hx) * follow; q.y += (q.ny - q.hy) * follow; q.hx = q.nx; q.hy = q.ny;   // the ends are held, the middle is left behind a little
         if (!q.a) continue;
@@ -138,7 +138,7 @@ export function makeLive(gl, model, view, scene, cards) {
       let px = sx, py = sy, run = 0, n = 0;
       for (let j = 3; j < s.trail.length && n < TAIL.length; j += 3) {
         const k0 = F / s.trail[j + 2], qx = W / 2 + s.trail[j] * k0, qy = s.oy + s.trail[j + 1] * k0 - top * cellH; run += Math.hypot(qx - px, qy - py); px = qx; py = qy;
-        if (run >= (n + 1) * 0.9 * typeSize * Math.max(0.5, k0)) { ink(TAIL[n], 'star', qx, qy, typeSize * clamp(k0, 0.35, 3.2), (n < 2 ? 0.9 : n < 4 ? 0.55 : 0.35) * clamp(1.15 * k0, 0.1, 1) * fade); n++; }
+        while (n < TAIL.length && run >= (n + 1) * 0.9 * typeSize * Math.max(0.5, k0)) { ink(TAIL[n], 'star', qx, qy, typeSize * clamp(k0, 0.35, 3.2), (n < 2 ? 0.9 : n < 4 ? 0.55 : 0.35) * clamp(1.15 * k0, 0.1, 1) * fade); n++; }
       }
     }
   }
@@ -153,26 +153,32 @@ export function makeLive(gl, model, view, scene, cards) {
 
   // --- rope bridges, from each ridge of the route to the next ---
   const route = lobes.map((l, i) => i).filter((i) => lobes[i].path.length), planks = [], A = [0, 0], B = [0, 0]; let plankCount = 0;
-  function drawBridges(litPass) {
-    if (!litPass) plankCount = 0;
+  const spans = [];   // this frame's bridges: [x0, y0, x1, y1, size, vis, planks, sag]
+  function findBridges() {
+    spans.length = 0;
     for (let n = 0; n + 1 < route.length; n++) {
       const ia = route[n], ib = route[n + 1], a = state.pose[ia], b = state.pose[ib], path = lobes[ia].path;
       if (!made[ia] || !made[ib] || a.vis < 0.1 || b.vis < 0.1) continue;
       place(ib, lobes[ib].arrive[0] + 0.5, lobes[ib].arrive[1] + 0.5, B);
       if (B[1] < -view.h || B[1] > 2 * view.h) continue;
-      let k = path.length - 1; for (; k >= 0; k--) { place(ia, path[k][0] + 0.5, path[k][1] + 0.5, A); if (!hidden(ia, A[0], A[1])) break; }
+      let k = path.length - 1; for (; k >= 0; k--) { place(ia, path[k][0] + 0.5, path[k][1] + 0.5, A); if (!hidden(ia, A[0], A[1])) break; }   // it leaves from the last of the path you can see
       if (k < 0) place(ia, path[0][0] + 0.5, path[0][1] + 0.5, A);
       if ((A[1] < -40 && B[1] < -40) || (A[1] > view.h + 40 && B[1] > view.h + 40)) continue;
-      const uB = typeSize * (a.s + b.s) / 2, len = Math.hypot(B[0] - A[0], B[1] - A[1]), vis = Math.min(a.vis, b.vis) * (1 - smooth(11 * uB, 15 * uB, len)); if (vis < 0.05) continue;
-      const count = Math.max(1, Math.round(len / (0.6 * uB))), sag = Math.min(0.16 * len, 1.3 * uB);
+      const uB = typeSize * (a.s + b.s) / 2, len = Math.hypot(B[0] - A[0], B[1] - A[1]), vis = Math.min(a.vis, b.vis) * (1 - smooth(11 * uB, 15 * uB, len)); if (vis < 0.05) continue;   // no bridge yet while the next ridge is far round
+      spans.push([A[0], A[1], B[0], B[1], uB, vis, Math.max(1, Math.round(len / (0.6 * uB))), Math.min(0.16 * len, 1.3 * uB), len]);
+    }
+  }
+  function drawBridges(litPass) {
+    if (!litPass) { findBridges(); plankCount = 0; }
+    for (const [x0, y0, x1, y1, uB, vis, count, sag, len] of spans) {
       for (let j = 0; j <= count; j++) {
-        const tt = j / count, x = A[0] + (B[0] - A[0]) * tt, y = A[1] + (B[1] - A[1]) * tt + sag * 4 * tt * (1 - tt);
+        const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt);
         if (litPass) { ink('=', 'ember', x, y, 0.95 * uB, vis, KIND.route); ink('=', 'emberHot', x, y, 0.95 * uB, vis, KIND.route, HOT); ink('·', 'ember', x, y - 0.95 * uB, uB, 0.8 * vis, KIND.route); ink('·', 'emberHot', x, y - 0.95 * uB, uB, 0.8 * vis, KIND.route, HOT); continue; }
         planks[plankCount++] = x; planks[plankCount++] = y; planks[plankCount++] = vis;
         ink('=', 'bridge', x, y, 0.95 * uB, vis); ink('·', 'muted', x, y - 0.95 * uB, uB, 0.85 * vis);
         if (j % 3 === 1) ink(':', 'muted', x, y - 0.48 * uB, 0.7 * uB, 0.6 * vis);
       }
-      if (!litPass && len > 1.3 * uB) { ink('|', 'bridge', A[0], A[1] - 0.5 * uB, 1.35 * uB, vis); ink('|', 'bridge', B[0], B[1] - 0.5 * uB, 1.35 * uB, vis); }
+      if (!litPass && len > 1.3 * uB) { ink('|', 'bridge', x0, y0 - 0.5 * uB, 1.35 * uB, vis); ink('|', 'bridge', x1, y1 - 0.5 * uB, 1.35 * uB, vis); }
     }
     planks.length = plankCount;
   }
@@ -182,7 +188,8 @@ export function makeLive(gl, model, view, scene, cards) {
   function drawLamps() {
     const n = clamp(lamps, 0, 40), bw = 1.8 * typeSize / cellW, bh = 1.4 * typeSize / cellH;
     for (let j = 0; j < n; j++) {
-      const [i, c, r] = candidates[Math.floor((j + 0.5) / n * candidates.length)] ?? [0, 0, 0]; if (!state.pose[i].on || state.pose[i].vis < 0.1) continue;
+      const lamp = candidates[Math.floor((j + 0.5) / n * candidates.length)]; if (!lamp) continue;
+      const [i, c, r] = lamp; if (!state.pose[i].on || state.pose[i].vis < 0.1) continue;
       w.solid(c + 0.5, r + 0.5, -bw / 2, -bh / 2, bw, bh, 1, SKY, 1, LAYER.lobe + i);
       on(LAYER.lobe + i, c + 0.5, r + 0.5, 'o', 'ember', 0, 0, 1, twinkle(time, 2.4 * j, 0.4, 3.1));
     }
@@ -215,7 +222,8 @@ export function makeLive(gl, model, view, scene, cards) {
   let flock = null, flockIn = 2.5;
   function drawFlock() {
     const W = view.w, H = view.h, k = 0.3;
-    if (!flock && (flockIn -= dt) <= 0 && state.centre > 4.87 && state.centre < 8.5) {
+    flockIn -= dt;
+    if (!flock && flockIn <= 0 && state.centre > 4.87 && state.centre < 8.5) {
       const dir = RA() < 0.5 ? 1 : -1, n = 7 + Math.floor(RA() * 7), far = 0.45 + RA() * 0.3, birds = [[0, 0, RA() * 6.28]];
       for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push([-dir * (2.1 * j + (RA() - 0.5) * 0.9) * far, (side * j * (0.5 + RA() * 0.12) + (RA() - 0.5) * 0.3) * far, RA() * 6.28]); }
       flock = { dir, n, far, birds, x: dir > 0 ? -20 : W + 20, y: state.centreRow + ((0.18 + RA() * 0.4) * H - H / 2) / (cellH * k), v: Math.max(34, W / 20) * (0.5 + far), drift: (RA() - 0.5) * 0.5 };
@@ -260,7 +268,7 @@ export function makeLive(gl, model, view, scene, cards) {
     } else if (o.mode === 'fly') {
       if (tree && (tree.top < 0.1 * H || tree.top > 0.9 * H) && o.progress < 0.8) { const q = middle(o.key); if (q) fly(seat(q), q); }
       const now = perches.get(o.key);
-      if (now) o.to = seat(now); else if (o.key >= 0) { const q = middle(o.key); if (q) fly(seat(q), q); else leave(3); }
+      if (now) o.to = seat(now); else if (o.key >= 0) { const q = middle(o.key); if (q) fly(seat(q), q); else { o.key = -1; o.to = [o.x < W / 2 ? -60 : W + 60, o.y - 3 * cellH]; } }
       o.progress += dt / o.dur; const e = smooth(0, 1, o.progress), aim = perches.get(o.key);
       o.s = o.s0 + ((aim ? aim.s : 0.4 * o.s0) - o.s0) * e; o.x = o.from[0] + (o.to[0] - o.from[0]) * e; o.y = o.from[1] + (o.to[1] - o.from[1]) * e - Math.sin(Math.PI * e) * o.arc;
       if (o.progress >= 1) { if (aim) { o.mode = 'perch'; o.wait = 4 + RA() * 5; } else { o.mode = 'away'; o.wait = 1.5 + RA() * 2; } }

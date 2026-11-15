@@ -54,14 +54,15 @@ function treeMarks([, , , shape, olive, dark, snowy]) {
 // A lobe: what it hides (one solid a column), its mist, its cells, its trees; then its route, to be lit.
 // → { bytes, cover: how many of the first instances are what hides, route: [first, count] within bytes, wash: { w, h, y0, rgba } }
 export function packLobe(l, i, dims, glyph) {
-  const li = LAYER.lobe + i, { W, cover, cells, trees, wash, path } = l, bottom = dims.groundRow + 13;
+  const li = LAYER.lobe + i, { W, cover, cells, trees, wash, path } = l, bottom = dims.groundRow + 14;
   const rgba = new Uint8Array(W * wash.h * 4), mistTop = new Float64Array(W).fill(Infinity), tones = TONES.map(rgb);
   wash.idx.forEach((at, n) => { const a = wash.a[n], t = tones[wash.tone[n]], c = at % W; rgba.set([t[0] * a / 255, t[1] * a / 255, t[2] * a / 255, a], at * 4); mistTop[c] = Math.min(mistTop[c], wash.y0 + Math.floor(at / W)); });
   const drawn = trees.map(treeMarks), count = 2 * W + cells.length + drawn.reduce((n, t) => n + t.marks.length + t.spans.length, 0) + 2 * path.length;
-  let route = 0;
+  let route = 0, solids = 0;
   const bytes = run(count, (w) => {
     for (let c = 0; c < W; c++) { const top = cover[c] < bottom ? cover[c] : bottom; w.solid(c, top, 0, 0, 1, bottom - top, 1, SKY, 1, li, WASH); }
     for (let c = 0; c < W; c++) { const to = Math.min(cover[c], bottom), from = mistTop[c] - 1; if (from < to) w.solid(c, from, 0, 0, 1, to - from, 1, SKY, 1, li, WASH | MIST); }
+    solids = w.count;
     for (const [row, col, ch, name, alpha] of cells) w.put(col, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, li);
     trees.forEach(([c, r, k], n) => {
       const { marks, spans, tall, wide, pitch } = drawn[n], x = c + 0.5, y = r + 1;
@@ -71,7 +72,7 @@ export function packLobe(l, i, dims, glyph) {
     route = w.count;
     path.forEach(([c, r], k) => lit(w, c, r, glyph(pathMark(k, r / dims.S)[0]), li));
   });
-  return { bytes, cover: W, route: [route, 2 * path.length], wash: { w: W, h: wash.h, y0: wash.y0, rgba } };
+  return { bytes, cover: W, solids, last: Math.max(cells.length ? cells[cells.length - 1][0] : 0, trees.length ? trees[trees.length - 1][1] : 0), route: [route, 2 * path.length], wash: { w: W, h: wash.h, y0: wash.y0, rgba } };
 }
 
 // The ground: earth under the line, the line hiding what is behind it, turf and soil and roots, and the hut.
@@ -93,13 +94,14 @@ export function packRanges({ air, dims }, glyph) {
 }
 
 // One depth of cloud. Each cloud hides what is behind it, column by column, then its outline and body.
-export function packClouds({ air, N }, n, glyph) {
-  const { line, body } = CLOUDS[n], shapes = air.clouds[n].map((c) => cloudColumns(c, N)), count = shapes.reduce((t, cols) => t + cols.reduce((m, col) => m + 1 + col[3].length, 0), 0);
+export function packClouds({ air, N, dims }, n, glyph) {
+  const { line, body, k } = CLOUDS[n], round = (dims.cols / k + 80) / (dims.cols + 80),   // a layer goes round over its own width
+    shapes = air.clouds[n].map((c) => cloudColumns(c, N)), count = shapes.reduce((t, cols) => t + cols.reduce((m, col) => m + 1 + col[3].length, 0), 0);
   return run(count, (w) => air.clouds[n].forEach(([x, y, , , , , pinned], i) => {
-    const li = pinned == null ? LAYER.cloud + n : LAYER.seam, kind = pinned == null ? KIND.cloud : KIND.plain, row = air.deckRow + y;
+    const li = pinned == null ? LAYER.cloud + n : LAYER.seam, kind = pinned == null ? KIND.cloud : KIND.plain, row = air.deckRow + y, at = pinned == null ? x * round : x;
     for (const [u, rt, rb, cells] of shapes[i]) {
-      w.solid(x, row, u, rt, 1, rb - rt + 1, 1, SKY, 1, li, 0, kind);
-      for (const [r, ch, inBody, share] of cells) { const [name, alpha] = inBody ? body : line; w.put(x, row, u, r, 0, 0, 1, glyph(ch), colour(name), alpha * share, li, kind); }
+      w.solid(at, row, u, rt, 1, rb - rt + 1, 1, SKY, 1, li, 0, kind);
+      for (const [r, ch, inBody, share] of cells) { const [name, alpha] = inBody ? body : line; w.put(at, row, u, r, 0, 0, 1, glyph(ch), colour(name), alpha * share, li, kind); }
     }
   }));
 }
