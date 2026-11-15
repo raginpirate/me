@@ -117,7 +117,7 @@ export class Life {
     // off to a tree: from where it is, or if that is off the screen, from the edge of the screen on that side
     const fly = (o) => {
       O.from = [clamp(O.x, -40, W + 40), clamp(O.y, -40, H + 40)]; O.s0 = O.s; O.aim = o.id; O.u = 0;
-      O.dur = clamp(Math.hypot(o.x - O.from[0], o.top - O.from[1]) / (9 * g.cellW), 1.4, 3.4);   // unhurried: it keeps pace with you
+      O.dur = clamp(Math.hypot(o.x - O.from[0], o.top - O.from[1]) / (7 * g.cellW), 1.8, 3.8);   // unhurried: it keeps pace with you
       O.arc = (1.5 + rnd() * 2.5) * g.cellH; O.state = 'fly';
     };
     if (O.state === 'none') {
@@ -161,7 +161,7 @@ export class Life {
     const feet = trees.filter((q) => q.y > H * 0.2 && q.y < H * 0.95 && q.x > 20 && q.x < W - 20);
     const foot = (q, side) => [q.x + side * 1.3 * g.size * q.size, q.y - 0.5 * g.size * q.size];
     const trunk = (q, side, u) => [q.x + side * 0.45 * g.size * q.size, q.y - 0.5 * g.size * q.size - u * Math.max(q.y - q.bole, 0.5 * (q.y - q.top))];   // u: how far up, to where the leaves take it
-    const gone = () => { Q.state = 'away'; Q.wait = 5 + rnd() * 6; };
+    const gone = () => { Q.state = 'away'; Q.wait = 2.5 + rnd() * 3; };
     if (Q.state === 'away') {
       Q.wait -= dt;
       if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) {
@@ -250,7 +250,7 @@ export class Life {
     this.snow(1); this.snow(2);
     const O = this.owl;
     if (O.state !== 'none' && O.y > -60 && O.y < H + 60) {
-      const u = g.size * O.s * 0.65, blink = (t * 0.31 + 0.2) % 1 > 0.96;
+      const u = g.size * O.s * 0.9, blink = (t * 0.31 + 0.2) % 1 > 0.96;
       if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
       this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);

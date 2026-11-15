@@ -375,7 +375,7 @@ export class Massif {
       mask[i][c] = 1;
       cells[i][c] = at < Y.ice ? (k % 4 === 0 ? ['+', P.muted, 0.8] : [':', P.muted, 0.5])
         : at < Y.forest ? [k % 3 ? '.' : ',', P.muted, 0.6]
-        : k % 7 === 3 ? ['=', P.muted, 0.6] : [k % 2 ? ':' : '.', P.muted, 0.68];
+        : k % 7 === 3 ? ['=', P.muted, 0.85] : [k % 2 ? ':' : '.', P.muted, 0.9];
     });
     // every glyph the sheet is set in is made now, not while you scroll
     for (const t of trees) for (const row of t.rows) for (const [, ch, color] of row.marks) g.sprite(ch, color, t.font);
@@ -425,8 +425,13 @@ export class Massif {
         if (cell && !(body && row <= seam && !sh.kept.has(row * W + c) && sc.painted(row, sh.x0 + c))) g.set(cell[0], cell[1], ox + c * cw, oy + i * ch, font, cell[2] ?? 1);
       }
     }
-    // trees further up the face first; a glyph has no background, so a tree covers only the marks it stands over (taken out when painted)
-    drawTrees((t, row, x, y, cwk, chk) => { for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a); });
+    // Trees further up the face first. A tree has a body: between its outline's edges each row is shaded, so
+    // nothing behind shows through it and its branches are not sticks against what is behind.
+    const shade = mixHex(sh.fill, sc.P.pineDark, D.massif.body);
+    drawTrees((t, row, x, y, cwk, chk) => {
+      if (row.e > row.f) g.box(x + (row.f + 0.55) * cwk, y - 0.2, (row.e - row.f) * cwk, chk + 0.4, shade);   // inside its outline: the outline itself is its edge
+      for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, x + col * cwk, y, t.font, a);
+    });
   }
 
   // Once you have crossed onto a wooded sheet, all that is behind it is a little further off in the dark: a veil
