@@ -101,8 +101,12 @@ export class Grid {
     this.drawn++;
     // on whole device pixels, so type that is not on the page's grid is as sharp as type that is (a place exactly
     // between two pixels always goes the same way, whichever tile it is drawn on)
-    c.drawImage(s.canvas, Math.round((x - s.bx * k) * d + 0.02) / d, Math.round((y + (q * 0.9 - s.by) * k) * d + 0.02) / d, s.w * k, s.h * k);
+    const X = Math.round((x - s.bx * k) * d + 0.02) / d, Y = Math.round((y + (q * 0.9 - s.by) * k) * d + 0.02) / d;
+    c.drawImage(s.canvas, X, Y, s.w * k, s.h * k);
+    if (this.ext) this.mark(X, Y, s.w * k, s.h * k);
   }
+  // what has been drawn on a tile reaches this far
+  mark(x, y, w, h) { const e = this.ext; if (x < e[0]) e[0] = x; if (y < e[1]) e[1] = y; if (x + w > e[2]) e[2] = x + w; if (y + h > e[3]) e[3] = y + h; }
 
   // a filled box, for hiding what is behind something
   box(x, y, w, h, color, alpha = 1) {
@@ -111,14 +115,16 @@ export class Grid {
     c.fillStyle = color;
     c.fillRect(x, y, w, h);
     this.drawn++;
+    if (this.ext) this.mark(x, y, w, h);
   }
 
-  // draw onto another canvas, w by h, for a while; returns how much was drawn
+  // draw onto another canvas, w by h, for a while; returns how much was drawn, and this.ext is how far it reaches
   into(ctx, w, h, draw) {
     const keep = [this.ctx, this.vw, this.vh];
-    this.ctx = ctx; this.vw = w; this.vh = h; this.alpha = NaN; this.drawn = 0;
+    this.ctx = ctx; this.vw = w; this.vh = h; this.alpha = NaN; this.drawn = 0; this.ext = [Infinity, Infinity, -Infinity, -Infinity];
     draw();
     [this.ctx, this.vw, this.vh] = keep; this.alpha = NaN;
+    this.reach = this.ext; this.ext = null;
     return this.drawn;
   }
 

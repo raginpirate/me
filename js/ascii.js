@@ -229,29 +229,16 @@ export class AsciiScene extends HTMLElement {
     // peak (which lays the ground under itself), what is round it, what
     // lives on it.
     const hut = this.stops.find((s) => s.mark === 'hut');
-    const cam = this.cam = new Camera(this);
-    this.massif = new Massif(this);
+    this.cam = new Camera(this);
+    this.massif = new Massif(this);   // it lays the valley floor, with the hut, as its last terrace: this.ground
     this.massif.setLamps(this.lampCount);
-    // where the route runs through the seam, the painting gives way to it
-    const [body, ...ridges] = this.massif.sheets;
-    for (const key of body.kept) { const row = Math.floor(key / body.W), c = body.x0 + key % body.W; if (row >= this.bodyTop && row <= this.seamRow + this.blend && w.cells[row]?.[c]) w.cells[row][c] = null; }
-    // the painted peak is a pane on the page's own plane; it hides what is behind it
-    const peak = cam.pane({
-      x: 0, y: 0, cols: this.cols, rows: this.seamRow + this.blend + 1,
-      paint: (c0, i0, c1, i1, ox, oy) => {
-        for (let r = i0; r <= i1; r++) {
-          const span = this.peakSpan[r];
-          if (span && r < this.bodyTop && span[1] > c0 && span[0] <= c1) g.box(ox + span[0] * g.cellW, oy + r * g.cellH, (span[1] - span[0]) * g.cellW, g.cellH + 0.5, P.sky);
-          for (let c = c0; c <= c1; c++) { const cell = w.cells[r][c]; if (cell) g.set(cell[0], cell[1], ox + c * g.cellW, oy + r * g.cellH, g.size, cell[2] ?? 1); }
-        }
-      },
-    });
-    cam.panes = [body.pane, peak, ...ridges.map((sh) => sh.pane), this.groundPane];
     this.air = new Air(this);
-    // the last stop's waypoint is the hut's window, wherever the hut stands at the end of the page
+    // the last stop's waypoint is the hut's window
     this.cam.look(this.end + S / 2);
     const [wx, wy] = this.ground.at(...this.ground.window);
     hut.x = hut.hx = wx / g.cellW - 0.5; hut.y = hut.hy = wy / g.cellH - 0.5 + this.end;
+    // stars at the far end of the sky, seen below the clouds: they do not move as you go
+    this.far = Array.from({ length: Math.floor(this.cols * S * 0.35 / 50) }, () => ({ x: rnd(), y: rnd(), tier: rnd() < 0.75 ? 0 : 1, ch: rnd() < 0.2 ? '+' : rnd() < 0.5 ? '·' : '.', phase: rnd() * 6.28 }));
     this.life = new Life(this);
 
     this.movers = [];
@@ -380,7 +367,7 @@ export class AsciiScene extends HTMLElement {
     for (const s of this.lights) {
       if (s.mark) {
         // a waypoint stands where its sheet (or the hut) stands now
-        const [x, y] = s.sheet ? [cam.px(s.sheet.mark[0], s.sheet.z), cam.py(s.sheet.mark[1], s.sheet.z)] : this.ground.at(...this.ground.window);
+        const [x, y] = s.sheet ? [cam.px(s.sheet.mark[0], s.sheet.Z), cam.py(s.sheet.mark[1], s.sheet.Z)] : this.ground.at(...this.ground.window);
         s.x = x / g.cellW - 0.5; s.y = y / g.cellH - 0.5 + top; s.show = 1;
       } else if (inView(s, 6)) spring(s, D.spring.light);
       const on = this.presence(s);
@@ -446,9 +433,9 @@ export class AsciiScene extends HTMLElement {
     if (!active && !(ambient && this.tick % 2 === 0)) { this.warm(); return; }
 
     // --- draw, from the back to the front ---
-    this.sky = mixHex(P.sky, P.skyBase, smooth(8.3, 9.7, this.centre));
+    this.sky = P.sky;
     g.clear(this.sky);
-    cam.tidy();
+    cam.tidy([this.massif.mountain, ...this.massif.slices, ...this.air.ranges, this.air.pinned, ...this.air.clouds.map((c) => c[0])]);
     const began = performance.now();
 
     // field stars
@@ -527,24 +514,24 @@ export class AsciiScene extends HTMLElement {
     }
     for (const p of this.movers) if (inView(p, 2)) this.drawShooting(p, top);
 
-    // below the sky: far ranges, far snow and the flock, the clouds behind
-    // the mountain; then the mountain; then what is in front of it
+    // Below the clouds the sky goes on all the way down: stars at its far
+    // end, which do not move as you go.
+    const deep = smooth(L.deck[1] - 0.2, L.deck[1] + 0.5, this.centre);
+    if (deep > 0.01) {
+      const [floor, rate] = D.twinkle.field, sky = cam.h0 * g.h * 1.15;
+      for (const s of this.far) {
+        const y = s.y * sky; if (y > sky) continue;
+        g.ink(s.ch, s.tier ? P.star : P.dim, s.x * g.w, y, g.size * 0.9, deep * (1 - 0.6 * s.y) * (reduced ? 0.8 : twinkle(time, s.phase * 9, floor, rate + s.phase)));
+      }
+    }
+    // Then everything in the camera's world, from the furthest to the
+    // nearest: far ranges, cloud, the mountain, the terraces, and what is on
+    // them, each at its depth.
     const below = bottom > (L.deck[0] - 1.2) * rows;
-    if (below) {
-      cam.show(this.air.far, cam.panes);   // the far ranges, where the mountain is not over them
-      if (!reduced) this.life.behind();
-      this.air.drawClouds(false);
-    }
-    this.massif.haze();
-    cam.show();   // the peak, the mountain under it, the ground
-    if (below) {
-      this.ground.draw();
-      if (!reduced) this.life.front();
-    }
+    const items = [...this.massif.items(), ...this.routeItems(time, reduced)];
+    if (below) items.push(...this.air.items(), ...this.life.items(), { d: cam.dist(this.ground.Z) - 3e-3, draw: () => this.ground.draw() });
+    cam.render(items);
     this.lamp(top);
-    if (below && !reduced) this.life.leaves(...this.lampAt);
-    this.drawRoute(top, time, reduced);
-    if (below) { this.air.drawMist(); this.air.drawClouds(true); }
 
     // the tethers. Their stars come in one by one as the card opens, each
     // at its own moment, and leave the same way. While they are there they
@@ -556,7 +543,7 @@ export class AsciiScene extends HTMLElement {
       for (const p of s.dots) if (p.a && p.y < edge) g.put('·', P.thread, p.x, p.y - top, p.a * 0.95 * smooth(p.late * 0.55, p.late * 0.55 + 0.45, on) * this.flicker(p.tw));
     }
     // with time to spare in the frame, paint tiles ahead of the scroll
-    for (const way = this.scrollVel < 0 ? -1 : 1; performance.now() - began < 5 && cam.warm(way););
+    for (const panes = this.massif.items().filter((p) => p.levels); performance.now() - began < 5 && cam.warm(panes););
   }
 
   // The light you carry down the route. It is on the trail, at the height
@@ -565,7 +552,7 @@ export class AsciiScene extends HTMLElement {
   // the stretch of route inside the light is lit.
   lamp(top) {
     const g = this.grid, P = this.P, cam = this.cam, K = D.massif.lamp, L = D.layout, H = g.h, m = Math.min(g.w, H), r0 = K.core * m, r1 = K.reach * m;
-    const x = this.massif.trail(cam.y), y = this.massif.lampY, reach = r0 * 2.1;
+    const [x, y] = this.massif.lamp(cam.s), reach = r0 * 2.1;
     this.lampAt = [x, y, r0, r1];
     // the dark comes on below the summit: up there the sky is the light
     const dark = K.dark * smooth(L.summit + 0.1, L.seam + 0.45, this.centre);
@@ -574,7 +561,6 @@ export class AsciiScene extends HTMLElement {
       grad.addColorStop(0, this.sky + '00'); grad.addColorStop(0.5, this.sky + hex(dark * 0.62)); grad.addColorStop(1, this.sky + hex(dark));
       g.box(0, 0, g.w, H, grad);
     }
-    this.massif.drawBridges();   // after the dark, so a bridge out of the light still shows: plain, not lit
     const near = this.massif.light(x, y, reach);
     // the rope on the peak is route too
     for (const [c, row, ch] of this.rope) { const px = cam.px(c), py = cam.py(row); if (Math.abs(py - y) < reach) near.push([px, py, ch, g.size, false]); }
@@ -586,52 +572,44 @@ export class AsciiScene extends HTMLElement {
     }
   }
 
-  // The route's own things: the flag on the summit, the lamps of those
-  // climbing it, and a waypoint for every stop on the mountain: a small
-  // lantern on whatever stands there. Each is a drawing of a few glyphs at
-  // different sizes, sized with the sheet it stands on.
-  drawRoute(top, time, reduced) {
-    const g = this.grid, P = this.P, w = this.world, H = g.h;
+  // The route's own things: the flag on the summit, and a waypoint for
+  // every stop on the mountain: a small lantern on whatever stands there.
+  // Each is a drawing of a few glyphs at different sizes, sized and placed
+  // at the depth of what it stands on, for the camera to put in order.
+  routeItems(time, reduced) {
+    const g = this.grid, P = this.P, w = this.world, H = g.h, cam = this.cam, out = [];
     // the flag
-    const fx = this.cam.px(w.topCol + 0.5), fy = this.cam.py(Math.ceil(this.summitRow)), fu = g.size * 1.7;
-    if (fy > -80 && fy < H + 40) {
-      for (const dy of [0.45, 1.4, 2.3]) g.ink('|', P.rockLight, fx, fy - dy * fu, fu * 1.3);
+    out.push({ d: cam.dist(1) - 1e-3, draw: () => {
+      const fx = cam.px(w.topCol + 0.5), fy = cam.py(Math.ceil(this.summitRow)), fu = g.size * 1.15 * cam.size(1);
+      if (fy < -80 || fy > H + 40) return;
+      for (const dy of [0.45, 1.25, 2.05, 2.85]) g.ink('|', P.rockLight, fx, fy - dy * fu, fu);
       const wave = reduced ? 0 : Math.sin(time * 3.2);
-      g.ink('o', P.ember, fx + 0.6 * fu, fy - 2.5 * fu, fu * 2.6, 0.12);
-      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.58 + 0.05 * wave) * fu, fy - 2.5 * fu, fu * 1.45);
-    }
-    // lamps
-    for (const m of this.massif.lamps) {
-      const [x, y] = this.massif.at(m.sh, m.c + 0.5, m.r + 0.5);
-      if (y < -10 || y > H + 10 || this.massif.hidden(x, y, m.sh.index)) continue;
-      const u = m.sh.font, pulse = reduced ? 1 : twinkle(time, m.phase, ...D.twinkle.lamp);
-      g.ink('o', P.ember, x, y, u, pulse);
-    }
+      g.ink('o', P.ember, fx + 0.6 * fu, fy - 2.7 * fu, fu * 1.8, 0.12);
+      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.58 + 0.05 * wave) * fu, fy - 2.7 * fu, fu * 1.2);
+    } });
     // waypoints
     const FIX = {
-      axe: [['T', -0.6, 0.15, 1.5, P.rockLight]],
+      axe: [['|', -0.7, 0.45, 1, P.rockLight], ['T', -0.7, -0.4, 1, P.rockLight]],
       cairn: [['O', -0.78, 0.3, 1.1, P.rockLight], ['o', -0.82, -0.38, 0.9, P.rockLight], ['o', -0.76, -0.95, 0.6, P.rockLight]],
-      post: [['T', -0.6, 0, 1.7, mixHex(P.ground, P.leaf, 0.45)]],
+      post: [['|', -0.75, 0.5, 1, mixHex(P.ground, P.leaf, 0.45)], ['|', -0.75, -0.35, 1, mixHex(P.ground, P.leaf, 0.45)], ['-', -0.4, -0.95, 1, mixHex(P.ground, P.leaf, 0.45)]],
       hut: [],
     };
     for (const s of this.lights) {
       if (!s.mark || s.show < 0.05) continue;
-      const [x, y] = this.where(s);
-      if (y < -40 || y > H + 40) continue;
-      const u = s.sheet ? s.sheet.font : g.size * this.ground.k, lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light)), a = s.show;
-      if (s.sheet) {
-        // a small hollow, so it reads against rock and trees
-        const x2 = g.ctx, r = u * 2.6, grad = x2.createRadialGradient(x, y, r * 0.45, x, y, r);
-        grad.addColorStop(0, this.sky); grad.addColorStop(1, this.sky + '00');
-        g.box(x - r, y - r, 2 * r, 2 * r, grad, a);
-      }
-      for (const [ch, dx, dy, k, color] of FIX[s.mark]) g.ink(ch, color, x + dx * u, y + dy * u, k * u, a);
-      // the lantern: a glow, the flame, and when its card is open a ring round it
-      g.ink('o', P.ember, x, y, u * 2.7, (0.1 + 0.2 * live) * a);
-      if (s.mark === 'hut') { for (const [ch, dx] of [['[', -0.5], [']', 0.5]]) g.ink(ch, P.emberHot, x + dx * g.cellW * this.ground.k, y, u, live * a); }
-      else { g.ink('o', P.ember, x, y, u * 0.85, a); g.ink('o', P.emberHot, x, y, u * 0.85, lit * a); }
-      if (lit > 0.05) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.ink('·', P.ember, x + dx * u * 1.25, y + dy * u * 1.25, u, 0.8 * live * a);
+      const Z = s.sheet ? s.sheet.Z : this.ground.Z;
+      out.push({ d: cam.dist(Z) - 2e-3, draw: () => {
+        const [x, y] = this.where(s);
+        if (y < -40 || y > H + 40) return;
+        const u = g.size * cam.size(Z), lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light)), a = s.show;
+        for (const [ch, dx, dy, k, color] of FIX[s.mark]) g.ink(ch, color, x + dx * u, y + dy * u, k * u, a);
+        // the lantern: a glow, the flame, and when its card is open a ring round it
+        g.ink('o', P.ember, x, y, u * 1.9, (0.1 + 0.2 * live) * a);
+        if (s.mark === 'hut') { for (const [ch, dx] of [['[', -0.5], [']', 0.5]]) g.ink(ch, P.emberHot, x + dx * g.cellW * cam.size(Z), y, u, live * a); }
+        else { g.ink('o', P.ember, x, y, u * 0.85, a); g.ink('o', P.emberHot, x, y, u * 0.85, lit * a); }
+        if (lit > 0.05) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.ink('·', P.ember, x + dx * u * 1.25, y + dy * u * 1.25, u, 0.8 * live * a);
+      } });
     }
+    return out;
   }
 
   // The name's thread: a straight run of dots, one every half cell,
@@ -760,7 +738,7 @@ export class AsciiScene extends HTMLElement {
 
   // in spare time, paint what will be wanted soon, so scrolling into it does not hitch: the sheets of the mountain,
   // then the tiles just off the screen, ahead of the scroll first
-  warm() { const way = this.scrollVel < 0 ? -1 : 1; return this.massif.warm() || this.cam.warm(way) || this.cam.warm(-way); }
+  warm() { return this.cam.warm(this.massif.items().filter((p) => p.levels)) || this.cam.warm(this.air.items()); }
 
   // ---------- for the page ----------
   // where a stop's light is on screen, in viewport pixels
