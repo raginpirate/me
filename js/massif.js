@@ -17,6 +17,8 @@
 import { clamp, smooth, mulberry32, wrapPi, edge, mixHex } from './util.js';
 import { D } from './direction.js';
 
+const TILE = 256;   // a tile's side, in device pixels
+
 // straight runs between points [[x, y], ...]
 const line = (pts) => (x) => {
   if (x <= pts[0][0]) return pts[0][1];
@@ -387,8 +389,18 @@ export class Massif {
   // a place on a cut-out (column, row; fractions allowed), in viewport pixels
   at(l, c, r) { const g = this.sc.grid; return [(l.X + (c - l.cx - 0.5) * l.s) * g.cellW, g.h / 2 + (r - this.centreRow) * g.cellH * l.s]; }
 
+  // A frame does not set the mountain glyph by glyph. Each cut-out is
+  // painted once into tiles, at sizes half an octave apart, and only ever
+  // drawn smaller than it was painted, so it stays sharp. A tile is two
+  // layers: the dark that hides what is behind the cut-out and its trees,
+  // and the ink (its ground, its glyphs, its trees). The trees of a cut-out
+  // are painted into its tiles while their sizes stand still, which is
+  // whenever you are not on that cut-out. On the one you are on, a tree
+  // grows or shrinks as you pass it, so each of its trees is its own small
+  // picture, placed at its size of the moment.
   render() {
-    const sc = this.sc, g = sc.grid, P = sc.P, cw = g.cellW, ch = g.cellH, H = g.h, sky = sc.sky;
+    const sc = this.sc, g = sc.grid, cw = g.cellW, ch = g.cellH, H = g.h, d = g.dpr, t = TILE / d, ctx = g.ctx;
+    this.frameNo = (this.frameNo || 0) + 1;
     for (const l of this.lobes) {
       if (l.vis < 0.02) continue;
       const top = H / 2 + (l.apex - 8 - this.centreRow) * ch * l.s;
@@ -398,35 +410,120 @@ export class Massif {
       const r0 = Math.max(l.base, Math.floor(-y0 / chs) - 1), r1 = Math.min(l.base + l.rowsN - 1, Math.ceil((H - y0) / chs));
       const c0 = Math.max(0, Math.floor(-x0 / cws) - 1), c1 = Math.min(l.W - 1, Math.ceil((g.w - x0) / cws));
       if (r1 < r0 || c1 < c0) continue;
-      const size = g.size * s, seam = l.core ? sc.seamRow + sc.blend : -1, shift = sc.ax - l.cx - 0.5;
-      for (let row = r0; row <= r1; row++) {
-        const i = row - l.base, y = y0 + row * chs;
-        for (const [a, b] of l.runs[i]) if (b >= c0 && a <= c1) g.box(x0 + a * cws - 0.5, y - 0.5, (b - a) * cws + 1, chs + 1, sky, l.vis);
+      // Its trees are painted in at the sizes they stand at for where you are. On the cut-out you are on they grow
+      // as you go down it, so there they are painted again each time you have come down a little way (in steps of
+      // a few percent of their size, too small to see).
+      const step = sc.screenRows / 4, ref = Math.round(l.ref / step) * step;
+      const lv = Math.ceil(Math.log2(s) * 2 - 1e-6), sL = 2 ** (lv / 2), f = s / sL, tw = t * f, Y0 = y0 + l.base * chs;
+      const L = this.level(l, `${lv}|${ref}|${sc.sky}`, sL, ref);
+      const nx = Math.ceil(l.W * cw * sL * d / TILE), ny = Math.ceil(l.rowsN * ch * sL * d / TILE);
+      const ty0 = Math.max(0, Math.floor((y0 + r0 * chs - Y0) / tw)), ty1 = Math.min(ny - 1, Math.floor((y0 + (r1 + 1) * chs - Y0) / tw));
+      const tx0 = Math.max(0, Math.floor(-x0 / tw)), tx1 = Math.min(nx - 1, Math.floor((g.w - x0) / tw));
+      const shown = [];
+      for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+        const x = x0 + tx * tw, y = Y0 + ty * tw;
+        if (this.behind(x, y, tw, tw, l.index)) continue;   // wholly behind a nearer cut-out: not painted, not drawn
+        shown.push([this.tile(l, L, tx, ty), x, y]);
       }
-      // the ground's wash, stretched to size: smoothing makes it a soft edge, not blocks
-      g.ctx.globalAlpha = g.alpha = l.vis * l.tone;
-      g.ctx.drawImage(l.wash, 0, r0 - l.base, l.W, r1 - r0 + 1, x0, y0 + r0 * chs, l.W * cws, (r1 - r0 + 1) * chs);
-      for (let row = r0; row <= r1; row++) {
-        const i = row - l.base, y = y0 + row * chs, cells = l.cells[i];
-        for (let c = c0; c <= c1; c++) {
-          const cell = cells[c];
-          if (cell && !(row <= seam && !l.kept.has(row * l.W + c) && sc.painted(row, Math.round(shift + c)))) g.set(cell[0], cell[1], x0 + c * cws, y, size, cell[2] * l.vis * l.tone);
-        }
-      }
-      // its trees
-      for (const t of l.trees) {
-        if (t.row < r0 - 1) continue;
-        if (t.row - 14 > r1) break;                    // sorted by the row they stand on; none is taller than this
-        const k = this.grown(l, t), cwk = cw * k, chk = ch * k, left = x0 + (t.c + 0.5) * cws - t.w / 2 * cwk, foot = y0 + (t.row + 1) * chs;
-        if (left > g.w || left + t.w * cwk < 0) continue;
-        t.rows.forEach((row, i) => {
-          if (row.e < row.f) return;
-          const y = foot - (t.h - i) * chk;
-          g.box(left + (row.f - 0.6) * cwk, y - 0.5, (row.e - row.f + 2.2) * cwk, chk + 1, sky, l.vis);   // a tree hides what is behind it, with a little dark round it
-          for (const [j, glyph, color, a] of row.marks) g.set(glyph, color, left + j * cwk, y, g.size * k, a * l.vis * l.tone);
-        });
+      // its dark and its ink in one; then, for one turned from you, the dark again over it, so its ink is that much fainter
+      ctx.globalAlpha = g.alpha = l.vis; ctx.fillStyle = sc.sky;
+      for (const [e, x, y] of shown) if (e.both) ctx.drawImage(e.both, x, y, e.w / d * f, e.h / d * f); else if (e.plain) ctx.fillRect(x, y, e.w / d * f, e.h / d * f);
+      if (l.tone < 0.99) {
+        ctx.globalAlpha = g.alpha = (1 - l.tone) * l.vis;
+        for (const [e, x, y] of shown) if (e.both) { if (e.plain) ctx.fillRect(x, y, e.w / d * f, e.h / d * f); else if (e.dark) ctx.drawImage(e.dark, x, y, e.w / d * f, e.h / d * f); }
       }
     }
+    this.tidy();
+  }
+
+  // a cut-out's tiles at one size, with its trees in them or not, in one sky
+  level(l, key, sL, ref) {
+    if (!l.levels) l.levels = new Map();
+    let L = l.levels.get(key); if (!L) l.levels.set(key, L = { sL, ref, tiles: new Map() });
+    return L;
+  }
+  // one tile of a cut-out, painted if it has not been: { dark, ink }
+  tile(l, L, tx, ty) {
+    const key = ty * 4096 + tx; let e = L.tiles.get(key);
+    if (e === undefined) {
+      const sc = this.sc, g = sc.grid, d = g.dpr, t = TILE / d, sL = L.sL, cws = g.cellW * sL, chs = g.cellH * sL, sky = sc.sky;
+      const w = Math.max(1, Math.min(TILE, Math.ceil(l.W * cws * d) - tx * TILE)), h = Math.max(1, Math.min(TILE, Math.ceil(l.rowsN * chs * d) - ty * TILE));
+      const make = () => this.canvas(w, h);
+      const [dark, dx] = make(), [ink, ix] = make();
+      let inked = false, boxed = false, full = true, any = false;
+      const ox = -tx * t, oy = -ty * t, size = g.size * sL, seam = l.core ? sc.seamRow + sc.blend : -1, shift = sc.ax - l.cx - 0.5;
+      const c0 = Math.max(0, Math.floor(tx * t / cws) - 2), c1 = Math.min(l.W - 1, Math.ceil((tx + 1) * t / cws) + 1);
+      const i0 = Math.max(0, Math.floor(ty * t / chs) - 2), i1 = Math.min(l.rowsN - 1, Math.ceil((ty + 1) * t / chs) + 1);
+      dx.fillStyle = sky;
+      for (let i = i0; i <= i1; i++) {
+        let covers = false;
+        for (const [a, b] of l.runs[i]) if (b >= c0 && a <= c1) { dx.fillRect(ox + a * cws - 0.5, oy + i * chs - 0.5, (b - a) * cws + 1, chs + 1); any = true; if (a <= c0 && b > c1) covers = true; }
+        if (!covers) full = false;
+      }
+      // is there any of its ground's wash here: it is only just under the crest
+      for (let cc = c0; cc <= c1 && !inked; cc++) { const pk = l.peak[cc]; if (pk > l.base + i0 - 27 && pk <= l.base + i1 + 1) inked = true; }
+      g.into(ix, () => {
+        ix.drawImage(l.wash, c0, i0, c1 - c0 + 1, i1 - i0 + 1, ox + c0 * cws, oy + i0 * chs, (c1 - c0 + 1) * cws, (i1 - i0 + 1) * chs);
+        for (let i = i0; i <= i1; i++) {
+          const cells = l.cells[i], row = l.base + i;
+          for (let cc = c0; cc <= c1; cc++) {
+            const cell = cells[cc];
+            if (cell && !(row <= seam && !l.kept.has(row * l.W + cc) && sc.painted(row, Math.round(shift + cc)))) { g.set(cell[0], cell[1], ox + cc * cws, oy + i * chs, size, cell[2]); inked = true; }
+          }
+        }
+        // its trees, at the sizes they stand at while you are not on it, further up the face first
+        const cw = g.cellW, ch = g.cellH, x0 = ox, y0 = oy - l.base * chs, still = sc.reduced.matches;   // the pixel of its column 0, row 0, in this tile
+        const rTop = l.base + i0 - 16, rBottom = l.base + i1 + 2;
+        for (const tr of l.trees) {
+          if (tr.row < rTop) continue;
+          if (tr.row > rBottom + 16) break;
+          const k = sL * tr.k * (still ? 1 : this.gain((l.ridge ? clamp(tr.row, l.apex, l.apex + l.span) : tr.row) - L.ref)), cwk = cw * k, chk = ch * k, left = x0 + (tr.c + 0.5) * cws - tr.w / 2 * cwk, foot = y0 + (tr.row + 1) * chs;
+          if (foot < -2 * chk || foot - (tr.h + 1) * chk > t + 2 || left > t + 2 || left + (tr.w + 2) * cwk < -2) continue;
+          tr.rows.forEach((row, i) => {
+            if (row.e < row.f) return;
+            const y = foot - (tr.h - i) * chk, bx = left + (row.f - 0.6) * cwk, bw = (row.e - row.f + 2.2) * cwk;
+            dx.fillRect(bx, y - 0.5, bw, chk + 1); boxed = any = inked = true;
+            ix.globalCompositeOperation = 'destination-out'; ix.globalAlpha = 1; ix.fillRect(bx, y - 0.5, bw, chk + 1); ix.globalCompositeOperation = 'source-over'; g.alpha = NaN;
+            for (const [j, glyph, color, a] of row.marks) g.set(glyph, color, left + j * cwk, y, g.size * k, a);
+          });
+        }
+      });
+      // a tile that is all dark is filled, not kept; one with nothing on it is nothing
+      const plain = full && !boxed;
+      // the two in one: the dark, the ink over it
+      let both = null;
+      if (inked) {
+        [both] = this.canvas(w, h); const bx = both.getContext('2d'); bx.setTransform(1, 0, 0, 1, 0, 0);
+        if (plain) { bx.fillStyle = sky; bx.fillRect(0, 0, w, h); } else if (any) bx.drawImage(dark, 0, 0);
+        bx.drawImage(ink, 0, 0);
+      } else if (any && !plain) both = dark;
+      this.spare(ink); if (!(any && !plain) || !inked && false) { if (!(any && !plain)) this.spare(dark); }
+      e = { dark: any && !plain ? dark : null, both, plain, w, h, used: 0 };
+      this.held = (this.held || 0) + (e.dark ? w * h : 0) + (both && both !== e.dark ? w * h : 0);
+      L.tiles.set(key, e);
+    }
+    e.used = this.frameNo;
+    return e;
+  }
+  // a clear canvas w by h, in css pixels' scale: one let go of before, if there is one that size
+  canvas(w, h) {
+    const d = this.sc.grid.dpr, pool = this.pool || (this.pool = []);
+    let i = pool.findIndex((c) => c.width === w && c.height === h), c;
+    if (i >= 0) { c = pool[i]; pool[i] = pool[pool.length - 1]; pool.pop(); const x = c.getContext('2d'); x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; x.clearRect(0, 0, w, h); x.setTransform(d, 0, 0, d, 0, 0); return [c, x]; }
+    c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.setTransform(d, 0, 0, d, 0, 0); return [c, x];
+  }
+  spare(c) { if (c && (this.pool || (this.pool = [])).length < 96) this.pool.push(c); }
+  // let go of the pictures longest unseen, when too many are held
+  tidy() {
+    const g = this.sc.grid, room = 10 * g.canvas.width * g.canvas.height;
+    if ((this.held || 0) <= room) return;
+    const old = [];
+    for (const l of this.lobes) if (l.levels) for (const [lk, L] of l.levels) {
+      for (const [k, e] of L.tiles) if (e.used < this.frameNo) old.push([e.used, () => { L.tiles.delete(k); this.held -= (e.dark ? e.w * e.h : 0) + (e.both && e.both !== e.dark ? e.w * e.h : 0); this.spare(e.dark); if (e.both !== e.dark) this.spare(e.both); }]);
+      if (!L.tiles.size) l.levels.delete(lk);
+    }
+    old.sort((a, b) => a[0] - b[0]);
+    for (const [, drop] of old) { if (this.held <= room * 0.6) break; drop(); }
   }
 
   // The route crosses from one cut-out to the next on a rope bridge: a
@@ -466,6 +563,21 @@ export class Massif {
     return { pts, u, vis, posts: len > u * 1.3 };
   }
 
+  // is a rectangle of the screen wholly behind a cut-out standing in front of the one at `index`: its corners and
+  // the middle of its top edge are all inside it (a cut-out is solid from its crest down)
+  behind(x, y, w, h, index) {
+    const g = this.sc.grid;
+    for (let m = index + 1; m < this.lobes.length; m++) {
+      const f = this.lobes[m]; if (f.vis < 0.995 || !f.mask) continue;
+      let all = true;
+      for (const [px, py] of [[x, y], [x + w / 2, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+        const c = Math.floor(f.cx + 0.5 + (px / g.cellW - f.X) / f.s), i = Math.floor(this.centreRow + (py - g.h / 2) / (g.cellH * f.s)) - f.base;
+        if (!(i >= 0 && i < f.rowsN && c >= 0 && c < f.W && f.mask[i][c] === 1)) { all = false; break; }
+      }
+      if (all) return true;
+    }
+    return false;
+  }
   // is a pixel hidden by a cut-out standing in front of the one at `index`
   hidden(x, y, index) {
     const g = this.sc.grid;

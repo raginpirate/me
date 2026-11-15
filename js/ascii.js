@@ -148,7 +148,6 @@ export class AsciiScene extends HTMLElement {
     }
     this.tileRows = Math.ceil(S);
     this.tiles = new Map(); this.bare = new Set();
-    this.mount = g.layer(); this.mountKey = null;
 
     // field stars: everywhere above the mountain, three tiers
     this.field = [];
@@ -439,7 +438,7 @@ export class AsciiScene extends HTMLElement {
     if (!active && !(ambient && this.tick % 2 === 0)) { this.warm(top); return; }
 
     // --- draw, from the back to the front ---
-    this.sky = mixHex(P.sky, P.skyBase, smooth(8.3, 9.7, this.centre));
+    this.sky = mixHex(P.sky, P.skyBase, Math.round(smooth(8.3, 9.7, this.centre) * 24) / 24);   // in steps too small to see, so what is painted in it keeps
     g.clear(this.sky);
 
     // field stars
@@ -525,14 +524,8 @@ export class AsciiScene extends HTMLElement {
       this.air.drawRanges();
       if (!reduced) this.life.behind();
       this.air.drawClouds(false);
-      // the massif and the ground are kept as one layer, redrawn only when the page has moved
-      const key = `${top}|${this.sky}`;
-      if (key !== this.mountKey) {
-        this.mountKey = key;
-        this.mount.clearRect(0, 0, g.w, g.h);
-        g.into(this.mount, () => { this.massif.render(); this.ground.render(); });
-      }
-      g.blit(this.mount.canvas, 0);
+      // the massif and the ground: placed from what is kept painted, every frame
+      this.massif.render(); this.ground.render();
     }
     this.paint(top);
     if (below) {
