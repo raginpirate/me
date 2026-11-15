@@ -165,7 +165,7 @@ export class Massif {
   // ridge behind you stays behind: nothing on it is larger than its foot.
   grown(l, t) {
     if (this.sc.reduced.matches) return l.s * t.k;
-    return l.s * t.k * this.gain((l.ridge ? clamp(t.row, l.apex, l.apex + l.span) : t.row) - l.ref);
+    return Math.min(2, l.s * t.k * this.gain((l.ridge ? clamp(t.row, l.apex, l.apex + l.span) : t.row) - l.ref));   // never larger than twice the page's type
   }
 
   // the route across a cut-out: arrive, by the waypoint if it has one, depart
@@ -334,7 +334,8 @@ export class Massif {
       });
       trees.push({ c, row: r, h, w, k, rows, leafy, id: index * 10000 + trees.length });
     };
-    const pick = (at) => { const leafy = rnd() < smooth(Y.forest + 0.3, Y.forest + 2.0, at) * 0.22; return [leafy ? T.leafy[Math.floor(rnd() * T.leafy.length)] : T.pines[Math.floor(rnd() * T.pines.length)], leafy]; };
+    const full = T.pines.filter((p) => !p.join('').includes('|||'));   // on rock, only pines with a full body: a stick pine on a cliff reads as see-through
+    const pick = (at) => { const leafy = rnd() < smooth(Y.forest + 0.3, Y.forest + 2.0, at) * 0.22, set = at < Y.forest ? full : T.pines; return [leafy ? T.leafy[Math.floor(rnd() * T.leafy.length)] : set[Math.floor(rnd() * set.length)], leafy]; };
     // how much snow a tree carries: laden near the treeline, dusted lower, bare in the forest proper
     const snowOn = (at) => at < Y.forest - 0.15 ? 2 : at < Y.forest + 0.3 ? (rnd() < 0.75 ? 2 : 1) : at < Y.forest + 0.95 ? (rnd() < 0.6 ? 1 : 0) : 0;
     const density = (at) => smooth(Y.treeline - 0.1, Y.forest + 0.2, at);
@@ -477,7 +478,7 @@ export class Massif {
         for (const tr of l.trees) {
           if (tr.row < rTop) continue;
           if (tr.row > rBottom + 16) break;
-          const k = sL * tr.k * (still ? 1 : this.gain((l.ridge ? clamp(tr.row, l.apex, l.apex + l.span) : tr.row) - L.ref)), cwk = cw * k, chk = ch * k, left = x0 + (tr.c + 0.5) * cws - tr.w / 2 * cwk, foot = y0 + (tr.row + 1) * chs;
+          const k = Math.min(2 * sL / l.s, sL * tr.k * (still ? 1 : this.gain((l.ridge ? clamp(tr.row, l.apex, l.apex + l.span) : tr.row) - L.ref))), cwk = cw * k, chk = ch * k, left = x0 + (tr.c + 0.5) * cws - tr.w / 2 * cwk, foot = y0 + (tr.row + 1) * chs;
           if (foot < -2 * chk || foot - (tr.h + 1) * chk > t + 2 || left > t + 2 || left + (tr.w + 2) * cwk < -2) continue;
           tr.rows.forEach((row, i) => {
             if (row.e < row.f) return;
