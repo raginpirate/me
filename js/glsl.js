@@ -31,7 +31,7 @@ uniform vec2 uRes, uCell;                 // device px: the canvas, a cell at th
 uniform float uType, uTime, uS, uPx;      // type size in device px; seconds; rows to a screen; device px to a css px
 uniform vec3 uPalette[${COLOURS}];                // [0] is the sky of the moment
 uniform vec4 uLamp;                       // the light you carry: x, y, where its dark begins, where it is full (device px)
-uniform float uDark, uLit, uMask;         // how dark the dark is; 1 for things drawn after it; 1 when only what hides is wanted
+uniform float uDark, uLit, uMask, uHeat;         // how dark the dark is; 1 for things drawn after it; 1 when only what hides is wanted
 uniform vec4 uWashBox;                    // this lobe's ground texture: its first column and row, its size in cells
 `;
 
@@ -105,6 +105,7 @@ in vec2 vUV, vCell; in vec4 vColour; in float vTone; flat in float vMode;
 out vec4 o;
 void main() {
   if (uMask > .5) { o = vec4(0.); return; }
+  if (uHeat > .5) { o = vec4(8. / 255.); return; }   // ?try=heat: every fragment shaded adds a step, so the picture is its own cost
   vec3 sky = uPalette[0]; vec4 c;
   if (vMode < .5) c = vec4(vColour.rgb, 1.) * (vColour.a * texture(uAtlas, vUV / vec2(textureSize(uAtlas, 0))).r);
   else if (vMode < 1.5) c = vec4(vColour.rgb, 1.) * vColour.a;

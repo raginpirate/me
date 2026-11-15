@@ -39,16 +39,16 @@ function start() {
   const font = getComputedStyle(html).getPropertyValue('--mono').trim(), params = measure(font), model = makeWorld({ ...params, lazy: true }), d = model.dims;
   const dpr = Math.min(devicePixelRatio, TYPE.maxDpr), view = { w: params.W, h: params.H, dpr };
   html.style.setProperty('--world-height', `${Math.round(d.rows * params.cellH)}px`);
-  const gl = makeGL(canvas, { font, chars: CHARS, force }); if (!gl) throw new Error('no context');
+  const gl = makeGL(canvas, { font, chars: CHARS, force, heat: query.get('try') === 'heat' }); if (!gl) throw new Error('no context');
   gl.resize(Math.round(view.w * dpr), Math.round(view.h * dpr)); gl.atlas(params.typeSize * dpr);
-  const scene = makeScene(gl, model, view, { prepass: query.get('prepass') !== '0' }), glide = makeGlide(() => model.stops.map((s) => s.snap * params.cellH).sort((a, b) => a - b));
+  const scene = makeScene(gl, model, view, { prepass: query.get('prepass') !== '0', try: query.get('try') }), glide = makeGlide(() => model.stops.map((s) => s.snap * params.cellH).sort((a, b) => a - b));
   const cards = makeCards(model, view, (y, smoothly) => glide.go(y, smoothly && !reduced)), live = makeLive(gl, model, view, scene, cards);
   live.setLamps(lamps); glide.on();
   let frame = 0, last = 0;
   const loop = (now) => {
     const time = (now - began) / 1000, t0 = bench && performance.now();
     cards.frame(clamp(scrollY / params.cellH / d.maxScroll, 0, 1), clamp(time - last, 0, 0.05), live.spots); last = time;
-    scene.frame(time, live);
+    const timed = bench?.open(); scene.frame(time, live); if (timed) bench.close();
     if (bench) bench(performance.now() - t0, now);
     frame = requestAnimationFrame(loop);
   };
@@ -92,14 +92,19 @@ else {
 }
 addEventListener('gh-pulse', (e) => { lamps = e.detail; world?.live.setLamps(lamps); });
 
-// ?fps: what a frame costs. The script's share, and the graphics card's where the browser will say.
+// ?fps: what a frame costs. The script's share, and the graphics card's own time where the browser will tell.
 if (query.has('fps')) {
-  const out = document.body.appendChild(Object.assign(document.createElement('pre'), { className: 'fps' })), cpu = [], gaps = []; let before = 0, shownAt = 0;
-  const mid = (list, p) => [...list].sort((a, b) => a - b)[Math.floor(p * (list.length - 1))] ?? 0;
+  const out = document.body.appendChild(Object.assign(document.createElement('pre'), { className: 'fps' })), cpu = [], gaps = [], gpu = [], mid = (list, p) => [...list].sort((a, b) => a - b)[Math.floor(p * (list.length - 1))] ?? 0;
+  let before = 0, shownAt = 0, timing = null, ext = null, of = null;
   bench = (ms, now) => {
+    const gl = world?.gl.gl; if (gl && of !== gl) { of = gl; ext = gl.getExtension('EXT_disjoint_timer_query_webgl2'); timing = null; }
+    if (ext && timing && gl.getQueryParameter(timing, gl.QUERY_RESULT_AVAILABLE)) { if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) gpu.push(gl.getQueryParameter(timing, gl.QUERY_RESULT) / 1e6); gl.deleteQuery(timing); timing = null; if (gpu.length > 120) gpu.shift(); }
     cpu.push(ms); if (before) gaps.push(now - before); before = now; if (cpu.length > 240) { cpu.shift(); gaps.shift(); }
     if (now - shownAt < 500) return; shownAt = now;
-    window.bench = { cpu50: mid(cpu, 0.5), cpu99: mid(cpu, 0.99), gap50: mid(gaps, 0.5), gap99: mid(gaps, 0.99), slices: world?.slices };
-    out.textContent = `script ${window.bench.cpu50.toFixed(2)} ms (99th ${window.bench.cpu99.toFixed(2)})  frame ${window.bench.gap50.toFixed(1)} ms (99th ${window.bench.gap99.toFixed(1)})  slowest lobe ${Math.max(0, ...(world?.slices ?? [])).toFixed(0)} ms`;
+    const b = window.bench = { cpu50: mid(cpu, 0.5), cpu99: mid(cpu, 0.99), gap50: mid(gaps, 0.5), gap99: mid(gaps, 0.99), gpu50: gpu.length ? mid(gpu, 0.5) : null, gpu99: gpu.length ? mid(gpu, 0.99) : null, slices: world?.slices };
+    out.textContent = `script ${b.cpu50.toFixed(2)} ms (99th ${b.cpu99.toFixed(2)})  card ${b.gpu50 == null ? 'not told' : `${b.gpu50.toFixed(2)} ms (99th ${b.gpu99.toFixed(2)})`}  frame ${b.gap50.toFixed(1)} ms  slowest lobe ${Math.max(0, ...(world?.slices ?? [])).toFixed(0)} ms`;
   };
+  // the card's time for one frame in four: the query wraps everything the frame asks of it
+  bench.open = () => { const gl = world?.gl.gl; if (ext && !timing && gl === of) { timing = gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, timing); return true; } return false; };
+  bench.close = () => of.endQuery(ext.TIME_ELAPSED_EXT);
 }

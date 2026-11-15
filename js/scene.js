@@ -98,7 +98,7 @@ export function makeScene(gl, model, view, flags = {}) {
       gl.draw(...R.ranges, TEST); if (snowing) gl.draw(...R.snow0, TEST); drawLive('flock', TEST);
       if (Math.abs(air.deckRow - centreRow) * CLOUDS[0].k < 1.5 * S) gl.draw(...R.clouds0, TEST);
     }
-    for (let i = 0; i < lobes.length; i++) if (pose[i].on) gl.draw(made[i].first, (made[i].last + 3 - centreRow) * pose[i].s > -S / 2 ? made[i].total : made[i].solids, made[i].draw);   // above the screen it is only a dark body
+    for (let i = 0; i < lobes.length; i++) if (pose[i].on && flags.try !== 'nolobes') gl.draw(made[i].first, flags.try === 'cover' ? made[i].cover : flags.try !== 'solids' && (made[i].last + 3 - centreRow) * pose[i].s > -S / 2 ? made[i].total : made[i].solids, made[i].draw);   // above the screen it is only a dark body
     if ((G - 7 - centreRow) * ground.k < S / 2) gl.draw(...R.ground, PLAIN);
     if (top < d.seamRow + 4) gl.draw(...R.peak, PLAIN);
     drawLive('smoke', PLAIN); if (snowing) gl.draw(...R.snow12, PLAIN); drawLive('owl', PLAIN); drawLive('squirrels', PLAIN);

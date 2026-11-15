@@ -4,7 +4,7 @@ import { BYTES, FORMAT, LAYERS, LADDER, VERTEX, FRAGMENT } from './glsl.js';
 
 export const GLYPH0 = 2;   // glyph ids 0 and 1 are not characters (0 is a solid)
 
-export function makeGL(canvas, { font, chars, force = false }) {
+export function makeGL(canvas, { font, chars, force = false, heat = false }) {
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: !force });
   if (!gl) return null;
   const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
@@ -61,7 +61,7 @@ export function makeGL(canvas, { font, chars, force = false }) {
   }
 
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, gl.createTexture()); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));   // no ground until a lobe brings one
-  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.depthFunc(gl.LEQUAL);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, heat ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA); gl.uniform1f(U.uHeat, heat ? 1 : 0); gl.depthFunc(gl.LEQUAL);
   const set = { f: (n, v) => gl.uniform1f(U[n], v), v3: (n, a, b, c) => gl.uniform3f(U[n], a, b, c), v2: (n, a, b) => gl.uniform2f(U[n], a, b), v4: (n, a, b, c, d) => gl.uniform4f(U[n], a, b, c, d), fv3: (n, arr) => gl.uniform3fv(U[n], arr), fv4: (n, arr) => gl.uniform4fv(U[n], arr) };
   let lit = -1, test = -1, wash = -1, mask = -1;
   return {
@@ -80,7 +80,7 @@ export function makeGL(canvas, { font, chars, force = false }) {
     },
     // a frame: the sky, the layer table, what is alive
     begin(sky, liveBytes, liveCount) {
-      gl.depthMask(true); gl.colorMask(true, true, true, true); gl.clearColor(sky[0], sky[1], sky[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.depthMask(true); gl.colorMask(true, true, true, true); gl.clearColor(heat ? 0 : sky[0], heat ? 0 : sky[1], heat ? 0 : sky[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       gl.bindBuffer(gl.UNIFORM_BUFFER, ubo); gl.bufferSubData(gl.UNIFORM_BUFFER, 0, layers);
       if (liveCount) { gl.bindBuffer(gl.ARRAY_BUFFER, live.buf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, liveBytes, 0, liveCount * BYTES); }
       lit = test = mask = -1;
