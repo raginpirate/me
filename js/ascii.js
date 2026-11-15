@@ -580,18 +580,18 @@ export class AsciiScene extends HTMLElement {
     const g = this.grid, P = this.P, w = this.world, H = g.h, cam = this.cam, out = [];
     // the flag
     out.push({ d: cam.dist(1) - 1e-3, draw: () => {
-      const fx = cam.px(w.topCol + 0.5), fy = cam.py(Math.ceil(this.summitRow)), fu = g.size * 1.7 * cam.size(1);
+      const fx = cam.px(w.topCol + 0.5), fy = cam.py(Math.ceil(this.summitRow)), fu = g.size * 1.15 * cam.size(1);
       if (fy < -80 || fy > H + 40) return;
-      for (const dy of [0.45, 1.4, 2.3]) g.ink('|', P.rockLight, fx, fy - dy * fu, fu * 1.3);
+      for (const dy of [0.45, 1.25, 2.05, 2.85]) g.ink('|', P.rockLight, fx, fy - dy * fu, fu);
       const wave = reduced ? 0 : Math.sin(time * 3.2);
-      g.ink('o', P.ember, fx + 0.6 * fu, fy - 2.5 * fu, fu * 2.6, 0.12);
-      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.58 + 0.05 * wave) * fu, fy - 2.5 * fu, fu * 1.45);
+      g.ink('o', P.ember, fx + 0.6 * fu, fy - 2.7 * fu, fu * 1.8, 0.12);
+      g.ink(wave > 0.3 ? '}' : '>', P.ember, fx + (0.58 + 0.05 * wave) * fu, fy - 2.7 * fu, fu * 1.2);
     } });
     // waypoints
     const FIX = {
-      axe: [['T', -0.6, 0.15, 1.5, P.rockLight]],
+      axe: [['|', -0.7, 0.45, 1, P.rockLight], ['T', -0.7, -0.4, 1, P.rockLight]],
       cairn: [['O', -0.78, 0.3, 1.1, P.rockLight], ['o', -0.82, -0.38, 0.9, P.rockLight], ['o', -0.76, -0.95, 0.6, P.rockLight]],
-      post: [['T', -0.6, 0, 1.7, mixHex(P.ground, P.leaf, 0.45)]],
+      post: [['|', -0.75, 0.5, 1, mixHex(P.ground, P.leaf, 0.45)], ['|', -0.75, -0.35, 1, mixHex(P.ground, P.leaf, 0.45)], ['-', -0.4, -0.95, 1, mixHex(P.ground, P.leaf, 0.45)]],
       hut: [],
     };
     for (const s of this.lights) {
@@ -603,7 +603,7 @@ export class AsciiScene extends HTMLElement {
         const u = g.size * cam.size(Z), lit = s.glow, live = lit * (reduced ? 1 : twinkle(time, s.n, ...D.twinkle.light)), a = s.show;
         for (const [ch, dx, dy, k, color] of FIX[s.mark]) g.ink(ch, color, x + dx * u, y + dy * u, k * u, a);
         // the lantern: a glow, the flame, and when its card is open a ring round it
-        g.ink('o', P.ember, x, y, u * 2.7, (0.1 + 0.2 * live) * a);
+        g.ink('o', P.ember, x, y, u * 1.9, (0.1 + 0.2 * live) * a);
         if (s.mark === 'hut') { for (const [ch, dx] of [['[', -0.5], [']', 0.5]]) g.ink(ch, P.emberHot, x + dx * g.cellW * cam.size(Z), y, u, live * a); }
         else { g.ink('o', P.ember, x, y, u * 0.85, a); g.ink('o', P.emberHot, x, y, u * 0.85, lit * a); }
         if (lit > 0.05) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.ink('·', P.ember, x + dx * u * 1.25, y + dy * u * 1.25, u, 0.8 * live * a);

@@ -163,12 +163,12 @@ export class Life {
     const feet = trees.filter((q) => q.y > H * 0.2 && q.y < H * 0.95 && q.x > 20 && q.x < W - 20);
     const foot = (q, side) => [q.x + side * 1.3 * g.size * q.size, q.y - 0.5 * g.size * q.size];
     const trunk = (q, side, u) => [q.x + side * 0.45 * g.size * q.size, q.y - 0.5 * g.size * q.size - u * Math.max(q.y - q.bole, 0.5 * (q.y - q.top))];   // u: how far up, to where the leaves take it
-    const gone = () => { Q.state = 'away'; Q.wait = 5 + rnd() * 6; };
+    const gone = () => { Q.state = 'away'; Q.wait = 2.5 + rnd() * 3; };
     if (Q.state === 'away') {
       Q.wait -= dt;
       if (Q.wait <= 0 && feet.length > 3 && sc.centre > L.forest + 0.3) {
         // at a tree in your light, if there is one, where it can be seen
-        const [lx, ly, , reach] = sc.lampAt || [W / 2, H / 2, 0, H], lit = feet.filter((o) => Math.hypot(o.x - lx, o.y - ly) < reach * 0.7), q = pick(lit.length ? lit : feet);
+        const [lx, ly, , reach] = sc.lampAt || [W / 2, H / 2, 0, H], big = feet.filter((o) => o.size >= 0.6), near = big.length > 2 ? big : feet, lit = near.filter((o) => Math.hypot(o.x - lx, o.y - ly) < reach * 0.7), q = pick(lit.length ? lit : near);
         Q.on = q.id; Q.sheet = q.sheet; Q.side = rnd() < 0.5 ? 1 : -1; Q.dir = Q.side; Q.s = q.size; Q.todo = 1 + Math.floor(rnd() * 3); Q.wait = 0.8 + rnd() * 2;
         if (rnd() < 0.5) { Q.state = 'down'; Q.u = 1; } else { Q.state = 'sit'; Q.born = 0; }
         [Q.x, Q.y] = Q.state === 'down' ? trunk(q, Q.side, 1) : foot(q, Q.side);
@@ -233,7 +233,7 @@ export class Life {
     if (fl) out.push({ d: 40, draw: () => { for (const b of fl.birds) g.ink(Math.sin(t * 5.5 + b.ph) > 0.1 ? 'v' : '-', P.bird, fl.x + b.dx * g.cellW, fl.y + (b.dy * (1 + 0.08 * Math.sin(t * 0.7 + b.ph)) + 0.3 * Math.sin(t * 1.1 + b.ph)) * g.cellH, g.size * fl.far, 0.3 + 0.45 * fl.far); } });
     const O = this.owl;
     if (O.state !== 'none' && O.y > -60 && O.y < H + 60) out.push({ d: (O.d ?? 1) - 4e-3, draw: () => {
-      const u = g.size * O.s * 0.65, blink = (t * 0.31 + 0.2) % 1 > 0.96;
+      const u = g.size * O.s * 0.85, blink = (t * 0.31 + 0.2) % 1 > 0.96;
       if (O.state === 'fly') this.sprite(WINGS[[0, 1, 2, 1][Math.floor(t * 9) % 4]], O.x, O.y, u);
       this.sprite(O.state === 'fly' ? OWL.slice(0, 5) : OWL, O.x, O.y, u);
       this.sprite(blink ? SHUT : EYES, O.x, O.y, u);
@@ -242,7 +242,7 @@ export class Life {
     if (Q.state !== 'away') {
       const q = sc.massif.tree(Q.state === 'hop' ? Q.aim : Q.on);
       if (q) out.push({ d: 1 / q.near - 4e-3, draw: () => {
-        const grow = Q.state === 'sit' ? Math.min(1, Q.born * 4) : 1, u = g.size * Q.s * 0.58 * (0.5 + 0.5 * grow);
+        const grow = Q.state === 'sit' ? Math.min(1, Q.born * 4) : 1, u = g.size * Q.s * 0.78 * (0.5 + 0.5 * grow);
         if (Q.state === 'hop') this.sprite(RUN, Q.x, Q.y, u, Q.dir);
         // on a trunk: it goes into the leaves at the top and comes out of them
         else if (Q.state === 'up' || Q.state === 'down') this.sprite(CLIMB, Q.x, Q.y, u, Q.side, 1 - smooth(0.78, 1, Q.u), Q.state === 'up' ? 1 : -1);

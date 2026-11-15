@@ -99,11 +99,9 @@ export class Massif {
       const a = knots[i - 1][0], b = knots[i][0];
       const from = [...this.sheets].reverse().find((x) => x.t1 <= a + 0.6) ?? this.mountain, to = slices.find((x) => x.t0 >= b - 0.6);
       if (!to) continue;
-      const pts = [];
-      for (let k = 0; k <= 24; k++) {
-        const t = a + (b - a) * k / 24, Z = from.Z + (to.Z - from.Z) * k / 24;
-        pts.push([...this.where(t, Z, this.trail(t), this.lampY + this.dip(t)), Z]);
-      }
+      // a straight span in the world, from the edge of one to the edge of the next, sagging in the middle
+      const [XA, YA] = this.where(a, from.Z), [XB, YB] = this.where(b, to.Z), sag = 0.025 * Math.abs(XB - XA) + 0.4, pts = [];
+      for (let k = 0; k <= 24; k++) { const f = k / 24; pts.push([XA + (XB - XA) * f, YA + (YB - YA) * f + sag * Math.sin(Math.PI * f), from.Z + (to.Z - from.Z) * f]); }
       this.bridges.push({ a, b, from, to, pts });
     }
     // the valley floor is the last terrace: the hut stands on it, its door where the path ends
@@ -119,13 +117,13 @@ export class Massif {
     for (let i = 1; i < k.length; i++) if (s <= k[i][0]) { const [s0, x0] = k[i - 1], [s1, x1] = k[i]; return x0 + (x1 - x0) * (s - s0) / (s1 - s0); }
     return k[k.length - 1][1];
   }
-  // on a bridge the light dips with the deck as it sags
-  dip(s) {
-    const k = this.knots;
-    for (let i = 1; i < k.length; i++) if (k[i][2] === 'bridge' && s > k[i - 1][0] && s < k[i][0]) { const t = (s - k[i - 1][0]) / (k[i][0] - k[i - 1][0]); return Math.sin(Math.PI * t) * this.sc.grid.cellH * 0.9; }
-    return 0;
+  // on a bridge it is on the deck, wherever the camera puts the deck
+  lamp(s) {
+    const b = this.bridges?.find((b) => s > b.a && s < b.b);
+    if (!b) return [this.trail(s), this.lampY];
+    const cam = this.sc.cam, f = (s - b.a) / (b.b - b.a) * 24, i = Math.min(23, Math.floor(f)), t = f - i, p = b.pts[i], q = b.pts[i + 1], Z = p[2] + (q[2] - p[2]) * t;
+    return [cam.px(p[0] + (q[0] - p[0]) * t, Z), cam.py(p[1] + (q[1] - p[1]) * t, Z) - this.sc.grid.cellH * 0.2];
   }
-  lamp(s) { return [this.trail(s), this.lampY + this.dip(s)]; }
   // the place at depth Z under the light (or another pixel) when the middle of the screen is at row s: [X, Y]
   where(s, Z, px = this.trail(s), py = this.lampY) { const cam = this.sc.cam; return [cam.wx(px, s, Z), cam.wy(py, s, Z)]; }
   // the path over a stretch of scroll, on the plane at depth Z: [X, Y, s] every half row
@@ -432,7 +430,7 @@ export class Massif {
       shape.rows.forEach((row, j) => {
         if (row.e < row.f) return;
         const ty = foot - (shape.h - j) * ch;
-        g.box(left + (row.f + 0.1) * cw, ty - 0.3, (row.e - row.f + 0.8) * cw, ch + 0.6, fill);
+        g.box(left + (row.f + 0.1) * cw, ty - 0.3, (row.e - row.f + 0.8) * cw, ch + 0.6, shape.body);
         for (const [col, glyph, color, a] of row.marks) g.set(glyph, color, left + col * cw, ty, font, a);
       });
     }
@@ -460,7 +458,9 @@ export class Massif {
       let f = 0, e = w - 1; while (f < w && ln[f] === ' ') f++; while (e >= 0 && ln[e] === ' ') e--;
       const marks = [], foot = i >= h - stem;
       for (let j = f; j <= e; j++) {
-        const ch = ln[j]; if (ch === ' ') continue;
+        const ch = ln[j];
+        // inside its outline a tree is needles and leaves, not air
+        if (ch === ' ') { const v = hash(j, i, t.seed % 997); if (v < (t.kind === 'pine' ? 0.5 : 0.3) && !foot) marks.push([j, v < 0.18 ? ':' : v < 0.34 ? "'" : '.', t.kind === 'pine' ? P.pineDark : t.kind === 'birch' ? P.birchLeaf : t.olive ? P.leafOlive : P.leaf, 0.45]); continue; }
         const shade = t.dark || j > (w - 1) / 2 + 0.6;
         if (t.kind === 'pine') marks.push([j, ch, !foot && (i < snowy || (i === snowy && snowy > 1 && j === f)) ? P.snow : foot || shade ? P.pineDark : P.pine, 1]);
         else if (t.kind === 'birch') { const bark = ch === '|' || ch === '!'; marks.push([j, ch, bark ? P.birch : P.birchLeaf, bark ? 0.92 : shade ? 0.62 : 0.95]); }
@@ -468,7 +468,9 @@ export class Massif {
       }
       return { f, e, marks };
     });
-    return { rows, h, w };
+    // its body: darker than the sky behind it, so you never see through it
+    const body = mixHex(P.sky, t.kind === 'pine' ? P.pineDark : t.kind === 'birch' ? P.pineDark : P.ground, t.kind === 'pine' ? 0.45 : 0.3);
+    return { rows, h, w, body };
   }
 
   // ---------- each frame ----------
