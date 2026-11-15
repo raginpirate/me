@@ -24,7 +24,7 @@ export function hash(i, j = 0, k = 0) {
 
 // value noise on a 256 lattice, with its fractal and ridged sums
 export function makeNoise(seed) {
-  const rnd = mulberry32(seed), perm = new Uint8Array(512), grid = new Float64Array(256);
+  const rnd = mulberry32(seed), perm = new Uint8Array(512), grid = new Float32Array(256);
   for (let i = 0; i < 256; i++) { perm[i] = i; grid[i] = rnd(); }
   for (let i = 255; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
   for (let i = 0; i < 256; i++) perm[256 + i] = perm[i];

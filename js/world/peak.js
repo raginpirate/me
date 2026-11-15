@@ -10,7 +10,7 @@ const ARETES = [[0, 0], [0, 1], [0.30, 0], [0.30, 1], [0.78, 1], [0.78, 0], [0.4
 export function makePeak(d) {
   const N = makeNoise(20181105), R = mulberry32(42), { cols, S, summitRow, seamRow, bodyTop } = d, baseRow = FOOT.base * S, Hm = baseRow - summitRow;
   // silhouette
-  const crest = new Float64Array(cols);
+  const crest = new Float32Array(cols);
   for (let c = 0; c < cols; c++) {
     const x = c / cols; let h = (N.ridged(9 * x + 2.3, 0.7, 2) - 0.5) * 0.08 + (N.noise(40 * x + 5, 1.1) - 0.5) * 0.02;
     for (const [at, w, tall] of HUMPS) h += tall * Math.exp(-((x - at) ** 2) / (2 * w * w));
@@ -18,7 +18,7 @@ export function makePeak(d) {
   }
   let topCol = 0; for (let c = 1; c < cols; c++) if (crest[c] < crest[topCol]) topCol = c;
   const lift = crest[topCol] - summitRow; for (let c = 0; c < cols; c++) crest[c] -= lift;
-  const slope = Array.from(crest, (_, c) => c > 0 && c < cols - 1 ? (crest[c + 1] - crest[c - 1]) / 2 : 0);
+  const slope = Float32Array.from(crest, (_, c) => c > 0 && c < cols - 1 ? (crest[c + 1] - crest[c - 1]) / 2 : 0);
   const slopeS = slope.map((_, c) => (slope[Math.max(0, c - 1)] + slope[c] + slope[Math.min(cols - 1, c + 1)]) / 3);
 
   // arêtes wander down from the apex and the shoulders

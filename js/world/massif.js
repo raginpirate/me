@@ -72,17 +72,17 @@ export function makeMassif(d, stops, door) {
   // outlines
   for (const l of lobes) {
     const { wl = 1, wr = 1, flat = 0, lean = 0 } = l, tall = G - l.apex, widest = l.half(tall);
-    const wmax = Math.min(Math.ceil(widest * Math.max(wl, wr) + flat + Math.abs(lean)), Math.ceil(cols / 2 + reach) + 6) + 3, W = 2 * wmax + 1, cx = wmax, crest = new Float64Array(W).fill(Infinity);
+    const wmax = Math.min(Math.ceil(widest * Math.max(wl, wr) + flat + Math.abs(lean)), Math.ceil(cols / 2 + reach) + 6) + 3, W = 2 * wmax + 1, cx = wmax, crest = new Float32Array(W).fill(Infinity);
     for (let c = 0; c < W; c++) {
       const a = Math.max(0, Math.abs(c - cx - lean) - flat) / (c < cx + lean ? wl : wr);
       if (widest < a) continue;
       let lo = 0, hi = tall; for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (l.half(m) >= a) hi = m; else lo = m; }
       crest[c] = l.apex + hi + (N.fbm(0.21 * c + l.seed, 3.3, 2) - 0.5) * l.rag * Math.min(1, hi / 5);
     }
-    const slope = Array.from(crest, (_, c) => c > 0 && c < W - 1 && crest[c - 1] < Infinity && crest[c + 1] < Infinity ? (crest[c + 1] - crest[c - 1]) / 2 : c < cx ? -2 : 2);
-    Object.assign(l, { W, cx, crest, slope, wl, wr, flat, lean, folds: !!l.folds });
+    const slope = Float32Array.from(crest, (_, c) => c < 1 || c > W - 2 ? 0 : crest[c - 1] < Infinity && crest[c + 1] < Infinity ? (crest[c + 1] - crest[c - 1]) / 2 : c < cx ? -2 : 2);
+    Object.assign(l, { W, cx, crest, slope, folds: !!l.folds });
     l.onCrest = (c) => { c = clamp(c, 2, W - 3); while (crest[c] === Infinity) c += c < cx ? 1 : -1; return [c, Math.ceil(crest[c])]; };
-    l.inside = (c, r) => { c = clamp(c, 1, W - 2); while (!(crest[c] <= r - 1) && c !== cx) c += c < cx ? 1 : -1; return c; };
+    l.inside = (c, r) => { c = clamp(c, 1, W - 2); for (let i = 0; i < W && !(crest[c] <= r - 1); i++) c += c < cx ? 1 : -1; return c; };   // v71's walk, to the step
   }
 
   // the route: where it arrives on each lobe, where it steps off to the next, and the path between
@@ -102,7 +102,7 @@ export function makeMassif(d, stops, door) {
       const rows = Math.max(1, r1 - r0), bends = Math.max(1, Math.round(rows / 9)); let x = x0;
       for (let k = 0; k <= rows; k++) {
         const tt = k / rows, r = r0 + k, want = l.inside(Math.round(x0 + (x1 - x0) * tt + Math.sin(tt * Math.PI * bends) * Math.min(3.2 * kx, rows / 4) * Math.sin(tt * Math.PI) ** 0.5), r);
-        while (x !== want) { x += Math.sign(want - x); path.push([x, r]); }
+        while (x !== want) { path.push([x, r]); x += Math.sign(want - x); }
         path.push([want, r]);
       }
     }

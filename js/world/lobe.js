@@ -31,7 +31,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
   const folds = [];
   if (l.folds) for (let down = 17 + R() * 6, k = 0; down < deep - 6; k++) {
     const len = Math.round((30 + R() * 28) * kx), mid = cx + Math.round((R() - 0.5) * 34 * kx), tilt = ((k + seed) % 2 ? 1 : -1) * (0.1 + R() * 0.2) / kx;
-    const c0 = Math.max(1, mid - Math.floor(len / 2)), c1 = Math.min(W - 2, mid + Math.floor(len / 2)), taper = 8 * kx, on = new Float64Array(W), row = new Float64Array(W).fill(NaN);
+    const c0 = Math.max(1, mid - Math.floor(len / 2)), c1 = Math.min(W - 2, mid + Math.floor(len / 2)), taper = 8 * kx, on = new Float32Array(W), row = new Float32Array(W).fill(NaN);
     for (let c = c0; c <= c1; c++) {
       const r = apex + down + tilt * (c - mid) + (N.fbm(0.13 * c + seed + 9 * k, 5.5, 2) - 0.5) * 6;
       on[c] = smooth(c0, c0 + taper, c) * (1 - smooth(c1 - taper, c1, c)) * smooth(6, 18, r - crest[c]);
@@ -86,7 +86,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
           else if (lit) cell = [patch < 0.4 ? (fine < 0.22 ? '.' : null) : patch > 0.62 ? '#' : '%', 'rockLight', (patch > 0.62 ? 1 : 0.88) * bare];
           else cell = [fine > 0.5 ? ':' : fine > 0.3 ? '.' : null, 'rock', 0.85 * bare];
         }
-        if (cell && cell[0] && cell[2] > 0.03 && !(core && r <= seamRow + 3 && peakShows(r, Math.round(shift + x)))) cells.push([r, x, ...cell]);
+        if (cell && cell[0] && (wd > 0.6 || cell[2] > 0.03) && !(core && r <= seamRow + 3 && peakShows(r, Math.round(shift + x)))) cells.push([r, x, ...cell]);
       }
       c = e;
     }
