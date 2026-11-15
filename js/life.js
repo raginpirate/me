@@ -42,7 +42,7 @@ export class Life {
     // thickens leaf by leaf. They show in the dark too, brightest in your light.
     this.l0 = (L.forest - 0.25) * S; this.l1 = sc.groundRow;
     this.depths = [{ k: 0.8, size: 0.85, a: 0.75, fall: 1.3 }, { k: 1.1, size: 1.1, a: 0.95, fall: 1.9 }, { k: 1.5, size: 1.6, a: 1, fall: 2.6 }];
-    this.fall = Array.from({ length: Math.round(sc.cols * (this.l1 - this.l0) / 40) }, () => {
+    this.fall = Array.from({ length: Math.round(sc.cols * (this.l1 - this.l0) / 85) }, () => {
       const u = rnd(), v = rnd();
       return { x: rnd(), y: this.l0 + rnd() * (this.l1 - this.l0), tier: u < 0.4 ? 0 : u < 0.86 ? 1 : 2, rank: rnd(), phase: rnd() * 6.28, frame: Math.floor(rnd() * 3), color: v < 0.5 ? P.leaf : P.leafOlive };
     });
@@ -201,7 +201,7 @@ export class Life {
       if (py < -10 || py > H + 10 || f.rank > this.leavesAt(f.y)) continue;
       const px = f.x * (g.w + 20) - 10, lit = 1 - smooth(r0, r1, Math.hypot(px - x, py - y));
       // it comes to rest on the ground: gone over its last rows
-      g.ink(G[(f.frame + Math.floor(t * 3 + f.phase)) % 3], f.color, px, py, g.size * T.size, T.a * (0.5 + 0.5 * lit) * smooth(this.l0, this.l0 + 6, f.y) * (1 - smooth(this.l1 - 3, this.l1, f.y)));
+      g.ink(G[(f.frame + Math.floor(t * 3 + f.phase)) % 3], f.color, px, py, g.size * T.size, T.a * (0.2 + 0.8 * lit) * smooth(this.l0, this.l0 + 6, f.y) * (1 - smooth(this.l1 - 3, this.l1, f.y)));
     }
   }
 

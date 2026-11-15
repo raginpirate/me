@@ -17,7 +17,7 @@
 import { clamp, smooth, mulberry32, wrapPi, edge, mixHex } from './util.js';
 import { D } from './direction.js';
 
-const TILE = 256, PAINT_MS = 5, MIST = 0.11, MIST_ROWS = 5;   // a tile's side, in device pixels; the time a frame may spend painting tiles
+const TILE = 256, PAINT_MS = 5, LEAF_ROW = 0.74, MIST = 0.11, MIST_ROWS = 5;   // a tile's side, in device pixels; the time a frame may spend painting tiles
 
 // straight runs between points [[x, y], ...]
 const line = (pts) => (x) => {
@@ -508,16 +508,24 @@ export class Massif {
           if (tr.row > rBottom + 16) break;
           const k = Math.min(2 * sL / l.s, sL * tr.k * (still ? 1 : this.gain((l.ridge ? clamp(tr.row, l.apex, l.apex + l.span) : tr.row) - L.ref))), cwk = cw * k, chk = ch * k, left = x0 + (tr.c + 0.5) * cws - tr.w / 2 * cwk, foot = y0 + (tr.row + 1) * chs;
           if (foot < -2 * chk || foot - (tr.h + 1) * chk > t + 2 || left > t + 2 || left + (tr.w + 2) * cwk < -2) continue;
+          const rowH = chk * (tr.leafy ? LEAF_ROW : 1);   // a broadleaf's rows sit closer, so its crown is one mass of leaves
+          // A tree hides what is behind it, but its body is the colour of the ground it stands on, not a black box:
+          // behind it, the dark (in the dark layer) and over that its own ridge's wash again (in the ink), exactly as
+          // it is round the tree, inside the tree's outline. One outline for the whole tree, then its marks.
+          const body = new Path2D(); let x0b = Infinity, y0b = Infinity, x1b = -Infinity, y1b = -Infinity;
           tr.rows.forEach((row, i) => {
             if (row.e < row.f) return;
-            // A tree hides what is behind it, but its body is the colour of the ground it stands on, not a black box:
-            // behind it, the dark (in the dark layer) and over that its own ridge's wash again (in the ink), tight to its shape.
-            const y = foot - (tr.h - i) * chk, bx = left + (row.f - 0.1) * cwk, bw = (row.e - row.f + 1.2) * cwk, by = y - 0.5, bh = chk + 1;
-            dx.fillRect(bx, by, bw, bh); boxed = any = inked = true;
-            ix.globalCompositeOperation = 'destination-out'; ix.globalAlpha = 1; ix.fillRect(bx, by, bw, bh); ix.globalCompositeOperation = 'source-over'; g.alpha = NaN;
-            ix.drawImage(l.wash, (bx - ox) / cws, (by - oy) / chs, bw / cws, bh / chs, bx, by, bw, bh);
-            for (const [j, glyph, color, a] of row.marks) g.set(glyph, color, left + j * cwk, y, g.size * k, a);
+            const y = foot - (tr.h - i) * rowH, bx = left + (row.f - 0.3) * cwk, bw = (row.e - row.f + 1.6) * cwk, by = y - 0.5, bh = rowH + 1;
+            body.rect(bx, by, bw, bh); x0b = Math.min(x0b, bx); y0b = Math.min(y0b, by); x1b = Math.max(x1b, bx + bw); y1b = Math.max(y1b, by + bh);
           });
+          if (x1b > x0b) {
+            dx.fill(body); boxed = any = inked = true;
+            ix.save(); ix.clip(body);
+            ix.globalCompositeOperation = 'destination-out'; ix.globalAlpha = 1; ix.fillRect(x0b, y0b, x1b - x0b, y1b - y0b); ix.globalCompositeOperation = 'source-over';
+            ix.drawImage(l.wash, c0, i0, c1 - c0 + 1, i1 - i0 + 1, ox + c0 * cws, oy + i0 * chs, (c1 - c0 + 1) * cws, (i1 - i0 + 1) * chs);   // its ground, exactly as round it
+            ix.restore(); g.alpha = NaN;
+          }
+          tr.rows.forEach((row, i) => { const y = foot - (tr.h - i) * rowH; for (const [j, glyph, color, a] of row.marks) g.set(glyph, color, left + j * cwk, y, g.size * k, a); });
         }
       });
       // a tile that is all dark is filled, not kept; one with nothing on it is nothing
@@ -562,13 +570,13 @@ export class Massif {
   // The route crosses from one cut-out to the next on a rope bridge: a
   // sagging deck of planks, a hand rope over it, a post at either end. The
   // scene draws them after it has put the mountain out, so a bridge shows
-  // plainly wherever it is; the light only warms the one you are on.
+  // plainly wherever it is; the light only warms the one you are on. It is
+  // rope and planks: you see through it to what is below.
   drawBridges() {
     const sc = this.sc, g = sc.grid, P = sc.P, wood = mixHex(P.ground, P.rockLight, 0.45);
     for (let i = 0; i + 1 < this.route.length; i++) {
       const B = this.bridge(i); if (!B) continue;
       const { pts, u, vis } = B;
-      for (const [x, y] of pts) g.box(x - u * 0.45, y - u * 1.35, u * 0.9, u * 1.9, sc.sky, vis);   // it hides what is behind it
       pts.forEach(([x, y], k) => {
         g.ink('=', wood, x, y, u * 0.95, vis);
         g.ink('·', P.muted, x, y - u * 0.95, u, 0.85 * vis);
@@ -660,7 +668,7 @@ export class Massif {
         const [x, y] = this.at(l, t.c + 0.5, t.row + 1), k = this.grown(l, t);
         if (y < 0 || y > g.h + 30 || x < 10 || x > g.w - 10) continue;
         const covered = this.hidden(x, y - g.cellH * l.s * 0.5, n);
-        if (!covered) out.push({ id: t.id, x, y, top: y - t.h * g.cellH * k, s: k, ls: l.s, leafy: t.leafy, lobe: n });   // s: the size it is drawn at; ls: its ridge's
+        if (!covered) out.push({ id: t.id, x, y, top: y - t.h * g.cellH * k * (t.leafy ? LEAF_ROW : 1), s: k, ls: l.s, leafy: t.leafy, lobe: n });   // s: the size it is drawn at; ls: its ridge's
       }
     });
     return out;
