@@ -69,7 +69,7 @@ export function makeScene(gl, model, view, flags = {}) {
     layer(LAYER.page, 0, 1, centreRow);
     lobes.forEach((l, i) => {
       const p = turn.pose(l, yaw, centreRow, pose[i]), ridge = l.span != null;
-      p.on = !!made[i] && p.vis >= 0.02 && h / 2 + (l.apex - 24 - centreRow) * cellH * p.s < h;
+      p.on = !!made[i] && p.vis >= 0.02 && h / 2 + (l.apex - 24 - centreRow) * cellH * p.s < h && p.X - (l.cx + 1) * p.s < cols && p.X + (l.W - l.cx) * p.s > 0;   // made, to be seen, and on the screen
       layer(LAYER.lobe + i, p.X, p.s, centreRow, p.vis, p.tone, p.ref, ridge ? l.apex : -1e9, ridge ? l.apex + l.span : 1e9, nearness(i), l.cx + 0.5);
     });
     layer(LAYER.ground, 0, ground.k, centreRow);

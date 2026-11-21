@@ -3,6 +3,7 @@
 import { clamp } from './math.js';
 import { LAYOUT, STOPS, CARD, TYPE } from './art.js';
 import { makeName, makeStars } from './world/sky.js';
+import { MASSIF } from './art.js';
 import { makePeak, finishPeak } from './world/peak.js';
 import { makeGround, GROUND_K } from './world/ground.js';
 import { makeMassif } from './world/massif.js';
@@ -11,8 +12,8 @@ import { makeAir } from './world/air.js';
 import { hash } from './math.js';
 
 export function makeDims({ W, H, typeSize, cellW, cellH, stack }) {
-  const S = H / cellH, rows = Math.ceil(LAYOUT.screens * S) + 2, end = rows - S, seamRow = Math.round(LAYOUT.seam * S);
-  return { W, H, typeSize, cellW, cellH, stack, cols: Math.ceil(W / cellW) + 1, S, rows, end, maxScroll: LAYOUT.measure * S, summitRow: LAYOUT.summit * S,
+  const cols = Math.ceil(W / cellW) + 1, S = H / cellH, rows = Math.ceil(LAYOUT.screens * S) + 2, end = rows - S, seamRow = Math.round(LAYOUT.seam * S);
+  return { W, H, typeSize, cellW, cellH, stack, cols, camera: MASSIF.camera * cols / 304, S, rows, end, maxScroll: LAYOUT.measure * S, summitRow: LAYOUT.summit * S,
     seamRow, bodyTop: seamRow - LAYOUT.blend, groundRow: Math.round(end + S / 2), u: typeSize / 11, aspect: cellW / cellH };
 }
 

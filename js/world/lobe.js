@@ -12,7 +12,7 @@ export const pathMark = (k, at) => at < LAYOUT.ice ? (k % 4 === 0 ? ['+', 'muted
 
 // peakShows(row, col): the painted peak is drawn at this page cell (the core only shows where it is not)
 export function paintLobe(l, d, N, kx, peakShows) {
-  const R = mulberry32(l.seed), { S, groundRow: G, bodyTop, seamRow } = d, { W, cx, crest, slope, seed, apex, kept } = l, core = l.kind === 'core', spire = l.kind === 'spire', ridge = l.span != null;
+  const R = mulberry32(l.seed), { S, groundRow: G, bodyTop, seamRow } = d, { W, cx, crest, slope, seed, apex, kept } = l, core = l.kind === 'core', mount = core || l.kind === 'peak', ridge = l.span != null;
   const has = (c) => crest[c] < Infinity, deep = Math.round(Math.max(1.25 * S, (l.span ?? 0) + 0.6 * S));
 
   // arêtes
@@ -24,13 +24,13 @@ export function paintLobe(l, d, N, kx, peakShows) {
       arete.set(r * W + c, dc < 0 ? '/' : dc > 0 ? '\\' : '|'); (crossings.get(r) ?? crossings.set(r, []).get(r)).push(c);
     }
   };
-  const top = Math.round(crest[cx]);
-  walk(cx, top, 0, core ? 1.1 * S : Infinity);
-  if (!core) { walk(cx - 1, top + 5, -1.6, ridge ? 26 : 80); walk(cx + 1, top + 8, 1.6, ridge ? 22 : 70); }
-  // The core is painted the way the peak is: one mass in one light from the left, its left side lit and its right in
-  // shadow, broken into soft facets, with a few arêtes wandering down it. [how far out, in seam half-widths; how far down, in screens; its lean]
+  const top = Math.round(crest[cx]), middle = core ? d.ax : cx + 0.5, shoulder = core ? d.seamHalf : Math.max(3, 0.07 * W);   // a mountain's middle, and how far out its top reaches
+  walk(cx, top, 0, mount ? 1.1 * S : Infinity);
+  if (!mount) { walk(cx - 1, top + 5, -1.6, ridge ? 26 : 80); walk(cx + 1, top + 8, 1.6, ridge ? 22 : 70); }
+  // A mountain is painted the way the peak is: one mass in one light from the left, its left side lit and its right in
+  // shadow, broken into soft facets, with a few arêtes wandering down it. [how far out, in shoulders; how far down, in screens; its lean]
   else for (const [out, down, lean] of [[-0.3, 0.4, -1.3], [0.35, 0.6, 1.3], [-1.3, 0.15, -1.1], [1.25, 0.25, 1.2], [-2.5, 0.2, -1.4], [2.4, 0.2, 1.5]]) {
-    const c = clamp(Math.round(cx + out * d.seamHalf), 2, W - 3); walk(c, Math.round(crest[c] + down * S), lean, (0.5 + 0.5 * R()) * S, 0.45);
+    const c = clamp(Math.round(cx + out * shoulder), 2, W - 3); walk(c, Math.round(crest[c] + down * S), lean, (0.5 + 0.5 * R()) * S, 0.45);
   }
   for (const list of crossings.values()) list.sort((a, b) => a - b);
 
@@ -67,7 +67,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
       if (!(crest[c] <= r)) continue;
       let e = c; while (e + 1 < W && crest[e + 1] <= r) e++;
       for (let x = c; x <= e; x++) {
-        const depth = r - crest[x]; if ((depth > deep && !(core && wd <= 0.6)) || kept.has(r * W + x)) continue;   // the core is rock all the way down to its trees
+        const depth = r - crest[x]; if ((depth > deep && !(mount && wd <= 0.6)) || kept.has(r * W + x)) continue;   // a mountain is rock all the way down to its trees
         let cell = null;
         const fold = wd > 0.6 && depth >= 1 ? folds.find((f) => r - f.row[x] >= 0 && r - f.row[x] < 9) : null;
         if (fold) {
@@ -77,12 +77,12 @@ export function paintLobe(l, d, N, kx, peakShows) {
         } else if (wd > 0.6) {
           if (depth < 1) cell = [edge(frac(crest[x]), slope[x]), slope[x] < 0.05 ? 'moss' : 'pine', 0.95];
           else if (depth < 11 && R() < 0.3 * (1 - depth / 11)) cell = [GRASS[Math.floor(R() * 6)], slope[x] < 0.05 ? 'pine' : 'pineDark', 0.85 - 0.05 * depth];
-        } else if (core) {
-          const bare = 1 - wd, A = arete.get(r * W + x), turn = x + 0.5 - d.ax + 0.5 * d.seamHalf * (N.fbm(0.018 * r, 3.3, 2) - 0.5) * 2;   // where light gives way to shadow wanders down the face
-          const lit = 1 - smooth(-0.5 * d.seamHalf, 0.5 * d.seamHalf, turn), across = clamp(Math.abs(x - cx) / (0.5 * W), 0, 1);
-          const facet = (N.fbm(0.17 * x + 4.2, 0.11 * r + 1.1, 3) - 0.5) * 0.75, grain = (N.noise(0.9 * x, 0.9 * r) - 0.5) * 0.2;
+        } else if (mount) {
+          const bare = 1 - wd, A = arete.get(r * W + x), turn = x + 0.5 - middle + 0.5 * shoulder * (N.fbm(0.018 * r + seed, 3.3, 2) - 0.5) * 2;   // where light gives way to shadow wanders down the face
+          const lit = 1 - smooth(-0.5 * shoulder, 0.5 * shoulder, turn), across = clamp(Math.abs(x - cx) / (0.5 * W), 0, 1);
+          const facet = (N.fbm(0.17 * x + 4.2 + seed, 0.11 * r + 1.1, 3) - 0.5) * 0.75, grain = (N.noise(0.9 * x + seed, 0.9 * r) - 0.5) * 0.2;
           const light = clamp(0.12 + 0.32 * lit + 0.18 * (1 - across) + 1.3 * facet + grain - 0.0015 * depth, 0, 1);
-          const line = snowAbs(x) - 0.3 * S + (A ? 11 : 0) + 0.25 * S * smooth(0.1, -0.25, facet), snow = at < 5.6 && r < line, topRow = depth < 1 && r > bodyTop + 1, sn = light + (snow ? 0.25 : 0.2);
+          const line = snowAbs(x) - 0.3 * S + (A ? 11 : 0) + 0.25 * S * smooth(0.1, -0.25, facet), snow = at < 5.6 && r < line, topRow = depth < 1 && !(core && r <= bodyTop + 1), sn = light + (snow ? 0.25 : 0.2);
           const ch = topRow ? (snow ? (lit >= 0.5 ? '@' : '%') : Math.abs(slope[x]) <= 0.8 ? edge(frac(crest[x]), slope[x]) : slope[x] < 0 ? '/' : '\\') : A ?? (sn > 0.85 ? '#' : sn > 0.65 ? '%' : sn > 0.45 ? ':' : sn > 0.3 ? '.' : null);
           cell = snow ? [ch, 'snow', light > 0.45 || topRow ? 1 : 0.55] : [ch, topRow || A || sn > 0.65 ? 'rockLight' : 'rock', (topRow || A || sn > 0.45 ? 1 : 0.7) * bare];
         } else {
@@ -90,7 +90,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
           let k = 0; while (k < cross.length && cross[k] < x) k++;
           const n = cross.length, isArete = cross[k] === x, left = k > 0 ? cross[k - 1] : c, right = k < n ? cross[k] : e;
           const lit = n ? (k === 0 ? 1 : x < (left + right) / 2 ? 0 : k < n ? 1 : 0) : slope[x] < 0 ? 1 : 0;
-          const patch = N.fbm(0.17 * x + 4.2 + seed, 0.11 * r + 1.1, 3), fine = N.noise(0.9 * x, 0.9 * r + seed), cap = spire ? 16 + (N.noise(0.3 * x + seed, 1) - 0.3) * 12 : 0;
+          const patch = N.fbm(0.17 * x + 4.2 + seed, 0.11 * r + 1.1, 3), fine = N.noise(0.9 * x, 0.9 * r + seed), cap = 0;
           const snow = at < 5.6 && (r < snowAbs(x) + (isArete ? 11 : 0) || depth < cap * (1 - smooth(4.8, 5.6, at))), topRow = depth < 1 && !(core && r <= bodyTop + 1), bare = 1 - wd;
           if (topRow && Math.abs(slope[x]) <= 0.8 && !snow && wd < 0.6) cell = [edge(frac(crest[x]), slope[x]), lit ? 'rockLight' : 'rock', bare];
           else if (x === c && snow && fine < 0.3) cell = ['@', 'snow', 1];

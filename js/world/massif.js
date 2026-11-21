@@ -16,6 +16,7 @@ export function makeTurn(d) {
     const you = centreRow - leadRows;
     if (l.kind === 'core') { out.X = l.cx + 0.5; out.s = out.vis = out.tone = 1; out.ref = you; return out; }
     const phi = wrapPi(l.th - yaw), cos = Math.cos(phi), ridge = l.span != null;
+    if (l.kind === 'peak') { out.s = d.camera / (d.camera - l.d * cos); out.X = d.ax + l.d * Math.sin(phi) * out.s; out.vis = cos < 0.1 ? 1 : 0; out.tone = clamp(0.3 + 0.7 * out.s, 0.62, 0.9); out.ref = you; return out; }
     out.ref = ridge ? clamp(you, l.apex, l.apex + l.span) : you;
     out.s = ridge ? (1 + MASSIF.depth / 2 * l.d / reach) * gain(out.ref - you) * (0.82 + 0.18 * cos) : 1 + MASSIF.depth * l.d * cos / reach;
     out.vis = 1 - smooth(MASSIF.haze[0], MASSIF.haze[1], Math.abs(phi)); out.tone = 0.55 + 0.45 * smooth(0.3, 1, cos); out.X = d.ax + l.d * Math.sin(phi);
@@ -33,18 +34,17 @@ export function makeMassif(d, stops, door, peak) {
   // the core: the mountain the peak is the top of. From the seam its two sides run on down at the pitch of the peak's
   // upper slopes, easing as they go, with the same broken skyline: one silhouette from the summit to the trees.
   // It stands still with the page.
-  const widest = 0.44 * ref, mid = Math.floor(d.ax), pitch = Math.max(0.8 * cols / 304, 0.28), skyline = Float32Array.from({ length: cols }, (_, c) => {
+  const unit = cols / 304, mid = Math.floor(d.ax), pitch = Math.max(0.8 * unit, 0.28), skyline = Float32Array.from({ length: cols }, (_, c) => {
     const out = Math.abs(c + 0.5 - d.ax), far = Math.max(0, out - d.seamHalf), down = far / (pitch * (1 + 0.5 * smooth(0, 4 * d.seamHalf, far)));
-    if (out > 1.12 * widest) return Infinity;                                   // it is one mountain, not the whole horizon: the far ranges show to either side of it
-    return bodyTop + down + 5 * S * smooth(0.8 * widest, 1.12 * widest, out) ** 2 + ((N.ridged(9 * c / cols + 2.3, 0.7, 2) - 0.5) * 0.07 * S * 4.9 + (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
+    return bodyTop + down + ((N.ridged(9 * c / cols + 2.3, 0.7, 2) - 0.5) * 0.07 * S * 4.9 + (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
   });
   lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1, W: cols, cx: mid, crest: skyline });
-  // spires: steep and snow-topped, behind the mountain and out past its flanks, so their tops stand clear of it. They
-  // are on the table, and swing round it as you come down.
-  MASSIF.spires.forEach(([s, far, off], i) => {
-    const apex = Math.round(summitRow + s * S), flank = Math.min(1.05 * widest, d.seamHalf + Math.max(0, apex + 0.3 * S - bodyTop) * pitch * 1.3);
-    lobes.push({ kind: 'spire', apex, span: null, th: face(apex) + off, off, d: Math.max(far * kx, flank / Math.abs(Math.sin(off))), rag: 3, seed: 10 + 7 * i, stop: null, rank: apex - 1e6,
-      half: (n) => kx * (0.3 * Math.min(n, 14) + 0.105 * Math.max(0, n - 14)) });
+  // the other peaks: mountains of the same kind standing round this one, further from you, so smaller, fainter and slower
+  // down the screen. They pass behind it as you go round.
+  MASSIF.peaks.forEach(([th, far, top], i) => {
+    const apex = Math.round(top * S), steep = Math.max(0.85 * unit, 0.25), wmax = Math.ceil(steep * 2.4 * S * 1.4), W = 2 * wmax + 1, seed = 10 + 7 * i;
+    const crest = Float32Array.from({ length: W }, (_, c) => { const out = Math.abs(c - wmax); return apex + out / (steep * (1 + 0.4 * smooth(0, 0.5 * wmax, out))) + ((N.ridged(0.05 * c / Math.max(unit, 0.3) + seed, 0.7, 2) - 0.5) * 0.3 * S + (N.noise(0.3 * c + seed, 1.1) - 0.5) * 0.06 * S) * smooth(0, 8, out); });
+    lobes.push({ kind: 'peak', th, off: 0, d: far * unit, apex, span: null, seed, stop: null, rank: -1e6 - far, W, cx: wmax, crest });
   });
   // route ridges: one for each stop on the way down, and plain ones between
   const stopTops = marked.filter((s) => screens(s) >= LAYOUT.ice).map((s) => {

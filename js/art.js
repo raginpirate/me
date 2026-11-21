@@ -53,7 +53,10 @@ export const CHARS = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX
 // the massif: cut-outs on a turntable
 export const MASSIF = {
   turn: [4.25, 9.6], turns: 0.6, ease: 0.16, depth: 0.42, lead: 0.14, haze: [1.1, 1.65], stride: [0.3, 1.25], sparse: 'fera',
-  spires: [[0.98, 9, 1.25], [1.22, 15, -1.2], [1.5, 12, 1.4], [1.78, 20, -1.35], [2.05, 17, 1.2], [2.3, 23, -1.1]],   // [screens below the summit, how far out at least, turned by]
+  // The scene in space. You go down round one mountain; the camera stands off its axis by `camera` and always looks at it.
+  // Other peaks stand round it, further out: [where round the axis (radians; 0 is towards you at the top), how far from the
+  // axis, how high its summit is (screens from the top of the page)]. Distances are in 304ths of the screen's width.
+  camera: 400, peaks: [[2.55, 300, 4.3], [-2.6, 380, 4.45], [3.0, 330, 4.7], [-2.2, 420, 4.85], [-1.75, 360, 5.2]],
   forms: [[1.0, 1.35, 2, 0.62, 3.1, 0], [1.5, 1.15, 8, 0.6, 4.4, 0], [0.9, 2.5, 3, 0.66, 3.5, -22], [1.25, 1.0, 5, 0.6, 3.8, 0]],   // long ridges: [left, right, level top, widening, width, top off centre]
   lamp: { dark: 0.62, core: 0.18, reach: 0.78 },
 };
