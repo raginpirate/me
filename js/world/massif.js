@@ -15,7 +15,7 @@ export function makeTurn(d) {
   const pose = (l, yaw, centreRow, out = {}) => {
     const you = centreRow - leadRows;
     if (l.kind === 'core') { out.X = l.cx + 0.5; out.s = out.vis = out.tone = 1; out.ref = you; return out; }
-    const phi = wrapPi(l.th - yaw), cos = Math.cos(phi), ridge = l.span != null;
+    const phi = wrapPi(l.th - yaw * (l.kind === 'peak' ? MASSIF.far : 1)), cos = Math.cos(phi), ridge = l.span != null;
     if (l.kind === 'peak') { out.s = d.camera / (d.camera - l.d * cos); out.X = d.ax + l.d * Math.sin(phi) * out.s; out.vis = cos < 0.1 ? 1 : 0; out.tone = clamp(0.3 + 0.7 * out.s, 0.62, 0.9); out.ref = you; return out; }
     out.ref = ridge ? clamp(you, l.apex, l.apex + l.span) : you;
     out.s = ridge ? (1 + MASSIF.depth / 2 * l.d / reach) * gain(out.ref - you) * (0.82 + 0.18 * cos) : 1 + MASSIF.depth * l.d * cos / reach;

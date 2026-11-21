@@ -56,7 +56,8 @@ export const MASSIF = {
   // The scene in space. You go down round one mountain; the camera stands off its axis by `camera` and always looks at it.
   // Other peaks stand round it, further out: [where round the axis (radians; 0 is towards you at the top), how far from the
   // axis, how high its summit is (screens from the top of the page)]. Distances are in 304ths of the screen's width.
-  camera: 400, peaks: [[2.55, 300, 4.3], [-2.6, 380, 4.45], [3.0, 330, 4.7], [-2.2, 420, 4.85], [-1.75, 360, 5.2]],
+  // Their summits are under the cloud deck. Being far off they go round slower: `far` is their share of the turn.
+  camera: 400, far: 0.4, peaks: [[2.45, 300, 4.95], [-2.5, 340, 5.0], [-2.2, 420, 5.3]],
   forms: [[1.0, 1.35, 2, 0.62, 3.1, 0], [1.5, 1.15, 8, 0.6, 4.4, 0], [0.9, 2.5, 3, 0.66, 3.5, -22], [1.25, 1.0, 5, 0.6, 3.8, 0]],   // long ridges: [left, right, level top, widening, width, top off centre]
   lamp: { dark: 0.62, core: 0.18, reach: 0.78 },
 };
