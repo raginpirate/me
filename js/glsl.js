@@ -11,7 +11,7 @@ export const KIND = { plain: 0, star: 1, tree: 2, snow: 3, leaf: 4, cloud: 5, ro
 export const INK = 1, WASH = 2, MIST = 4, HOT = 8, DISC = 8, BARE = 16, FREE = 32;
 // How a solid meets what is behind it. EDGE: its top is a slope (aLocal holds the top at its left and right, in rows) with
 // a haze rising off it · SOFT_X, SOFT_Y: its ends, or its top and bottom, are feathered
-export const EDGE = 16, SOFT_X = 32, SOFT_Y = 64, HAZE = [2.6, 0.62];   // the haze: how many rows it rises, how much it hides at the edge
+export const EDGE = 16, SOFT_X = 32, SOFT_Y = 64, HAZE = [0.45, 0.5];   // the haze is a hairline: how many rows it rises, how much it hides at the edge
 export const TRAIL = 32;   // how many moments of the pointer's past the shader is given
 export const LAYERS = 40, COLOURS = 40, LADDER = [-8, 5];   // layers in the table; palette entries; the atlas's sizes, in quarter octaves of the type size
 
@@ -101,7 +101,7 @@ void main() {
       if (uMask > .5) { float cut = max(tops.x, tops.y); at.y += cut * own.y; size.y -= cut * own.y; tops -= cut; }   // what it hides outright is the part under its edge
       vEdge = vec4(tops, ${HAZE[0]}, own.y);
     }
-    vSoft = vec4(size, (p & ${SOFT_X}) != 0 ? .9 * own.x : 0., (p & ${SOFT_Y}) != 0 ? .8 * own.y : 0.);
+    vSoft = vec4(size, (p & ${SOFT_X}) != 0 ? .3 * own.x : 0., (p & ${SOFT_Y}) != 0 ? .25 * own.y : 0.);
     vCell = (at + corner * size - origin) / (uCell * s);
   } else {
     float want = uType * s * k, lv = clamp(ceil(log2(want / uType) * 4. - .001), ${LADDER[0]}., ${LADDER[1]}.), q = uType * exp2(lv / 4.), f = want / q;

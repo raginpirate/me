@@ -73,7 +73,7 @@ export function packLobe(l, i, dims, glyph) {
     for (const [row, col, ch, name, alpha] of cells) w.put(col, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, li);
     trees.forEach(([c, r, k], n) => {
       const { marks, spans, tall, wide, pitch } = drawn[n], x = c + 0.5, y = r + 1;
-      for (const [row, f, e] of spans) w.solid(x, y, f - 1 - wide / 2, -(tall - row) * pitch, e - f + 3, pitch, k, SKY, 1, li, WASH | SOFT_X, KIND.tree);   // a tree hides what is behind it, fading out at its sides
+      for (const [row, f, e] of spans) w.solid(x, y, f - 0.45 - wide / 2, -(tall - row) * pitch, e - f + 1.9, pitch, k, SKY, 1, li, WASH | SOFT_X, KIND.tree);   // a tree hides what is behind it, fading out at its sides
       for (const [row, col, ch, name, alpha] of marks) w.put(x, y, col - wide / 2, -(tall - row) * pitch, 0, 0, k, glyph(ch), colour(name), alpha, li, KIND.tree);
     });
     route = w.count;
@@ -105,7 +105,7 @@ export function packClouds({ air, N, dims }, n, glyph) {
   return run(count, (w) => air.clouds[n].forEach(([x, y], i) => {
     const li = LAYER.cloud + n, kind = KIND.cloud, row = air.deckRow + y, at = x * round;
     for (const [u, rt, rb, cells] of shapes[i]) {
-      w.solid(at, row, u, rt - 0.6, 1, rb - rt + 2.2, 1, SKY, 1, li, SOFT_Y, kind);
+      w.solid(at, row, u, rt - 0.15, 1, rb - rt + 1.3, 1, SKY, 1, li, SOFT_Y, kind);
       for (const [r, ch, inBody, share] of cells) { const [name, alpha] = inBody ? body : line; w.put(at, row, u, r, 0, 0, 1, glyph(ch), colour(name), alpha * share, li, kind); }
     }
   }));
