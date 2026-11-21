@@ -36,7 +36,8 @@ export function makeMassif(d, stops, door, peak) {
   // It stands still with the page.
   const unit = cols / 304, mid = Math.floor(d.ax), pitch = Math.max(0.8 * unit, 0.28), skyline = Float32Array.from({ length: cols }, (_, c) => {
     const out = Math.abs(c + 0.5 - d.ax), far = Math.max(0, out - d.seamHalf), down = far / (pitch * (1 + 0.5 * smooth(0, 4 * d.seamHalf, far)));
-    return bodyTop + down + ((N.ridged(9 * c / cols + 2.3, 0.7, 2) - 0.5) * 0.07 * S * 4.9 + (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
+    return bodyTop + down + ((0.5 - N.ridged(9 * c / cols + 2.3, 0.7, 2)) * 0.07 * S * 4.9 +   // ridged the right way up: what stands out of the flank comes to a point, what dips is rounded
+      (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
   });
   lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1, W: cols, cx: mid, crest: skyline });
   // the other peaks: mountains of the same kind standing round this one, further from you, so smaller, fainter and slower

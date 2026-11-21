@@ -60,9 +60,12 @@ export function packLobe(l, i, dims, glyph) {
   const drawn = trees.map(treeMarks), count = 2 * W + cells.length + drawn.reduce((n, t) => n + t.marks.length + t.spans.length, 0) + 2 * path.length;
   let route = 0, solids = 0;
   const bytes = run(count, (w) => {
+    // An outline's mark is drawn in the row under the height it stands for, so that is where the layer begins to hide: just
+    // above its own marks, the same hair's breadth everywhere, on a level stretch as on a steep one.
+    const LINE = 0.85;
     // what it hides: under its skyline, everything. The skyline is a line, not steps: each column's solid has a sloping top,
     // from the height where it meets the column before to the height where it meets the next, and the haze rises off that.
-    const meet = Float32Array.from({ length: W + 1 }, (_, b) => { const a = b > 0 ? crest[b - 1] : Infinity, c = b < W ? crest[b] : Infinity; return a < Infinity && c < Infinity ? (a + c) / 2 : Math.min(a, c) + 2; });
+    const meet = Float32Array.from({ length: W + 1 }, (_, b) => { const a = b > 0 ? crest[b - 1] : Infinity, c = b < W ? crest[b] : Infinity; return LINE + (a < Infinity && c < Infinity ? (a + c) / 2 : Math.min(a, c) + 2); });
     for (const [c, r] of path) for (const b of [c, c + 1]) meet[b] = Math.min(meet[b], r - 0.5);   // the route is never left out in front of its own ground
     for (let c = 0; c < W; c++) {
       const left = Math.min(meet[c], bottom), right = Math.min(meet[c + 1], bottom), top = Math.min(left, right) - HAZE[0];
