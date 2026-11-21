@@ -3,8 +3,8 @@
 import { clamp, smooth } from './math.js';
 import { LAYOUT, MASSIF } from './art.js';
 import { LAYERS, COLOURS as ROOM } from './glsl.js';
-import { COLOURS, rgb, LAYER, packSky, packPeak, packLobe, packGround, packRanges, packClouds, packSnow, packLeaves, cloudSpan } from './pack.js';
-import { RANGES, CLOUDS, SNOW, LEAVES } from './world/air.js';
+import { COLOURS, rgb, LAYER, packSky, packPeak, packLobe, packGround, packClouds, packSnow, packLeaves, cloudSpan } from './pack.js';
+import { CLOUDS, SNOW, LEAVES } from './world/air.js';
 import { CARD } from './art.js';
 
 const FAR = 0.9, nearness = (i) => 0.6 - 0.02 * i;   // depths: everything not a lobe is behind them all; a later lobe is nearer
@@ -17,7 +17,7 @@ export function makeScene(gl, model, view, flags = {}) {
   COLOURS.forEach((n, i) => palette.set(rgb(n).map((v) => v / 255), i * 3));
   const add = (name, bytes) => { R[name] = [gl.append(bytes), bytes.byteLength / 24]; };
   const [peak, rope] = packPeak(model, glyph);
-  add('stars', packSky(model, glyph)); add('peak', peak); add('rope', rope); add('ground', packGround(model, glyph)); add('ranges', packRanges(model, glyph));
+  add('stars', packSky(model, glyph)); add('peak', peak); add('rope', rope); add('ground', packGround(model, glyph));
   CLOUDS.forEach((_, n) => add('clouds' + n, packClouds(model, n, glyph)));
   add('snow0', packSnow(model, [0], glyph)); add('snow12', packSnow(model, [1, 2], glyph)); add('leaves', packLeaves(model, glyph));
 
@@ -73,7 +73,6 @@ export function makeScene(gl, model, view, flags = {}) {
       layer(LAYER.lobe + i, p.X, p.s, centreRow, p.vis, p.tone, p.ref, ridge ? l.apex : -1e9, ridge ? l.apex + l.span : 1e9, nearness(i), l.cx + 0.5);
     });
     layer(LAYER.ground, 0, ground.k, centreRow);
-    RANGES.forEach((r, n) => layer(LAYER.range + n, 0, r.k, -r.p * (d.maxScroll - top) / r.k));
     CLOUDS.forEach((c, n) => layer(LAYER.cloud + n, 0, c.k, centreRow, 1, 1, 0, 0, 0, FAR, 40, c.drift, cloudSpan(cols, n)));
     SNOW.tiers.forEach((tier, n) => layer(LAYER.snow + n, 0, tier[0], centreRow));
     LEAVES.depths.forEach((depth, n) => layer(LAYER.leaf + n, 0, depth[0], centreRow));
@@ -94,7 +93,7 @@ export function makeScene(gl, model, view, flags = {}) {
     if (top < LAYOUT.deck[1] * S) gl.draw(...R.stars, TEST);
     drawLive('sky', TEST);
     if (top + S > 2.9 * S) {
-      gl.draw(...R.ranges, TEST); if (snowing) gl.draw(...R.snow0, TEST); drawLive('flock', TEST);
+      if (snowing) gl.draw(...R.snow0, TEST); drawLive('flock', TEST);
       if (Math.abs(air.deckRow - centreRow) * CLOUDS[0].k < 1.5 * S) gl.draw(...R.clouds0, TEST);
     }
     for (let i = 0; i < lobes.length; i++) if (pose[i].on && flags.try !== 'nolobes') gl.draw(made[i].first, flags.try === 'cover' ? made[i].cover : flags.try !== 'solids' && (made[i].last + 3 - centreRow) * pose[i].s > -S / 2 ? made[i].total : made[i].solids, made[i].draw);   // above the screen it is only a dark body

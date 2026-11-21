@@ -1,7 +1,7 @@
 // Painting one lobe, flat, in its own columns and the page's rows: arêtes, folds, the ground's tone, rock and snow,
 // grass, the route's marks, and its trees.
 
-import { clamp, smooth, mulberry32, edge } from '../math.js';
+import { clamp, smooth, mulberry32, edge, hash } from '../math.js';
 import { LAYOUT, TREES } from '../art.js';
 
 const GRASS = [',', '.', "'", '"', ',', '`'], TONE = { pineDark: 0, rockDark: 1, dim: 2 };
@@ -81,10 +81,11 @@ export function paintLobe(l, d, N, kx, peakShows) {
           const bare = 1 - wd, A = arete.get(r * W + x), turn = x + 0.5 - middle + 0.5 * shoulder * (N.fbm(0.018 * r + seed, 3.3, 2) - 0.5) * 2;   // where light gives way to shadow wanders down the face
           const lit = 1 - smooth(-0.5 * shoulder, 0.5 * shoulder, turn), across = clamp(Math.abs(x - cx) / (0.5 * W), 0, 1);
           const facet = (N.fbm(0.17 * x + 4.2 + seed, 0.11 * r + 1.1, 3) - 0.5) * 0.75, grain = (N.noise(0.9 * x + seed, 0.9 * r) - 0.5) * 0.2;
-          const light = clamp(0.12 + 0.32 * lit + 0.18 * (1 - across) + 1.3 * facet + grain - 0.0015 * depth, 0, 1);
+          const light = clamp(0.16 + 0.28 * lit + 0.18 * (1 - across) + 1.3 * facet + grain - 0.0015 * depth, 0, 1);
           const line = snowAbs(x) - 0.3 * S + (A ? 11 : 0) + 0.25 * S * smooth(0.1, -0.25, facet), snow = at < 5.6 && r < line, topRow = depth < 1 && !(core && r <= bodyTop + 1), sn = light + (snow ? 0.25 : 0.2);
           const ch = topRow ? (snow ? (lit >= 0.5 ? '@' : '%') : Math.abs(slope[x]) <= 0.8 ? edge(frac(crest[x]), slope[x]) : slope[x] < 0 ? '/' : '\\') : A ?? (sn > 0.85 ? '#' : sn > 0.65 ? '%' : sn > 0.45 ? ':' : sn > 0.3 ? '.' : null);
-          cell = snow ? [ch, 'snow', light > 0.45 || topRow ? 1 : 0.55] : [ch, topRow || A || sn > 0.65 ? 'rockLight' : 'rock', (topRow || A || sn > 0.45 ? 1 : 0.7) * bare];
+          if (!snow && !topRow && hash(r, x, seed) > bare * 1.6) cell = null;   // towards the trees the rock is not dimmed but thinned, so what is left of it stays crisp
+          else cell = snow ? [ch, 'snow', light > 0.45 || topRow ? 1 : 0.55] : [ch, topRow || A || sn > 0.65 ? 'rockLight' : 'rock', topRow || A || sn > 0.45 ? 1 : 0.7];
         } else {
           // rock and snow, lit from the left: the face left of an arête is lit, the face right of it in shadow
           let k = 0; while (k < cross.length && cross[k] < x) k++;
@@ -141,7 +142,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
   for (let r = Math.round(LAYOUT.treeline * S); r < G; r += 3) for (let c = 2 + (7 * r) % 5; c < W - 3; c += 5 + Math.floor(R() * 5)) {
     if (!has(c)) continue;
     const depth = r - crest[c];
-    if (depth < 4 || depth > deep || R() > 0.92 * density(r / S) * (1 - (l.folds ? 0.5 : 0.72) * smooth(10, 44, depth))) continue;
+    if (depth < 4 || (depth > deep && !mount) || R() > 0.92 * density(r / S) * (1 - (l.folds ? 0.5 : 0.72) * smooth(10, 44, depth))) continue;
     grow(c, r);
   }
   l.trees = trees.map((t, i) => [t, i]).sort((a, b) => a[0][1] - b[0][1] || a[1] - b[1]).map((e) => e[0]);

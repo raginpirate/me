@@ -4,7 +4,7 @@ import { BYTES, KIND, INK, WASH, MIST, HOT, writer } from './glsl.js';
 import { PALETTE, MIXES, TREES, LEAF_ROW } from './art.js';
 import { HUT } from './world/ground.js';
 import { pathMark } from './world/lobe.js';
-import { RANGES, CLOUDS, SNOW, LEAVES, rangeCells, cloudColumns } from './world/air.js';
+import { CLOUDS, SNOW, LEAVES, cloudColumns } from './world/air.js';
 
 // colours by number: 0 is the sky of the moment, then the palette, then its mixes
 export const COLOURS = ['sky', ...Object.keys(PALETTE).filter((n) => n !== 'sky'), ...Object.keys(MIXES)];
@@ -14,7 +14,7 @@ const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 export const rgb = (name) => MIXES[name] ? (([a, b, t]) => hex(PALETTE[a]).map((v, i) => Math.round(v + (hex(PALETTE[b])[i] - v) * t)))(MIXES[name]) : hex(PALETTE[name]);
 
 // the layers: the page itself, each lobe, the ground, and each depth of what is in the air
-export const LAYER = { page: 0, lobe: 1, ground: 20, range: 21, cloud: 23, snow: 27, leaf: 30 };
+export const LAYER = { page: 0, lobe: 1, ground: 20, cloud: 23, snow: 27, leaf: 30 };
 const SKY = 0, TONES = ['pineDark', 'rockDark', 'dim'];
 
 // a run of instances: build(w) writes at most `count` of them
@@ -85,12 +85,6 @@ export function packGround({ ground, dims }, glyph) {
     w.solid(hutLeft + 1, G - 6, 0, 0, 11, 5, 1, SKY, 1, li);
     HUT.forEach((text, i) => [...text].forEach((ch, j) => { if (ch !== ' ') w.put(hutLeft + j, G + i - 7, 0, 0, 0, 0, 1, glyph(ch), colour('[]'.includes(ch) ? 'ember' : 'timber'), 1, li); }));
   });
-}
-
-// The far ranges, each on its own layer and in its own rows, counted down from its foot
-export function packRanges({ air, dims }, glyph) {
-  const all = RANGES.map((r, n) => rangeCells(r, air.ranges[n], dims.S));
-  return run(all[0].length + all[1].length, (w) => all.forEach((cells, n) => { for (const [c, row, ch, name, alpha] of cells) w.put(c, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, LAYER.range + n); }));
 }
 
 // How many of its own columns a cloud layer goes round in. The far layer is set small, so the screen is more of its
