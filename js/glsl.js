@@ -9,6 +9,7 @@ export const KIND = { plain: 0, star: 1, tree: 2, snow: 3, leaf: 4, cloud: 5, ro
 // HOT: the bright heart of the lit route · snow and leaves keep their depth in bits 4-5 and their first frame in bits 6-7
 // on a plain glyph, BARE: not dimmed by its lobe's tone · FREE: it moves, so it is not set on the pixel. On a solid, DISC: a soft round hollow
 export const INK = 1, WASH = 2, MIST = 4, HOT = 8, DISC = 8, BARE = 16, FREE = 32;
+export const TRAIL = 32;   // how many moments of the pointer's past the shader is given
 export const LAYERS = 40, COLOURS = 40, LADDER = [-8, 5];   // layers in the table; palette entries; the atlas's sizes, in quarter octaves of the type size
 
 // Writes instances into a buffer. anchor: its place on its layer, in cells. local: offset in its own cells.
@@ -41,18 +42,28 @@ layout(location=3) in float aK; layout(location=4) in vec4 aG; layout(location=5
 layout(std140) uniform Layers { vec4 A[${LAYERS}]; vec4 B[${LAYERS}]; vec4 C[${LAYERS}]; };   // A: X, s, centreRow, vis · B: tone, ref, growLo, growHi · C: depth, cx, drift, span
 uniform sampler2D uMetrics;               // per glyph (row) and size (column pair): its box in the atlas; where its box and its ink's middle sit from its origin
 uniform vec4 uQuiet[6];                   // boxes of text the stars keep clear of (device px), and uHush how much
-uniform float uHush, uAltStar, uAscent, uCols, uPush;
-uniform vec2 uLean, uPointer;             // the sky's lean against the scroll (cells); the pointer (cells), and uPush how hard it pushes
+uniform float uHush, uAltStar, uAscent, uCols;
+uniform vec2 uLean;                       // the sky's lean against the scroll (cells)
+uniform vec3 uTrail[${TRAIL}];                  // where the pointer has been (device px), and how much each moment still pulls on a spring
 uniform vec4 uFall; uniform vec3 uLeaf;   // rows where snow and leaves begin and end; a leaf's three glyphs
 out vec2 vUV, vCell; out vec4 vColour; out float vTone; flat out float vMode;
 
 float smooth01(float a, float b, float x) { float u = clamp((x - a) / (b - a), 0., 1.); return u * u * (3. - 2. * u); }
 float twinkle(float phase, float low, float rate) { return low + (1. - low) * (.5 + .5 * sin(uTime * rate + phase)); }
 
+// The pointer pushes stars, snow and leaves aside, and each is on a spring: it lags, overshoots and settles. A spring's
+// place is its past pushes weighed by how a spring answers a knock, so the weights carry the spring and nothing is kept.
+vec2 pushed(vec2 px) {
+  vec2 sum = vec2(0.);
+  for (int i = 0; i < ${TRAIL}; i++) { vec3 t = uTrail[i]; if (t.z == 0.) continue; vec2 away = (px - t.xy) / uCell.y; float far = length(away); if (far < 5. && far > 1e-4) sum += away / far * ((1. - far / 5.) * 2.5 * smooth01(0., 1.2, far) * t.z); }
+  return sum * uCell.y;
+}
+
 void main() {
   int li = int(aG.w), kind = int(aKP.x), p = int(aKP.y); float glyph = aG.x, alpha = aG.z / 255., k = aK / 1024.;
   vec4 a = A[li], b = B[li], c = C[li]; vec2 anchor = aAnchor, corner = vec2(gl_VertexID & 1, gl_VertexID >> 1), nudge = vec2(0.);
   float s = a.y, vis = a.w, tone = b.x; bool ink = (p & ${INK}) != 0;
+  vec2 origin = vec2((a.x - c.y * s) * uCell.x, uRes.y / 2. - a.z * uCell.y * s);   // where its layer's (0, 0) is
   if (kind == ${KIND.cloud}) anchor.x = mod(anchor.x + c.z * uTime, c.w);                                               // a cloud drifts round its layer
   else if (kind == ${KIND.tree}) k = min(2. / s, k * exp(.42 * clamp((clamp(anchor.y, b.z, b.w) - b.y) / uS, -1.6, 1.6)));   // a tree grows as you come down to it
   else if (kind == ${KIND.star}) {
@@ -60,9 +71,7 @@ void main() {
     if (uHush > .01) { float d = 1e9; for (int i = 0; i < 6; i++) { vec4 q = uQuiet[i]; if (q.z > q.x) d = min(d, length(max(max(q.xy - px, px - q.zw), 0.))); } alpha *= 1. - uHush * (1. - smooth01(8., 22., d / (uType / 11.))); }
     if (phase < 2.1) { alpha *= twinkle(7. * phase, .2, 1.4 + phase); if (tier > 1.5 && sin(1.7 * uTime + 5. * phase) < -.2) glyph = uAltStar; }
     else if (tier > 1.5 && sin(1.7 * uTime + phase) < -.3) glyph = uAltStar;
-    vec2 square = vec2(uCell.x / uCell.y, 1.), away = (anchor + .5 - uPointer) * square; float far = length(away);
-    vec2 moved = uLean + (far < 5. && far > 1e-4 ? away / far * (1. - far / 5.) * 2.5 * smooth01(0., 1.2, far) * uPush / square : vec2(0.));
-    anchor += moved; if (moved != vec2(0.)) p |= ${FREE};
+    nudge = pushed(px); anchor += uLean; if (nudge != vec2(0.) || uLean != vec2(0.)) p |= ${FREE};
   } else if (kind == ${KIND.snow} || kind == ${KIND.leaf}) {                                                            // falling things: where one is follows from the time alone
     bool leaf = kind == ${KIND.leaf}; int depth = (p >> 4) & 3; float phase = aExt.x / 65535. * 6.28, lo = leaf ? uFall.z : uFall.x, hi = leaf ? uFall.w : uFall.y;
     float wind = -6.19 * cos(.21 * uTime) - .746 * cos(.67 * uTime + 1.3);                                             // the wind so far
@@ -70,6 +79,7 @@ void main() {
     float y = anchor.y - lo + fall, turn = floor(y / (hi - lo)); y = lo + y - turn * (hi - lo);
     float dx = leaf ? (-.762 * cos(2.1 * uTime + phase) + .6 * wind) * s : wind * s - .263 * float(depth + 1) * cos(1.9 * uTime + phase);
     nudge.x = (fract(anchor.x + dx / uCols + turn * .618034) * (uRes.x / uPx + 20.) - 10.) * uPx; anchor = vec2(0., y);
+    nudge += pushed(origin + anchor * uCell * s + nudge);
     if (leaf) {
       if (aExt.y / 65535. > .12 + .88 * smooth01(lo + .2 * uS, lo + 1.6 * uS, y)) alpha = 0.;                           // thicker the further down
       glyph = uLeaf[int(mod(float((p >> 6) & 3) + floor(3. * uTime + phase), 3.))];
@@ -77,7 +87,6 @@ void main() {
     } else alpha *= smooth01(lo, lo + .22 * uS, y) * (1. - smooth01(5.5 * uS, hi, y));
   }
   vec2 own = uCell * s * k;                                   // its own cell, device px
-  vec2 origin = vec2((a.x - c.y * s) * uCell.x, uRes.y / 2. - a.z * uCell.y * s);   // where its layer's (0, 0) is
   vec2 at = origin + anchor * uCell * s + aLocal / 256. * own + nudge, size;
   vColour = vec4(uPalette[int(aG.y)], alpha * vis); vTone = tone; vMode = 0.;
   if (kind == ${KIND.leaf}) vColour.a *= .2 + .8 * (1. - smooth01(uLamp.z, uLamp.w, distance(at, uLamp.xy)));           // brightest in your light

@@ -2,7 +2,7 @@
 // way down. Each frame it writes them, in drawing order, into one buffer of instances.
 
 import { clamp, smooth, mix, twinkle, mulberry32 } from './math.js';
-import { BYTES, KIND, INK, HOT, DISC, BARE, FREE, writer } from './glsl.js';
+import { BYTES, KIND, INK, HOT, DISC, BARE, FREE, TRAIL, writer } from './glsl.js';
 import { LAYER, colour } from './pack.js';
 import { TREES, LEAF_ROW } from './art.js';
 
@@ -20,9 +20,24 @@ export function makeLive(gl, model, view, scene, cards) {
   const d = model.dims, { lobes, stops, ground, turn, air } = model, { S, cellW, cellH, cols, typeSize, aspect, u, groundRow: G } = d, { state, made, place, hidden } = scene;
   const ROOM = 16384, buffer = new ArrayBuffer(ROOM * BYTES), w = writer(buffer), ranges = Object.fromEntries(ORDER.map((n) => [n, [0, 0]])), glyphs = {}, RA = air.random;
   const g = (ch) => glyphs[ch] ??= gl.glyph(ch), pick = (list) => list[Math.floor(RA() * list.length)], PAGE = LAYER.page, SKY = 0;
-  let top = 0, time = 0, dt = 0.016, last = -1, lastTop = 0, vel = 0, shove = 0, lean = 0, leanV = 0, push = 0, lamps = 0;
+  let top = 0, time = 0, dt = 0.016, last = -1, lastTop = 0, vel = 0, shove = 0, lean = 0, leanV = 0, lamps = 0;
   const ptr = { x: 0, y: 0, at: -1e9, on: false, c: 0, r: 0 };
   addEventListener('pointermove', (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
+
+  // The pointer's past, for the springs in the shader. Each star, flake and leaf is a spring pushed by the pointer; where a
+  // spring is now is its past pushes weighed by how a spring answers a knock (nothing at once, most a moment later, then
+  // back past rest and settling). So the shader is given the last second of the pointer and those weights.
+  const KNOCK = { stiff: 12, damp: 0.4, every: 1 / 30 }, past = Array.from({ length: TRAIL }, (_, i) => ({ x: 0, y: 0, t: -1e3 - i, on: 0 })), trail = new Float32Array(TRAIL * 3);
+  function remember() {
+    const { stiff, damp, every } = KNOCK, ring = stiff * Math.sqrt(1 - damp * damp), dpr = view.dpr;
+    if (time - past[0].t >= every) { const oldest = past.pop(); oldest.x = ptr.x; oldest.y = ptr.y + top * cellH; oldest.t = time; oldest.on = ptr.on ? 1 : 0; past.unshift(oldest); }   // kept down the page, so a scroll carries it
+    let before = 0, sum = 0;
+    for (let i = 0; i < TRAIL; i++) {
+      const q = past[i], age = time - q.t, after = i + 1 < TRAIL ? time - past[i + 1].t : age + every, share = age > 1.5 ? 0 : stiff * stiff * Math.exp(-damp * stiff * age) * Math.sin(ring * age) / ring * (Math.min(after, age + 2 * every) - before) / 2;
+      trail[i * 3] = q.x * dpr; trail[i * 3 + 1] = (q.y - top * cellH) * dpr; trail[i * 3 + 2] = share * q.on; sum += share; before = age;
+    }
+    if (sum > 0.5) for (let i = 0; i < TRAIL; i++) trail[i * 3 + 2] /= sum;   // a pointer held still pushes exactly as far as it should
+  }
 
   // placing: an object by its ink, at a screen point (css px); type on the page's lines, at a cell
   const ink = (ch, name, x, y, size, alpha, kind = 0, p = 0) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x / cellW, top + y / cellH, 0, 0, 0, 0, size / typeSize, g(ch), colour(name), Math.min(1, alpha), PAGE, kind, INK | p); };
@@ -317,7 +332,7 @@ export function makeLive(gl, model, view, scene, cards) {
     time = now; dt = last < 0 ? 0.016 : clamp(now - last, 0, 0.05); last = now; top = st.top;
     const raw = dt > 0 ? (top - lastTop) / dt : 0; lastTop = top; vel += (raw - vel) * Math.min(1, 12 * dt); shove = -122 * Math.tanh(0.9 * vel / 122);
     ptr.on = performance.now() - ptr.at < 2500; ptr.c = ptr.x / cellW; ptr.r = ptr.y / cellH + top;
-    push += ((ptr.on ? 1 : 0) - push) * Math.min(1, (ptr.on ? 12 : 2) * dt);
+    remember();
     leanV += (-49 * lean - 7 * leanV + shove) * dt; lean += leanV * dt; if (Math.abs(lean) > 3) { lean = 3 * Math.sign(lean); leanV /= 2; }   // the field's one spring: stiffness 7, damping 0.5
     reveal = clamp((time - 0.4) / 3, 0, 1);
     const lower = state.centre > 4.02 && state.centre < 10.6;
@@ -336,6 +351,6 @@ export function makeLive(gl, model, view, scene, cards) {
     section('tethers', drawTethers);
     return w.count;
   }
-  const uniforms = (set) => { set.f('uHush', cards.presence[0]); set.fv4('uQuiet', cards.quiet); set.v2('uLean', 0, lean); set.v2('uPointer', ptr.c, ptr.r); set.f('uPush', push); };
+  const uniforms = (set) => { set.f('uHush', cards.presence[0]); set.fv4('uQuiet', cards.quiet); set.v2('uLean', 0, lean); set.fv3('uTrail', trail); };
   return { step, uniforms, bytes: new Uint8Array(buffer), ranges, planks, spots, setLamps: (n) => { lamps = n; } };
 }

@@ -86,7 +86,7 @@ export function makeScene(gl, model, view, flags = {}) {
     set.f('uTime', time); set.f('uS', S); set.f('uPx', dpr); set.f('uCols', cols); set.fv3('uPalette', palette);
     set.v4('uLamp', state.lampX * dpr, state.lampY * dpr, state.r0 * dpr, state.r1 * dpr); set.f('uDark', state.dark);
     set.v4('uFall', SNOW.z[0] * S, SNOW.z[1] * S, LEAVES.from * S, G); set.v3('uLeaf', glyph(','), glyph("'"), glyph('~')); set.f('uAltStar', glyph('*'));
-    if (live) live.uniforms(set); else { set.f('uHush', 0); set.v2('uLean', 0, 0); set.f('uPush', 0); }
+    if (live) live.uniforms(set); else { set.f('uHush', 0); set.v2('uLean', 0, 0); }
 
     // draw, back to front
     gl.begin(sky, live?.bytes, count);
