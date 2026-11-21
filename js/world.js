@@ -42,11 +42,11 @@ export function makeWorld(params, name = 'daniel wyckoff') {
   // the ground and the hut; the last stop's light is the hut's window, as it stands at the end of the page
   const base = stops[stops.length - 1], ground = makeGround(d, base.x), endRow = d.end + d.S / 2;
   base.x = ground.window[0] * GROUND_K - 0.5; base.y = endRow + (d.groundRow + 1 + ground.window[1] - endRow) * GROUND_K - 0.5;
-  const { lobes, turn, N } = makeMassif(d, stops, ground.door);
+  const { lobes, turn, N } = makeMassif(d, stops, ground.door, peak);
   for (const l of lobes) l.stop = l.stop?.id ?? null;
   Object.assign(d, { kx: turn.kx, reach: turn.reach, leadRows: turn.leadRows });
   // the painted peak thins out through the seam, and the core fills in exactly where it does not
-  const core = lobes.find((l) => l.kind === 'core'), shift = d.ax - core.cx - 0.5, clear = [];
+  const core = lobes.find((l) => l.kind === 'core'), shift = 0, clear = [];
   for (const key of core.kept) { const r = Math.floor(key / core.W); if (r >= d.bodyTop && r <= d.seamRow + 3) clear.push(r * d.cols + Math.round(shift + key % core.W)); }
   const peakShows = (row, col) => row < d.bodyTop || hash(row, col, 5) > (row - d.bodyTop) / 6;
   finishPeak(peak, d.cols, clear);

@@ -25,7 +25,7 @@ export function makeAir(d, N) {
   const mk = (count, spread, w, h, off = 0) => Array.from({ length: count }, () => [R() * span, Math.round(off * S + (R() + R() + R() - 1.5) / 1.5 * spread * S), mix(w[0], w[1], R()) * wide, mix(h[0], h[1], R()), R() * 100, null, null]);
   const clouds = [
     [...mk(per, 0.22, [9, 22], [2.4, 5]), ...mk(Math.ceil(per / 2), 0.08, [4, 9], [1.2, 2.2], -0.5)],
-    [...mk(per, 0.17, [9, 22], [2.8, 6]), ...mk(Math.ceil(per / 2), 0.07, [5, 10], [1.3, 2.4], 0.42)],
+    [...mk(per, 0.17, [9, 22], [2.8, 6]), ...mk(Math.ceil(per / 2), 0.07, [5, 10], [1.3, 2.4], 0.1)],
     mk(Math.ceil(0.7 * per), 0.16, [9, 20], [3, 6]),
   ];
 

@@ -14,7 +14,7 @@ export function makeTurn(d) {
   const gain = (rows) => Math.exp(MASSIF.depth * clamp(rows / S, -1.6, 1.6));
   const pose = (l, yaw, centreRow, out = {}) => {
     const you = centreRow - leadRows;
-    if (l.kind === 'core') { out.X = d.ax; out.s = out.vis = out.tone = 1; out.ref = you; return out; }
+    if (l.kind === 'core') { out.X = l.cx + 0.5; out.s = out.vis = out.tone = 1; out.ref = you; return out; }
     const phi = wrapPi(l.th - yaw), cos = Math.cos(phi), ridge = l.span != null;
     out.ref = ridge ? clamp(you, l.apex, l.apex + l.span) : you;
     out.s = ridge ? (1 + MASSIF.depth / 2 * l.d / reach) * gain(out.ref - you) * (0.82 + 0.18 * cos) : 1 + MASSIF.depth * l.d * cos / reach;
@@ -25,19 +25,19 @@ export function makeTurn(d) {
 }
 
 // The lobes, back to front, each with its outline, and the route laid over the ones it crosses.
-export function makeMassif(d, stops, door) {
+export function makeMassif(d, stops, door, peak) {
   const T = makeTurn(d), { S, cols, groundRow: G, bodyTop, summitRow } = d, { kx, reach, ref, leadRows, yawAt, face, pose } = T, R = mulberry32(3), N = makeNoise(77);
   const out = (at) => kx * (15 + 4.3 * (at - 5.4)), ridgeHalf = (n) => kx * 3.1 * n ** 0.62, mode = d.stack ? 'stack' : 'side';
   const marked = stops.filter((s) => s.mark && s.mark !== 'hut'), screens = (s) => s.at[0], lobes = [];
 
-  // the core: the same mountain as the peak, carried on down under the clouds. Its sides leave the seam at the angle the
-  // peak's sides arrive at, then flare: steep at the top, spreading into broad flanks, one silhouette from summit to trees.
-  const [sl, sr] = d.seamSpread, steep = (sl + sr) / 2, broad = Math.max(steep, MASSIF.core[0] * kx), over = MASSIF.core[1] * S;
-  lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, rag: 3, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1,
-    flat: d.seamHalf, wl: sl / steep, wr: sr / steep, flare: broad, half: (n) => steep * n + (broad - steep) * (n - over * (1 - Math.exp(-n / over))) });
-  // spires: steep, snow-topped, behind it and far enough out that their tops stand clear of its flanks
-  MASSIF.spires.forEach(([s, far, off], i) => { const apex = Math.round(summitRow + s * S), core = lobes[0], clear = (core.flat + core.half(apex - bodyTop + 0.3 * S)) / Math.abs(Math.sin(off)); lobes.push({ kind: 'spire', apex, span: null, th: face(apex) + off, off, d: Math.max(far * kx, clear), rag: 3, seed: 10 + 7 * i, stop: null, rank: apex - 1e6, flare: 0.105 * kx,
-    half: (n) => kx * (0.3 * Math.min(n, 14) + 0.105 * Math.max(0, n - 14)) }); });
+  // the core: the mountain the peak is the top of. From the seam its two sides run on down at the pitch of the peak's
+  // upper slopes, easing as they go, with the same broken skyline: one silhouette from the summit to the trees.
+  // It stands still with the page.
+  const mid = Math.floor(d.ax), pitch = Math.max(0.8 * cols / 304, 0.28), skyline = Float32Array.from({ length: cols }, (_, c) => {
+    const far = Math.max(0, Math.abs(c + 0.5 - d.ax) - d.seamHalf), down = far / (pitch * (1 + 0.5 * smooth(0, 4 * d.seamHalf, far)));
+    return bodyTop + down + ((N.ridged(9 * c / cols + 2.3, 0.7, 2) - 0.5) * 0.07 * S * 4.9 + (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
+  });
+  lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1, W: cols, cx: mid, crest: skyline });
   // route ridges: one for each stop on the way down, and plain ones between
   const stopTops = marked.filter((s) => screens(s) >= LAYOUT.ice).map((s) => {
     const rest = screens(s) + CARD.rest[mode], far = out(screens(s) - MASSIF.lead), size = 1 + MASSIF.depth * 0.5 * far / reach;
@@ -70,14 +70,18 @@ export function makeMassif(d, stops, door) {
 
   // outlines
   for (const l of lobes) {
-    const { wl = 1, wr = 1, flat = 0, lean = 0 } = l, tall = G - l.apex, widest = l.half(tall);
-    const wmax = Math.min(Math.ceil(widest * Math.max(wl, wr) + flat + Math.abs(lean)), Math.ceil(cols / 2 + reach) + 6) + 3, W = 2 * wmax + 1, cx = wmax, crest = new Float32Array(W).fill(Infinity);
-    for (let c = 0; c < W; c++) {
-      const a = Math.max(0, Math.abs(c - cx - lean) - flat) / (c < cx + lean ? wl : wr);
-      if (widest < a) continue;
-      let lo = 0, hi = tall; for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (l.half(m) >= a) hi = m; else lo = m; }
-      crest[c] = l.apex + hi + (N.fbm(0.21 * c + l.seed, 3.3, 2) - 0.5) * l.rag * Math.min(1, hi / 5);
-    }
+    const outline = () => {
+      const { wl = 1, wr = 1, flat = 0, lean = 0 } = l, tall = G - l.apex, widest = l.half(tall);
+      const wmax = Math.min(Math.ceil(widest * Math.max(wl, wr) + flat + Math.abs(lean)), Math.ceil(cols / 2 + reach) + 6) + 3, W = 2 * wmax + 1, cx = wmax, crest = new Float32Array(W).fill(Infinity);
+      for (let c = 0; c < W; c++) {
+        const a = Math.max(0, Math.abs(c - cx - lean) - flat) / (c < cx + lean ? wl : wr);
+        if (widest < a) continue;
+        let lo = 0, hi = tall; for (let i = 0; i < 18; i++) { const m = (lo + hi) / 2; if (l.half(m) >= a) hi = m; else lo = m; }
+        crest[c] = l.apex + hi + (N.fbm(0.21 * c + l.seed, 3.3, 2) - 0.5) * l.rag * Math.min(1, hi / 5);
+      }
+      return { W, cx, crest };
+    };
+    const { W, cx, crest } = l.crest ? l : outline();
     const slope = Float32Array.from(crest, (_, c) => c < 1 || c > W - 2 ? 0 : crest[c - 1] < Infinity && crest[c + 1] < Infinity ? (crest[c + 1] - crest[c - 1]) / 2 : c < cx ? -2 : 2);
     Object.assign(l, { W, cx, crest, slope, folds: !!l.folds });
     l.onCrest = (c) => { c = clamp(c, 2, W - 3); while (crest[c] === Infinity) c += c < cx ? 1 : -1; return [c, Math.ceil(crest[c])]; };
@@ -95,7 +99,7 @@ export function makeMassif(d, stops, door) {
       const x = b.X + (nx.arrive[0] - nx.cx) * b.s, y = (nx.arrive[1] - mid) * b.s, r = Math.max(l.arrive[1] + 3, Math.round(mid + y / a.s) - 3), gap = Math.min(9, Math.round((4 + R() * 2) * kx));
       l.depart = [l.inside(Math.round(l.cx + (x - a.X) / a.s) - gap, r), r];
     }
-    if (l.stop) { const way = core ? [l.stop.x + 0.5 - d.ax, l.stop.y] : l.way; l.mark = [l.cx + 0.5 + way[0], way[1] + 0.5]; l.via = [Math.round(l.cx + way[0]), Math.round(way[1])]; }
+    if (l.stop) { const way = core ? [l.stop.x - l.cx, l.stop.y] : l.way; l.mark = [l.cx + 0.5 + way[0], way[1] + 0.5]; l.via = [Math.round(l.cx + way[0]), Math.round(way[1])]; }
     const path = l.path = [], legs = l.via ? [[l.arrive, l.via], [l.via, l.depart]] : [[l.arrive, l.depart]];
     for (const [[x0, r0], [x1, r1]] of legs) {
       const rows = Math.max(1, r1 - r0), bends = Math.max(1, Math.round(rows / 9)); let x = x0;
@@ -107,7 +111,7 @@ export function makeMassif(d, stops, door) {
     }
     // what the route needs kept clear
     const kept = l.kept = new Set(), keep = (c, r) => kept.add(r * l.W + c);
-    for (const [c, r] of path) for (let dr = -1; dr <= 1; dr++) for (let dc = -2; dc <= 2; dc++) keep(c + dc, r + dr);
+    for (const [c, r] of path) for (let dr = core ? 0 : -1; dr <= (core ? 0 : 1); dr++) for (let dc = core ? -1 : -2; dc <= (core ? 1 : 2); dc++) keep(c + dc, r + dr);
     if (!core) for (let r = l.arrive[1] - 7; r <= l.arrive[1] + 1; r++) for (let c = l.arrive[0] - 13; c <= l.arrive[0] + 3; c++) keep(c, r);
   });
   for (const l of lobes) { l.kept ??= new Set(); l.path ??= []; }
