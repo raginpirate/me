@@ -75,7 +75,6 @@ export function makeScene(gl, model, view, flags = {}) {
     layer(LAYER.ground, 0, ground.k, centreRow);
     RANGES.forEach((r, n) => layer(LAYER.range + n, 0, r.k, -r.p * (d.maxScroll - top) / r.k));
     CLOUDS.forEach((c, n) => layer(LAYER.cloud + n, 0, c.k, centreRow, 1, 1, 0, 0, 0, FAR, 40, c.drift, cloudSpan(cols, n)));
-    layer(LAYER.seam, d.ax + 3 * Math.sin(0.07 * time), 1, centreRow);
     SNOW.tiers.forEach((tier, n) => layer(LAYER.snow + n, 0, tier[0], centreRow));
     LEAVES.depths.forEach((depth, n) => layer(LAYER.leaf + n, 0, depth[0], centreRow));
 

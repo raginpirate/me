@@ -30,14 +30,13 @@ export function makeMassif(d, stops, door) {
   const out = (at) => kx * (15 + 4.3 * (at - 5.4)), ridgeHalf = (n) => kx * 3.1 * n ** 0.62, mode = d.stack ? 'stack' : 'side';
   const marked = stops.filter((s) => s.mark && s.mark !== 'hut'), screens = (s) => s.at[0], lobes = [];
 
-  // the core: the peak's spire carried on down
-  const pts = [[LAYOUT.seam - LAYOUT.summit, d.seamHalf], ...MASSIF.core.map(([x, w]) => [x, w * ref])];
-  for (let i = 1; i < pts.length; i++) pts[i][1] = Math.max(pts[i][1], 1.08 * pts[i - 1][1]);
-  const through = (x) => { if (x <= pts[0][0]) return pts[0][1]; for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) return pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * (x - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0]); return pts[pts.length - 1][1]; };
-  lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, rag: 2, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1,
-    half: (n) => through((bodyTop + n - summitRow) / S) * (1 - 0.25 * smooth(0, 0.9 * S, n)) });
-  // spires: steep, snow-topped, close in
-  MASSIF.spires.forEach(([s, far, off], i) => { const apex = Math.round(summitRow + s * S); lobes.push({ kind: 'spire', apex, span: null, th: face(apex) + off, off, d: far * kx, rag: 3, seed: 10 + 7 * i, stop: null, rank: apex - 1e6,
+  // the core: the same mountain as the peak, carried on down under the clouds. Its sides leave the seam at the angle the
+  // peak's sides arrive at, then flare: steep at the top, spreading into broad flanks, one silhouette from summit to trees.
+  const [sl, sr] = d.seamSpread, steep = (sl + sr) / 2, broad = Math.max(steep, MASSIF.core[0] * kx), over = MASSIF.core[1] * S;
+  lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, rag: 3, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1,
+    flat: d.seamHalf, wl: sl / steep, wr: sr / steep, flare: broad, half: (n) => steep * n + (broad - steep) * (n - over * (1 - Math.exp(-n / over))) });
+  // spires: steep, snow-topped, behind it and far enough out that their tops stand clear of its flanks
+  MASSIF.spires.forEach(([s, far, off], i) => { const apex = Math.round(summitRow + s * S), core = lobes[0], clear = (core.flat + core.half(apex - bodyTop + 0.3 * S)) / Math.abs(Math.sin(off)); lobes.push({ kind: 'spire', apex, span: null, th: face(apex) + off, off, d: Math.max(far * kx, clear), rag: 3, seed: 10 + 7 * i, stop: null, rank: apex - 1e6, flare: 0.105 * kx,
     half: (n) => kx * (0.3 * Math.min(n, 14) + 0.105 * Math.max(0, n - 14)) }); });
   // route ridges: one for each stop on the way down, and plain ones between
   const stopTops = marked.filter((s) => screens(s) >= LAYOUT.ice).map((s) => {

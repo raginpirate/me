@@ -54,7 +54,8 @@ export const CHARS = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWX
 export const MASSIF = {
   turn: [4.25, 9.6], turns: 0.6, ease: 0.16, depth: 0.42, lead: 0.14, haze: [1.1, 1.65], stride: [0.3, 1.25], sparse: 'fera',
   spires: [[0.98, 9, 1.25], [1.22, 15, -1.2], [1.5, 12, 1.4], [1.78, 20, -1.35], [2.05, 17, 1.2], [2.3, 23, -1.1]],   // [screens below the summit, how far out, turned by]
-  core: [[1.35, 0.24], [2.1, 0.31], [3.1, 0.39], [4.2, 0.52], [5.2, 0.74], [6.3, 1.15]],                                // [screens below the summit, half-width as a share of ref]
+  core: [0.32, 0.6],                                                                                                    // below the seam its sides flare to this spread (columns a row, times kx), over this many screens
+  ribs: { gap: 0.22, lean: 0.9, band: 0.24 },                                                                           // ribs off the spine: screens apart, how far they lean against the flank's spread, how much of the gap lies in their shadow
   forms: [[1.0, 1.35, 2, 0.62, 3.1, 0], [1.5, 1.15, 8, 0.6, 4.4, 0], [0.9, 2.5, 3, 0.66, 3.5, -22], [1.25, 1.0, 5, 0.6, 3.8, 0]],   // long ridges: [left, right, level top, widening, width, top off centre]
   lamp: { dark: 0.62, core: 0.18, reach: 0.78 },
 };

@@ -2,7 +2,7 @@
 // grass, the route's marks, and its trees.
 
 import { clamp, smooth, mulberry32, edge } from '../math.js';
-import { LAYOUT, TREES } from '../art.js';
+import { LAYOUT, TREES, MASSIF } from '../art.js';
 
 const GRASS = [',', '.', "'", '"', ',', '`'], TONE = { pineDark: 0, rockDark: 1, dim: 2 };
 const frac = (v) => v - Math.floor(v);
@@ -13,7 +13,7 @@ export const pathMark = (k, at) => at < LAYOUT.ice ? (k % 4 === 0 ? ['+', 'muted
 // peakShows(row, col): the painted peak is drawn at this page cell (the core only shows where it is not)
 export function paintLobe(l, d, N, kx, peakShows) {
   const R = mulberry32(l.seed), { S, groundRow: G, bodyTop, seamRow } = d, { W, cx, crest, slope, seed, apex, kept } = l, core = l.kind === 'core', spire = l.kind === 'spire', ridge = l.span != null;
-  const has = (c) => crest[c] < Infinity, deep = Math.round(Math.max(1.25 * S, (l.span ?? 0) + 0.6 * S));
+  const ribs = core || spire, has = (c) => crest[c] < Infinity, deep = Math.round(core ? 1.9 * S : Math.max(1.25 * S, (l.span ?? 0) + 0.6 * S));
 
   // arêtes
   const arete = new Map(), crossings = new Map();
@@ -25,10 +25,14 @@ export function paintLobe(l, d, N, kx, peakShows) {
     }
   };
   const top = Math.round(crest[cx]);
-  walk(cx, top, 0, Infinity);
-  if (core) { walk(cx - 2, bodyTop + Math.round(0.35 * S), -1.3, 1.1 * S); walk(cx + 2, bodyTop + Math.round(0.6 * S), 1.3, S); }
-  else { walk(cx - 1, top + 5, -1.6, ridge ? 26 : 80); walk(cx + 1, top + 8, 1.6, ridge ? 22 : 70); }
-  for (const list of crossings.values()) list.sort((a, b) => a - b);
+  if (!ribs) { walk(cx, top, 0, Infinity); walk(cx - 1, top + 5, -1.6, ridge ? 26 : 80); walk(cx + 1, top + 8, 1.6, ridge ? 22 : 70); }
+  // The core and the spires are the peak's kind of rock, lit from the left: a spine down the middle, the left flank in
+  // the light and the right in shadow, and ribs running off the spine down each flank, each with a gully in its lee.
+  const { flat = 0, wl = 1, wr = 1, lean = 0 } = l, out = (r) => l.half(Math.max(0, r - apex)), RIBS = MASSIF.ribs;
+  const gap = RIBS.gap * S * (spire ? 0.6 : 1), run = (l.flare ?? 1) * RIBS.lean, lee = Math.max(2, RIBS.band * gap);
+  const spineAt = (r) => Math.round(cx + lean + (N.fbm(0.05 * r + seed, 2.7, 2) - 0.5) * Math.min(6, 0.15 * (flat + out(r))) * Math.min(1, (r - apex) / 8));
+  // the row rib k crosses, `far` columns out from the spine on one side
+  const ribRow = (k, far, right) => apex + (k + 0.6 * N.noise(1.7 * k + seed, right ? 3.3 : 8.8)) * gap + far / (run * (0.75 + 0.5 * N.noise(3.1 * k + seed, right ? 2.2 : 5.5))) + (N.noise(0.09 * far + 5 * k + seed, right ? 1.2 : 6.4) - 0.5) * 4;
 
   // folds: shoulders across the face of a long ridge
   const folds = [];
@@ -59,6 +63,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
   const snowAbs = (x) => 4.76 * S + (N.fbm(0.09 * x + seed, 2.2, 3) - 0.5) * 16;
   for (let r = first; r < G; r++) {
     const at = r / S, wd = wood(r), cross = crossings.get(r) ?? [];
+    const spine = ribs ? spineAt(r) : 0;
     for (let c = 0; c < W; c++) {
       if (!(crest[c] <= r)) continue;
       let e = c; while (e + 1 < W && crest[e + 1] <= r) e++;
@@ -73,6 +78,19 @@ export function paintLobe(l, d, N, kx, peakShows) {
         } else if (wd > 0.6) {
           if (depth < 1) cell = [edge(frac(crest[x]), slope[x]), slope[x] < 0.05 ? 'moss' : 'pine', 0.95];
           else if (depth < 11 && R() < 0.3 * (1 - depth / 11)) cell = [GRASS[Math.floor(R() * 6)], slope[x] < 0.05 ? 'pine' : 'pineDark', 0.85 - 0.05 * depth];
+        } else if (ribs) {
+          const dx = x - spine, far = Math.abs(dx), right = dx > 0, lit = dx < 0 ? 1 : 0, side = Math.max(1, flat + (x < cx + lean ? wl : wr) * out(r)), across = clamp(Math.abs(x - cx - lean) / side, 0, 1);
+          let k = Math.floor((r - apex - far / run) / gap + 0.5); while (k >= 0 && ribRow(k, far, right) > r) k--; while (ribRow(k + 1, far, right) <= r) k++;   // the rib above it
+          const under = k >= 0 ? r - ribRow(k, far, right) : 99, long = far > 0 && far <= (0.45 + N.noise(2.3 * k + seed, right ? 4 : 9)) * side, isRib = depth >= 1 && (far === 0 || (long && under < 1));
+          const gully = long && under >= 1 && under < lee + 1 ? 1 - (under - 1) / lee : 0, bare = 1 - wd, thin = 1 - smooth(0.55 * deep, deep, depth);
+          const facet = (N.fbm(0.11 * (r - far / run) + 4.2 + seed, 0.17 * far + (right ? 1.1 : 7.7), 3) - 0.5) * 0.75, grain = (N.noise(0.9 * x + seed, 0.9 * r) - 0.5) * 0.2;   // the rock runs with the ribs
+          const light = clamp(0.2 + 0.24 * lit + 0.16 * (1 - across) + 1.3 * facet + grain - 0.0015 * depth - 0.3 * gully * lit, 0, 1), glyph = isRib ? (far === 0 ? '|' : right ? '\\' : '/') : null;
+          const line = snowAbs(x) + (isRib ? 8 : 0) + 0.5 * S * gully * gully, cap = spire ? (16 + (N.noise(0.3 * x + seed, 1) - 0.3) * 12) * (1 - smooth(4.8, 5.6, at)) : 0;   // snow lies longest in the gullies
+          const snow = at < 5.6 && (r < line || depth < cap), topRow = depth < 1 && !(core && r <= bodyTop + 1);
+          if (snow) { const rim = topRow || r === Math.round(line) - 1, sn = light + 0.25, ch = rim ? (lit ? '@' : '%') : glyph ?? (sn > 0.85 ? '#' : sn > 0.65 ? '%' : sn > 0.45 ? ':' : sn > 0.3 ? '.' : null); cell = [ch, 'snow', (light > 0.45 || rim ? 1 : 0.55) * thin]; }
+          else if (topRow) cell = [Math.abs(slope[x]) <= 0.8 ? edge(frac(crest[x]), slope[x]) : slope[x] < 0 ? '/' : '\\', lit ? 'rockLight' : 'rock', bare];   // its outline, all the way down
+          else if (glyph) cell = [glyph, 'rockLight', bare * thin];
+          else { const sn = light + 0.2 - 0.1 * R(), ch = sn > 0.8 ? '#' : sn > 0.6 ? '%' : sn > 0.4 ? ':' : sn > 0.27 ? '.' : null; cell = [ch, sn > 0.6 ? 'rockLight' : sn > 0.4 ? 'rock' : 'rockDark', bare * thin]; }   // the peak's own marks, in rock
         } else {
           // rock and snow, lit from the left: the face left of an arête is lit, the face right of it in shadow
           let k = 0; while (k < cross.length && cross[k] < x) k++;

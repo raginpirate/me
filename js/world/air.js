@@ -28,7 +28,6 @@ export function makeAir(d, N) {
     [...mk(per, 0.17, [9, 22], [2.8, 6]), ...mk(Math.ceil(per / 2), 0.07, [5, 10], [1.3, 2.4], 0.42)],
     mk(Math.ceil(0.7 * per), 0.16, [9, 20], [3, 6]),
   ];
-  clouds[1].push([0, Math.round(seamRow + 2 - deckRow), 1.7 * seamHalf + 10, 6.2, 7, 0.86, ax]);   // the one on the seam never leaves
 
   const A = mulberry32(31), z0 = SNOW.z[0] * S, z1 = SNOW.z[1] * S, l0 = LEAVES.from * S, l1 = groundRow;
   const snow = Array.from({ length: Math.round(cols * (z1 - z0) / 44) }, () => { const u = A(), tier = u < 0.42 ? 0 : u < 0.93 ? 1 : 2, x = A(), y = z0 + A() * (z1 - z0), ch = tier === 1 ? (A() < 0.7 ? '*' : '+') : SNOW.tiers[tier][1]; return [x, y, tier, ch, A() * 6.28]; });

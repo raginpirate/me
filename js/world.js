@@ -34,7 +34,9 @@ function makeStops(d) {
 
 export function makeWorld(params, name = 'daniel wyckoff') {
   const d = makeDims(params), stops = makeStops(d), peak = makePeak(d);
-  Object.assign(d, { topCol: peak.topCol, ax: peak.ax, seamHalf: peak.seamHalf });
+  // how fast the peak's two sides are spreading where it meets the clouds (columns a row): the massif carries them on
+  const above = peak.span[d.seamRow - 14] ?? peak.span[d.seamRow], at = peak.span[d.seamRow], spread = (v) => Math.min(1.6, Math.max(0.15, v / 14));
+  Object.assign(d, { topCol: peak.topCol, ax: peak.ax, seamHalf: peak.seamHalf, seamSpread: [spread(above[0] - at[0]), spread(at[1] - above[1])] });
   const asterism = makeName(d, name), covered = (x, row) => { const s = peak.span[row]; return !!s && x >= s[0] && x < s[1]; };
   const { stars, firstShot } = makeStars(d, covered, asterism);
   // the ground and the hut; the last stop's light is the hut's window, as it stands at the end of the page

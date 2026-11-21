@@ -14,7 +14,7 @@ const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 export const rgb = (name) => MIXES[name] ? (([a, b, t]) => hex(PALETTE[a]).map((v, i) => Math.round(v + (hex(PALETTE[b])[i] - v) * t)))(MIXES[name]) : hex(PALETTE[name]);
 
 // the layers: the page itself, each lobe, the ground, and each depth of what is in the air
-export const LAYER = { page: 0, lobe: 1, ground: 20, range: 21, cloud: 23, seam: 26, snow: 27, leaf: 30 };
+export const LAYER = { page: 0, lobe: 1, ground: 20, range: 21, cloud: 23, snow: 27, leaf: 30 };
 const SKY = 0, TONES = ['pineDark', 'rockDark', 'dim'];
 
 // a run of instances: build(w) writes at most `count` of them
@@ -101,8 +101,8 @@ export const cloudSpan = (cols, n) => n === 0 ? cols / CLOUDS[0].k + 80 : cols +
 export function packClouds({ air, N, dims }, n, glyph) {
   const { line, body, k } = CLOUDS[n], round = cloudSpan(dims.cols, n) / (dims.cols + 80),   // the far layer goes round over its own width
     shapes = air.clouds[n].map((c) => cloudColumns(c, N)), count = shapes.reduce((t, cols) => t + cols.reduce((m, col) => m + 1 + col[3].length, 0), 0);
-  return run(count, (w) => air.clouds[n].forEach(([x, y, , , , , pinned], i) => {
-    const li = pinned == null ? LAYER.cloud + n : LAYER.seam, kind = pinned == null ? KIND.cloud : KIND.plain, row = air.deckRow + y, at = pinned == null ? x * round : x;
+  return run(count, (w) => air.clouds[n].forEach(([x, y], i) => {
+    const li = LAYER.cloud + n, kind = KIND.cloud, row = air.deckRow + y, at = x * round;
     for (const [u, rt, rb, cells] of shapes[i]) {
       w.solid(at, row, u, rt, 1, rb - rt + 1, 1, SKY, 1, li, 0, kind);
       for (const [r, ch, inBody, share] of cells) { const [name, alpha] = inBody ? body : line; w.put(at, row, u, r, 0, 0, 1, glyph(ch), colour(name), alpha * share, li, kind); }
