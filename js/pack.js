@@ -71,7 +71,7 @@ export function packLobe(l, i, dims, glyph) {
       const left = Math.min(meet[c], bottom), right = Math.min(meet[c + 1], bottom), top = Math.min(left, right) - HAZE[0];
       w.solid(c, top, left - top, right - top, 1, left < bottom || right < bottom ? bottom - top : 0, 1, SKY, 1, li, WASH | EDGE);
     }
-    for (let c = 0; c < W; c++) { const to = Math.min(cover[c], bottom), from = mistTop[c] - 1; if (from < to) w.solid(c, from, 0, 0, 1, to - from, 1, SKY, 1, li, WASH | MIST); }
+    for (let c = 0; c < W; c++) { const to = Math.min(Math.ceil(crest[c]) - 0.5, bottom), from = mistTop[c] - 1; if (from < to) w.solid(c, from, 0, 0, 1, to - from, 1, SKY, 1, li, WASH | MIST); }   // mist, from where it starts down to the row the outline is drawn in
     solids = w.count;
     for (const [row, col, ch, name, alpha] of cells) w.put(col, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, li);
     trees.forEach(([c, r, k], n) => {

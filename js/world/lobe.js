@@ -53,9 +53,9 @@ export function paintLobe(l, d, N, kx, peakShows) {
   const wood = (r) => smooth(5.55, LAYOUT.forest, r / S), seamed = (r) => core && r <= seamRow + 5;
   for (let c = 0; c < W; c++) {
     if (!has(c)) continue;
-    for (let r = Math.ceil(crest[c]); r - crest[c] < 26 && r < G; r++) { if (seamed(r)) continue; const depth = r - crest[c], w = wood(r) > 0.5; wash(c, r, w ? 'pineDark' : 'rockDark', (w ? 0.32 : 0.2) * Math.exp(-depth / 6.5) * Math.min(1, depth + 0.3)); }
+    for (let r = Math.ceil(crest[c]); r - crest[c] < 26 && r < G; r++) { if (seamed(r)) continue; const depth = r - crest[c], w = wood(r) > 0.5; wash(c, r, w ? 'pineDark' : 'rockDark', (w ? 0.32 : 0.2) * Math.exp(-depth / 6.5)); }   // the ground's tone begins at its outline
     for (const f of folds) if (!Number.isNaN(f.row[c])) for (let r = Math.ceil(f.row[c]); r - f.row[c] < 22; r++) { const under = r - f.row[c]; wash(c, r, 'pineDark', 0.3 * Math.exp(-under / 6) * Math.min(1, under + 0.3) * f.on[c]); }
-    if (smooth(5.55, LAYOUT.forest, crest[c] / S) >= 0.5) for (let up = 1; up <= 5; up++) { const r = Math.floor(crest[c]) - up; if (!seamed(r)) wash(c, r, 'dim', 0.11 * (1 - (up - 0.5) / 5) ** 2); }
+    if (smooth(5.55, LAYOUT.forest, crest[c] / S) >= 0.5) for (let up = 1; up <= 5; up++) { const r = Math.ceil(crest[c]) - up; if (!seamed(r)) wash(c, r, 'dim', 0.11 * (1 - (up - 0.5) / 5) ** 2); }   // the mist rises from the row its outline is drawn in
   }
 
   // the body, row by row, run by run
