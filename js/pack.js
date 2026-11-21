@@ -1,6 +1,6 @@
 // The model, turned into what the renderer draws: runs of instances and ground textures. Nothing here moves.
 
-import { BYTES, KIND, INK, WASH, MIST, HOT, writer } from './glsl.js';
+import { BYTES, KIND, INK, WASH, MIST, HOT, EDGE, SOFT_X, SOFT_Y, HAZE, writer } from './glsl.js';
 import { PALETTE, MIXES, TREES, LEAF_ROW } from './art.js';
 import { HUT } from './world/ground.js';
 import { pathMark } from './world/lobe.js';
@@ -54,19 +54,26 @@ function treeMarks([, , , shape, olive, dark, snowy]) {
 // A lobe: what it hides (one solid a column), its mist, its cells, its trees; then its route, to be lit.
 // → { bytes, cover: how many of the first instances are what hides, route: [first, count] within bytes, wash: { w, h, y0, rgba } }
 export function packLobe(l, i, dims, glyph) {
-  const li = LAYER.lobe + i, { W, cover, cells, trees, wash, path } = l, bottom = dims.groundRow + 14;
+  const li = LAYER.lobe + i, { W, cover, crest, cells, trees, wash, path } = l, bottom = dims.groundRow + 14;
   const rgba = new Uint8Array(W * wash.h * 4), mistTop = new Float64Array(W).fill(Infinity), tones = TONES.map(rgb);
   wash.idx.forEach((at, n) => { const a = wash.a[n], t = tones[wash.tone[n]], c = at % W; rgba.set([t[0] * a / 255, t[1] * a / 255, t[2] * a / 255, a], at * 4); mistTop[c] = Math.min(mistTop[c], wash.y0 + Math.floor(at / W)); });
   const drawn = trees.map(treeMarks), count = 2 * W + cells.length + drawn.reduce((n, t) => n + t.marks.length + t.spans.length, 0) + 2 * path.length;
   let route = 0, solids = 0;
   const bytes = run(count, (w) => {
-    for (let c = 0; c < W; c++) { const top = cover[c] < bottom ? cover[c] : bottom; w.solid(c, top, 0, 0, 1, bottom - top, 1, SKY, 1, li, WASH); }
+    // what it hides: under its skyline, everything. The skyline is a line, not steps: each column's solid has a sloping top,
+    // from the height where it meets the column before to the height where it meets the next, and the haze rises off that.
+    const meet = Float32Array.from({ length: W + 1 }, (_, b) => { const a = b > 0 ? crest[b - 1] : Infinity, c = b < W ? crest[b] : Infinity; return a < Infinity && c < Infinity ? (a + c) / 2 : Math.min(a, c) + 2; });
+    for (const [c, r] of path) for (const b of [c, c + 1]) meet[b] = Math.min(meet[b], r - 0.5);   // the route is never left out in front of its own ground
+    for (let c = 0; c < W; c++) {
+      const left = Math.min(meet[c], bottom), right = Math.min(meet[c + 1], bottom), top = Math.min(left, right) - HAZE[0];
+      w.solid(c, top, left - top, right - top, 1, left < bottom || right < bottom ? bottom - top : 0, 1, SKY, 1, li, WASH | EDGE);
+    }
     for (let c = 0; c < W; c++) { const to = Math.min(cover[c], bottom), from = mistTop[c] - 1; if (from < to) w.solid(c, from, 0, 0, 1, to - from, 1, SKY, 1, li, WASH | MIST); }
     solids = w.count;
     for (const [row, col, ch, name, alpha] of cells) w.put(col, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, li);
     trees.forEach(([c, r, k], n) => {
       const { marks, spans, tall, wide, pitch } = drawn[n], x = c + 0.5, y = r + 1;
-      for (const [row, f, e] of spans) w.solid(x, y, f - 0.3 - wide / 2, -(tall - row) * pitch, e - f + 1.6, pitch, k, SKY, 1, li, WASH, KIND.tree);
+      for (const [row, f, e] of spans) w.solid(x, y, f - 1 - wide / 2, -(tall - row) * pitch, e - f + 3, pitch, k, SKY, 1, li, WASH | SOFT_X, KIND.tree);   // a tree hides what is behind it, fading out at its sides
       for (const [row, col, ch, name, alpha] of marks) w.put(x, y, col - wide / 2, -(tall - row) * pitch, 0, 0, k, glyph(ch), colour(name), alpha, li, KIND.tree);
     });
     route = w.count;
@@ -98,7 +105,7 @@ export function packClouds({ air, N, dims }, n, glyph) {
   return run(count, (w) => air.clouds[n].forEach(([x, y], i) => {
     const li = LAYER.cloud + n, kind = KIND.cloud, row = air.deckRow + y, at = x * round;
     for (const [u, rt, rb, cells] of shapes[i]) {
-      w.solid(at, row, u, rt, 1, rb - rt + 1, 1, SKY, 1, li, 0, kind);
+      w.solid(at, row, u, rt - 0.6, 1, rb - rt + 2.2, 1, SKY, 1, li, SOFT_Y, kind);
       for (const [r, ch, inBody, share] of cells) { const [name, alpha] = inBody ? body : line; w.put(at, row, u, r, 0, 0, 1, glyph(ch), colour(name), alpha * share, li, kind); }
     }
   }));

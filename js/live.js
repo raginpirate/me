@@ -2,7 +2,7 @@
 // way down. Each frame it writes them, in drawing order, into one buffer of instances.
 
 import { clamp, smooth, mix, twinkle, mulberry32 } from './math.js';
-import { BYTES, KIND, INK, HOT, DISC, BARE, FREE, TRAIL, writer } from './glsl.js';
+import { BYTES, KIND, INK, HOT, DISC, BARE, FREE, TRAIL, SOFT_Y, writer } from './glsl.js';
 import { LAYER, colour } from './pack.js';
 import { TREES, LEAF_ROW } from './art.js';
 
@@ -187,7 +187,7 @@ export function makeLive(gl, model, view, scene, cards) {
     if (!litPass) { findBridges(); plankCount = 0; }
     for (const [x0, y0, x1, y1, uB, vis, count, sag, len] of spans) {
       // a bridge hangs in front of whatever is behind it: clear its own strip of the picture first, so it reads over rock and trees
-      if (!litPass) for (let j = 0; j <= count; j++) { const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt); if (w.count < ROOM - 8) w.solid(x / cellW, top + y / cellH, -0.4 * uB / cellW, -1.45 * uB / cellH, 0.8 * uB / cellW, 2 * uB / cellH, 1, SKY, 0.9 * vis, PAGE); }
+      if (!litPass) for (let j = 0; j <= count; j++) { const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt); if (w.count < ROOM - 8) w.solid(x / cellW, top + y / cellH, -0.4 * uB / cellW, -1.7 * uB / cellH, 0.8 * uB / cellW, 2.5 * uB / cellH, 1, SKY, 0.9 * vis, PAGE, SOFT_Y); }
       for (let j = 0; j <= count; j++) {
         const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt);
         if (litPass) { ink('=', 'ember', x, y, 0.95 * uB, vis, KIND.route); ink('=', 'emberHot', x, y, 0.95 * uB, vis, KIND.route, HOT); ink('·', 'ember', x, y - 0.95 * uB, uB, 0.8 * vis, KIND.route); ink('·', 'emberHot', x, y - 0.95 * uB, uB, 0.8 * vis, KIND.route, HOT); continue; }

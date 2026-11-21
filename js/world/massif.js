@@ -42,8 +42,8 @@ export function makeMassif(d, stops, door, peak) {
   // the other peaks: mountains of the same kind standing round this one, further from you, so smaller, fainter and slower
   // down the screen. They pass behind it as you go round.
   MASSIF.peaks.forEach(([th, far, top], i) => {
-    const apex = Math.round(top * S), steep = Math.max(0.85 * unit, 0.25), wmax = Math.ceil(steep * 2.4 * S * 1.4), W = 2 * wmax + 1, seed = 10 + 7 * i;
-    const crest = Float32Array.from({ length: W }, (_, c) => { const out = Math.abs(c - wmax); return apex + out / (steep * (1 + 0.4 * smooth(0, 0.5 * wmax, out))) + ((N.ridged(0.05 * c / Math.max(unit, 0.3) + seed, 0.7, 2) - 0.5) * 0.3 * S + (N.noise(0.3 * c + seed, 1.1) - 0.5) * 0.06 * S) * smooth(0, 8, out); });
+    const apex = Math.round(top * S), steep = Math.max(0.85 * unit, 0.25), wmax = Math.ceil(steep * 2.9 * S * 1.4), W = 2 * wmax + 1, seed = 10 + 7 * i;
+    const crest = Float32Array.from({ length: W }, (_, c) => { const out = Math.abs(c - wmax); return apex + out / (steep * (1 + 0.4 * smooth(0, 0.5 * wmax, out))) + ((N.fbm(0.035 * c / Math.max(unit, 0.3) + seed, 0.7, 2) - 0.5) * 0.16 * S + (N.noise(0.3 * c + seed, 1.1) - 0.5) * 0.04 * S) * smooth(0, 8, out); });   // a little unevenness, no second summits
     lobes.push({ kind: 'peak', th, off: 0, d: far * unit, apex, span: null, seed, stop: null, rank: -1e6 - far, W, cx: wmax, crest });
   });
   // route ridges: one for each stop on the way down, and plain ones between

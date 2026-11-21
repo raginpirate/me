@@ -9,6 +9,9 @@ export const KIND = { plain: 0, star: 1, tree: 2, snow: 3, leaf: 4, cloud: 5, ro
 // HOT: the bright heart of the lit route · snow and leaves keep their depth in bits 4-5 and their first frame in bits 6-7
 // on a plain glyph, BARE: not dimmed by its lobe's tone · FREE: it moves, so it is not set on the pixel. On a solid, DISC: a soft round hollow
 export const INK = 1, WASH = 2, MIST = 4, HOT = 8, DISC = 8, BARE = 16, FREE = 32;
+// How a solid meets what is behind it. EDGE: its top is a slope (aLocal holds the top at its left and right, in rows) with
+// a haze rising off it · SOFT_X, SOFT_Y: its ends, or its top and bottom, are feathered
+export const EDGE = 16, SOFT_X = 32, SOFT_Y = 64, HAZE = [2.6, 0.62];   // the haze: how many rows it rises, how much it hides at the edge
 export const TRAIL = 32;   // how many moments of the pointer's past the shader is given
 export const LAYERS = 40, COLOURS = 40, LADDER = [-8, 5];   // layers in the table; palette entries; the atlas's sizes, in quarter octaves of the type size
 
@@ -46,7 +49,7 @@ uniform float uHush, uAltStar, uAscent, uCols;
 uniform vec2 uLean;                       // the sky's lean against the scroll (cells)
 uniform vec3 uTrail[${TRAIL}];                  // where the pointer has been (device px), and how much each moment still pulls on a spring
 uniform vec4 uFall; uniform vec3 uLeaf;   // rows where snow and leaves begin and end; a leaf's three glyphs
-out vec2 vUV, vCell; out vec4 vColour; out float vTone; flat out float vMode;
+out vec2 vUV, vCell; out vec4 vColour; out float vTone; flat out float vMode; flat out vec4 vEdge, vSoft;
 
 float smooth01(float a, float b, float x) { float u = clamp((x - a) / (b - a), 0., 1.); return u * u * (3. - 2. * u); }
 float twinkle(float phase, float low, float rate) { return low + (1. - low) * (.5 + .5 * sin(uTime * rate + phase)); }
@@ -87,11 +90,18 @@ void main() {
     } else alpha *= smooth01(lo, lo + .22 * uS, y) * (1. - smooth01(5.5 * uS, hi, y));
   }
   vec2 own = uCell * s * k;                                   // its own cell, device px
-  vec2 at = origin + anchor * uCell * s + aLocal / 256. * own + nudge, size;
+  bool sloped = glyph < .5 && (p & ${EDGE}) != 0;
+  vec2 at = origin + anchor * uCell * s + (sloped ? vec2(0.) : aLocal / 256. * own) + nudge, size;
   vColour = vec4(uPalette[int(aG.y)], alpha * vis); vTone = tone; vMode = 0.;
   if (kind == ${KIND.leaf}) vColour.a *= .2 + .8 * (1. - smooth01(uLamp.z, uLamp.w, distance(at, uLamp.xy)));           // brightest in your light
   if (glyph < .5) {                                           // a solid
-    size = aExt / 32. * own; vMode = float(1 + (p & ${WASH | MIST | DISC})); vUV = corner;
+    size = aExt / 32. * own; vMode = float(1 + (p & ${WASH | MIST | DISC})); vUV = corner; vEdge = vec4(0.);
+    if (sloped) {
+      vec2 tops = aLocal / 256.;                              // rows down from the solid's own top to its edge, at the left and at the right
+      if (uMask > .5) { float cut = max(tops.x, tops.y); at.y += cut * own.y; size.y -= cut * own.y; tops -= cut; }   // what it hides outright is the part under its edge
+      vEdge = vec4(tops, ${HAZE[0]}, own.y);
+    }
+    vSoft = vec4(size, (p & ${SOFT_X}) != 0 ? .9 * own.x : 0., (p & ${SOFT_Y}) != 0 ? .8 * own.y : 0.);
     vCell = (at + corner * size - origin) / (uCell * s);
   } else {
     float want = uType * s * k, lv = clamp(ceil(log2(want / uType) * 4. - .001), ${LADDER[0]}., ${LADDER[1]}.), q = uType * exp2(lv / 4.), f = want / q;
@@ -110,7 +120,7 @@ void main() {
 
 export const FRAGMENT = COMMON + `
 uniform sampler2D uAtlas, uWash;
-in vec2 vUV, vCell; in vec4 vColour; in float vTone; flat in float vMode;
+in vec2 vUV, vCell; in vec4 vColour; in float vTone; flat in float vMode; flat in vec4 vEdge, vSoft;
 out vec4 o;
 void main() {
   if (uMask > .5) { o = vec4(0.); return; }
@@ -122,6 +132,14 @@ void main() {
   else {
     vec4 w = texture(uWash, (vCell - uWashBox.xy) / uWashBox.zw) * (vTone * step(vCell.y, uWashBox.y + uWashBox.w));   // premultiplied ground, at this lobe's tone
     c = vMode > 4.5 ? w * vColour.a : vec4(sky * (1. - w.a) + w.rgb, 1.) * vColour.a;
+  }
+  // A layer meets what is behind it softly: under its edge it hides everything; above, a haze thins out as it rises.
+  if (vMode > .5 && vMode < 8.5) {
+    vec2 pos = vUV * vSoft.xy; float cover = 1.;
+    if (vEdge.z > 0.) { float under = pos.y / vEdge.w - mix(vEdge.x, vEdge.y, vUV.x), haze = clamp(1. + under / vEdge.z, 0., 1.); cover = mix(${HAZE[1]} * haze * haze, 1., clamp(under * vEdge.w + .5, 0., 1.)); }
+    if (vSoft.z > 0.) cover *= clamp(min(pos.x, vSoft.x - pos.x) / vSoft.z, 0., 1.);
+    if (vSoft.w > 0.) cover *= clamp(min(pos.y, vSoft.y - pos.y) / vSoft.w, 0., 1.);
+    c *= cover;
   }
   // the dark: everything drawn before it is put out, away from the light you carry
   if (uLit < .5 && uDark > 0.) { float u = clamp((distance(vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y), uLamp.xy) - uLamp.z) / (uLamp.w - uLamp.z), 0., 1.); c.rgb = mix(c.rgb, sky * c.a, uDark * (u < .5 ? u * 1.24 : .62 + (u - .5) * .76)); }
