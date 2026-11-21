@@ -33,11 +33,19 @@ export function makeMassif(d, stops, door, peak) {
   // the core: the mountain the peak is the top of. From the seam its two sides run on down at the pitch of the peak's
   // upper slopes, easing as they go, with the same broken skyline: one silhouette from the summit to the trees.
   // It stands still with the page.
-  const mid = Math.floor(d.ax), pitch = Math.max(0.8 * cols / 304, 0.28), skyline = Float32Array.from({ length: cols }, (_, c) => {
-    const far = Math.max(0, Math.abs(c + 0.5 - d.ax) - d.seamHalf), down = far / (pitch * (1 + 0.5 * smooth(0, 4 * d.seamHalf, far)));
-    return bodyTop + down + ((N.ridged(9 * c / cols + 2.3, 0.7, 2) - 0.5) * 0.07 * S * 4.9 + (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
+  const widest = 0.44 * ref, mid = Math.floor(d.ax), pitch = Math.max(0.8 * cols / 304, 0.28), skyline = Float32Array.from({ length: cols }, (_, c) => {
+    const out = Math.abs(c + 0.5 - d.ax), far = Math.max(0, out - d.seamHalf), down = far / (pitch * (1 + 0.5 * smooth(0, 4 * d.seamHalf, far)));
+    if (out > 1.12 * widest) return Infinity;                                   // it is one mountain, not the whole horizon: the far ranges show to either side of it
+    return bodyTop + down + 5 * S * smooth(0.8 * widest, 1.12 * widest, out) ** 2 + ((N.ridged(9 * c / cols + 2.3, 0.7, 2) - 0.5) * 0.07 * S * 4.9 + (N.noise(40 * c / cols + 5, 1.1) - 0.5) * 0.1 * S) * smooth(0, 10, far);
   });
   lobes.push({ kind: 'core', th: 0, off: 0, d: 0, apex: bodyTop, span: null, seed: 1, stop: marked.find((s) => screens(s) < LAYOUT.ice) ?? null, rank: -1, W: cols, cx: mid, crest: skyline });
+  // spires: steep and snow-topped, behind the mountain and out past its flanks, so their tops stand clear of it. They
+  // are on the table, and swing round it as you come down.
+  MASSIF.spires.forEach(([s, far, off], i) => {
+    const apex = Math.round(summitRow + s * S), flank = Math.min(1.05 * widest, d.seamHalf + Math.max(0, apex + 0.3 * S - bodyTop) * pitch * 1.3);
+    lobes.push({ kind: 'spire', apex, span: null, th: face(apex) + off, off, d: Math.max(far * kx, flank / Math.abs(Math.sin(off))), rag: 3, seed: 10 + 7 * i, stop: null, rank: apex - 1e6,
+      half: (n) => kx * (0.3 * Math.min(n, 14) + 0.105 * Math.max(0, n - 14)) });
+  });
   // route ridges: one for each stop on the way down, and plain ones between
   const stopTops = marked.filter((s) => screens(s) >= LAYOUT.ice).map((s) => {
     const rest = screens(s) + CARD.rest[mode], far = out(screens(s) - MASSIF.lead), size = 1 + MASSIF.depth * 0.5 * far / reach;
