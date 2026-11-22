@@ -48,12 +48,12 @@ export function makeMassif(d, stops, door, peak) {
     const crest = Float32Array.from({ length: W }, (_, c) => { const out = Math.abs(c - wmax), at = c - wmax + was; return apex + out / (steep * (1 + 0.4 * smooth(0, 0.5 * was, out))) + ((N.ridged(0.05 * at / Math.max(unit, 0.3) + seed, 0.7, 2) - 0.5) * 0.3 * S + (N.noise(0.3 * at + seed, 1.1) - 0.5) * 0.06 * S) * smooth(0, 8, out); });
     lobes.push({ kind: 'peak', th, off: 0, d: far * unit, apex, span: null, seed, stop: null, rank: -1e6 - far, W, cx: wmax, crest });
   });
-  // route ridges: one for each stop on the way down, and plain ones between
+  // route ridges: one for each stop on the way down, and plain ones between them lower down
   const stopTops = marked.filter((s) => screens(s) >= LAYOUT.ice).map((s) => {
     const rest = screens(s) + CARD.rest[mode], far = out(screens(s) - MASSIF.lead), size = 1 + MASSIF.depth * 0.5 * far / reach;
     return { at: Math.round(rest * S + (s.y - rest * S) / size - MASSIF.lead * S) / S, stop: s, d: far, rest };
   });
-  const sparse = stopTops.find((t) => t.stop.id === MASSIF.sparse).at - 0.001, anchors = [{ at: LAYOUT.treeline - 0.1 }, ...stopTops, { at: LAYOUT.ground - MASSIF.depth }], tops = [];
+  const sparse = stopTops.find((t) => t.stop.id === MASSIF.sparse).at - 0.001, anchors = [...stopTops, { at: LAYOUT.ground - MASSIF.depth }], tops = [];   // the first ridge off the mountain is the first stop's
   for (let i = 0; i + 1 < anchors.length; i++) {
     const a = anchors[i], b = anchors[i + 1], n = Math.max(1, Math.round((b.at - a.at) / MASSIF.stride[a.at < sparse ? 0 : 1]));
     tops.push(a); for (let k = 1; k < n; k++) tops.push({ at: a.at + (b.at - a.at) * k / n });

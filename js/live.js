@@ -238,18 +238,17 @@ export function makeLive(gl, model, view, scene, cards) {
   // --- a far flock, now and then ---
   let flock = null, flockIn = 2.5;
   function drawFlock() {
-    const W = view.w, H = view.h, k = 0.3;
+    const W = view.w, H = view.h, k = 0.3, clouds = H / 2 + (air.deckRow + 0.45 * S - state.centreRow) * cellH + 2 * cellH;   // where the cloud deck ends on the screen: birds keep under it
     flockIn -= dt;
-    if (!flock && flockIn <= 0 && state.centre > 4.87 && state.centre < 8.5) {
-      const dir = RA() < 0.5 ? 1 : -1, n = 7 + Math.floor(RA() * 7), far = 0.45 + RA() * 0.3, birds = [[0, 0, RA() * 6.28]];
+    if (!flock && flockIn <= 0 && state.centre > 4.87 && state.centre < 8.5 && clouds < 0.6 * H) {
+      const dir = RA() < 0.5 ? 1 : -1, n = 7 + Math.floor(RA() * 7), far = 0.45 + RA() * 0.3, birds = [[0, 0, RA() * 6.28]], high = Math.max(0.18, clouds / H + 0.06);
       for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push([-dir * (2.1 * j + (RA() - 0.5) * 0.9) * far, (side * j * (0.5 + RA() * 0.12) + (RA() - 0.5) * 0.3) * far, RA() * 6.28]); }
-      flock = { dir, n, far, birds, x: dir > 0 ? -20 : W + 20, y: state.centreRow + ((0.18 + RA() * 0.4) * H - H / 2) / (cellH * k), v: Math.max(34, W / 20) * (0.5 + far), drift: (RA() - 0.5) * 0.5 };
-      flockIn = 15 + RA() * 10;
+      flock = { dir, n, far, birds, x: dir > 0 ? -20 : W + 20, y: state.centreRow + ((high + RA() * Math.max(0.1, 0.62 - high)) * H - H / 2) / (cellH * k), v: 0.5 * Math.max(34, W / 20) * (0.5 + far), drift: (RA() - 0.5) * 0.5 };
     }
     if (!flock) return;
-    const f = flock, long = (Math.ceil(f.n / 2) * 2.1 + 3) * cellW; f.x += f.dir * f.v * dt; f.y += f.drift * dt;
-    if (f.dir > 0 ? f.x - long > W + 20 : f.x + long < -20) { flock = null; return; }
-    for (const [dx, dy, phase] of f.birds) ink(Math.sin(5.5 * time + phase) > 0.1 ? 'v' : '-', 'bird', f.x + dx * cellW, H / 2 + (f.y - state.centreRow) * cellH * k + (dy * (1 + 0.08 * Math.sin(0.7 * time + phase)) + 0.3 * Math.sin(1.1 * time + phase)) * cellH, typeSize * f.far, 0.3 + 0.45 * f.far);
+    const f = flock, long = (Math.ceil(f.n / 2) * 2.1 + 3) * cellW, at = H / 2 + (f.y - state.centreRow) * cellH * k; f.x += f.dir * f.v * dt; f.y += f.drift * dt;
+    if ((f.dir > 0 ? f.x - long > W + 20 : f.x + long < -20) || at < -0.3 * H || at > 1.3 * H) { flock = null; flockIn = 1 + 2 * RA(); return; }   // gone across, or left behind by the scroll: the next is not long coming
+    for (const [dx, dy, phase] of f.birds) { const y = at + (dy * (1 + 0.08 * Math.sin(0.7 * time + phase)) + 0.3 * Math.sin(1.1 * time + phase)) * cellH; ink(Math.sin(5.5 * time + phase) > 0.1 ? 'v' : '-', 'bird', f.x + dx * cellW, y, typeSize * f.far, (0.3 + 0.45 * f.far) * smooth(clouds, clouds + 40, y)); }
   }
 
   // --- perches: the trees an owl or a squirrel can be at, as they stand this frame ---
