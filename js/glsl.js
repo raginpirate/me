@@ -99,7 +99,7 @@ void main() {
     if (sloped) {
       vec2 tops = aLocal / 256.;                              // rows down from the solid's own top to its edge, at the left and at the right
       if (uMask > .5) { float cut = max(tops.x, tops.y); at.y += cut * own.y; size.y -= cut * own.y; tops -= cut; }   // what it hides outright is the part under its edge
-      vEdge = vec4(tops, ${HAZE[0]}, own.y);
+      vEdge = vec4(tops, 1., own.y);
     }
     vSoft = vec4(size, (p & ${SOFT_X}) != 0 ? .3 * own.x : 0., (p & ${SOFT_Y}) != 0 ? .25 * own.y : 0.);
     vCell = (at + corner * size - origin) / (uCell * s);
@@ -119,7 +119,8 @@ void main() {
 }`;
 
 export const FRAGMENT = COMMON + `
-uniform sampler2D uAtlas, uWash;
+uniform sampler2D uAtlas, uWash, uForm;   // the type; a long ridge's shoulder shading; this layer's skyline, a height at each column's edge
+uniform vec3 uGround[3]; uniform vec2 uWood;   // the tone of rock, of wooded ground, of mist; the heights (screens) between which rock gives way to wood
 in vec2 vUV, vCell; in vec4 vColour; in float vTone; flat in float vMode; flat in vec4 vEdge, vSoft;
 out vec4 o;
 void main() {
@@ -130,16 +131,23 @@ void main() {
   else if (vMode < 1.5) c = vec4(vColour.rgb, 1.) * vColour.a;
   else if (vMode > 8.5) c = vec4(sky, 1.) * (vColour.a * clamp((1. - length(vUV * 2. - 1.)) / .55, 0., 1.));
   else {
-    vec4 w = texture(uWash, (vCell - uWashBox.xy) / uWashBox.zw) * (vTone * step(vCell.y, uWashBox.y + uWashBox.w));   // premultiplied ground, at this lobe's tone
-    c = vMode > 4.5 ? w * vColour.a : vec4(sky * (1. - w.a) + w.rgb, 1.) * vColour.a;
+    // A layer's ground, at this pixel, from its skyline alone. Under the skyline: the layer hides everything, and its
+    // ground is toned, most just under the edge. Above it: nothing but a hairline of haze and, off wooded ground, mist
+    // that thins as it rises. One rule, the same for every layer and for everything standing on it.
+    float x = clamp(vCell.x - uWashBox.x, 0., uWashBox.z), col = floor(x);
+    float edge = mix(texelFetch(uForm, ivec2(int(col), 0), 0).r, texelFetch(uForm, ivec2(int(min(col + 1., uWashBox.z)), 0), 0).r, x - col), under = vCell.y - edge;
+    float wooded = smoothstep(uWood.x, uWood.y, vCell.y / uS), tone, rise = clamp(1. + under / 5., 0., 1.), hair = clamp(1. + under / ${HAZE[0]}, 0., 1.);
+    vec4 fold = texture(uWash, (vCell - uWashBox.xy) / uWashBox.zw) * step(vCell.y, uWashBox.y + uWashBox.w), ground;   // the shading under a long ridge's shoulders: premultiplied
+    if (under >= 0.) { tone = mix(.2, .32, wooded) * exp(-under / 6.5); ground = vec4(mix(uGround[0], uGround[1], wooded) * tone, tone); if (fold.a > tone) ground = fold; }
+    else { tone = .11 * rise * rise * smoothstep(uWood.x, uWood.y, edge / uS); ground = vec4(uGround[2] * tone, tone); }
+    ground *= vTone;
+    float hides = vEdge.z > 0. ? mix(${HAZE[1]} * hair * hair, 1., clamp(under * vEdge.w + .5, 0., 1.)) : 1.;   // the layer's own body; what stands on it hides outright
+    c = vec4(sky * hides * (1. - ground.a) + ground.rgb, hides + ground.a * (1. - hides)) * vColour.a;
   }
-  // A layer meets what is behind it softly: under its edge it hides everything; above, a haze thins out as it rises.
-  if (vMode > .5 && vMode < 8.5) {
-    vec2 pos = vUV * vSoft.xy; float cover = 1.;
-    if (vEdge.z > 0.) { float under = pos.y / vEdge.w - mix(vEdge.x, vEdge.y, vUV.x), haze = clamp(1. + under / vEdge.z, 0., 1.); cover = mix(${HAZE[1]} * haze * haze, 1., clamp(under * vEdge.w + .5, 0., 1.)); }
-    if (vSoft.z > 0.) cover *= clamp(min(pos.x, vSoft.x - pos.x) / vSoft.z, 0., 1.);
-    if (vSoft.w > 0.) cover *= clamp(min(pos.y, vSoft.y - pos.y) / vSoft.w, 0., 1.);
-    c *= cover;
+  if (vMode > .5 && vMode < 8.5) {   // feathered ends
+    vec2 pos = vUV * vSoft.xy;
+    if (vSoft.z > 0.) c *= clamp(min(pos.x, vSoft.x - pos.x) / vSoft.z, 0., 1.);
+    if (vSoft.w > 0.) c *= clamp(min(pos.y, vSoft.y - pos.y) / vSoft.w, 0., 1.);
   }
   // the dark: everything drawn before it is put out, away from the light you carry
   if (uLit < .5 && uDark > 0.) { float u = clamp((distance(vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y), uLamp.xy) - uLamp.z) / (uLamp.w - uLamp.z), 0., 1.); c.rgb = mix(c.rgb, sky * c.a, uDark * (u < .5 ? u * 1.24 : .62 + (u - .5) * .76)); }

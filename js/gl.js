@@ -13,7 +13,7 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
   gl.useProgram(program);
   const U = {}; for (let i = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) - 1; i >= 0; i--) { const n = gl.getActiveUniform(program, i).name.replace('[0]', ''); U[n] = gl.getUniformLocation(program, n); }
-  ['uAtlas', 'uMetrics', 'uWash'].forEach((n, i) => gl.uniform1i(U[n], i));
+  ['uAtlas', 'uMetrics', 'uWash', 'uForm'].forEach((n, i) => gl.uniform1i(U[n], i));
 
   // the layer table
   const layers = new Float32Array(LAYERS * 12), ubo = gl.createBuffer();
@@ -31,7 +31,7 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
   const world = bank(gl.STATIC_DRAW, 1 << 22), live = bank(gl.DYNAMIC_DRAW, 1 << 17), chunks = []; let used = 0;
 
   // The atlas: every character at a ladder of sizes, set by the browser's own type, so type is the page's type at any size.
-  const atlasTex = gl.createTexture(), metricsTex = gl.createTexture(), washTex = []; let typePx = 0;
+  const atlasTex = gl.createTexture(), metricsTex = gl.createTexture(), washTex = [], formTex = []; let typePx = 0;
   function atlas(type) {
     typePx = type;
     const [lo, hi] = LADDER, levels = hi - lo + 1, width = Math.min(4096, gl.getParameter(gl.MAX_TEXTURE_SIZE)), c = document.createElement('canvas'), x = c.getContext('2d', { willReadFrequently: true });
@@ -71,6 +71,14 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
     // add instances to the world; returns the index of the first
     append(bytes) { const first = used / BYTES; chunks.push([used, bytes]); used += bytes.byteLength; world.grow(used, () => { for (const [at, b] of chunks.slice(0, -1)) gl.bufferSubData(gl.ARRAY_BUFFER, at, new Uint8Array(b)); }); gl.bindBuffer(gl.ARRAY_BUFFER, world.buf); gl.bufferSubData(gl.ARRAY_BUFFER, first * BYTES, new Uint8Array(bytes)); return first; },
     // a lobe's ground: one texel per cell, premultiplied
+    // a lobe's skyline: one height at each column's edge
+    form(i, heights) {
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, formTex[i] = gl.createTexture()); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, heights.length, 1, 0, gl.RED, gl.FLOAT, heights);
+      for (const p of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, p, gl.NEAREST);
+      for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, p, gl.CLAMP_TO_EDGE);
+      wash = -1;
+    },
     wash(i, w, h, rgba) {
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, washTex[i] = gl.createTexture()); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, rgba);
@@ -93,7 +101,7 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
       if (m !== mask) { gl.colorMask(!m, !m, !m, !m); gl.depthMask(!!m); gl.uniform1f(U.uMask, m); mask = m; }
       if (t !== test) { t ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST); test = t; }
       if (l !== lit) { gl.uniform1f(U.uLit, l); lit = l; }
-      if (o.wash && o.wash[0] !== wash) { wash = o.wash[0]; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, washTex[wash]); gl.uniform4f(U.uWashBox, o.wash[1], o.wash[2], o.wash[3], o.wash[4]); }
+      if (o.wash && o.wash[0] !== wash) { wash = o.wash[0]; gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, formTex[wash]); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, washTex[wash]); gl.uniform4f(U.uWashBox, o.wash[1], o.wash[2], o.wash[3], o.wash[4]); }
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     },
   };

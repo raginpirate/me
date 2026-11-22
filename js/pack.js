@@ -1,6 +1,6 @@
 // The model, turned into what the renderer draws: runs of instances and ground textures. Nothing here moves.
 
-import { BYTES, KIND, INK, WASH, MIST, HOT, EDGE, SOFT_X, SOFT_Y, HAZE, writer } from './glsl.js';
+import { BYTES, KIND, INK, WASH, HOT, EDGE, SOFT_X, SOFT_Y, writer } from './glsl.js';
 import { PALETTE, MIXES, TREES, LEAF_ROW } from './art.js';
 import { HUT } from './world/ground.js';
 import { pathMark } from './world/lobe.js';
@@ -55,23 +55,23 @@ function treeMarks([, , , shape, olive, dark, snowy]) {
 // → { bytes, cover: how many of the first instances are what hides, route: [first, count] within bytes, wash: { w, h, y0, rgba } }
 export function packLobe(l, i, dims, glyph) {
   const li = LAYER.lobe + i, { W, cover, crest, cells, trees, wash, path } = l, bottom = dims.groundRow + 14;
-  const rgba = new Uint8Array(W * wash.h * 4), mistTop = new Float64Array(W).fill(Infinity), tones = TONES.map(rgb);
-  wash.idx.forEach((at, n) => { const a = wash.a[n], t = tones[wash.tone[n]], c = at % W; rgba.set([t[0] * a / 255, t[1] * a / 255, t[2] * a / 255, a], at * 4); mistTop[c] = Math.min(mistTop[c], wash.y0 + Math.floor(at / W)); });
+  const rgba = new Uint8Array(W * wash.h * 4), tones = TONES.map(rgb);
+  wash.idx.forEach((at, n) => { const a = wash.a[n], t = tones[wash.tone[n]], c = at % W; rgba.set([t[0] * a / 255, t[1] * a / 255, t[2] * a / 255, a], at * 4); });
   const drawn = trees.map(treeMarks), count = 2 * W + cells.length + drawn.reduce((n, t) => n + t.marks.length + t.spans.length, 0) + 2 * path.length;
-  let route = 0, solids = 0;
+  let route = 0, solids = 0, form = null;
   const bytes = run(count, (w) => {
     // An outline's mark is drawn in the row under the height it stands for, so that is where the layer begins to hide: just
     // above its own marks, the same hair's breadth everywhere, on a level stretch as on a steep one.
-    const LINE = 0.85;
+    const LINE = 0.85, MIST = 5;   // and how many rows above it mist can rise
     // what it hides: under its skyline, everything. The skyline is a line, not steps: each column's solid has a sloping top,
     // from the height where it meets the column before to the height where it meets the next, and the haze rises off that.
     const meet = Float32Array.from({ length: W + 1 }, (_, b) => { const a = b > 0 ? crest[b - 1] : Infinity, c = b < W ? crest[b] : Infinity; return LINE + (a < Infinity && c < Infinity ? (a + c) / 2 : Math.min(a, c) + 2); });
-    for (const [c, r] of path) for (const b of [c, c + 1]) meet[b] = Math.min(meet[b], r - 0.5);   // the route is never left out in front of its own ground
+    for (const [c, r] of path) for (const b of [c, c + 1]) meet[b] = Math.min(meet[b], r - 0.5);
+    form = Float32Array.from(meet, (row) => Math.min(row, 1e6));   // the route is never left out in front of its own ground
     for (let c = 0; c < W; c++) {
-      const left = Math.min(meet[c], bottom), right = Math.min(meet[c + 1], bottom), top = Math.min(left, right) - HAZE[0];
+      const left = Math.min(meet[c], bottom), right = Math.min(meet[c + 1], bottom), top = Math.min(left, right) - MIST;
       w.solid(c, top, left - top, right - top, 1, left < bottom || right < bottom ? bottom - top : 0, 1, SKY, 1, li, WASH | EDGE);
     }
-    for (let c = 0; c < W; c++) { const to = Math.min(Math.ceil(crest[c]) - 0.5, bottom), from = mistTop[c] - 1; if (from < to) w.solid(c, from, 0, 0, 1, to - from, 1, SKY, 1, li, WASH | MIST); }   // mist, from where it starts down to the row the outline is drawn in
     solids = w.count;
     for (const [row, col, ch, name, alpha] of cells) w.put(col, row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, li);
     trees.forEach(([c, r, k], n) => {
@@ -82,7 +82,7 @@ export function packLobe(l, i, dims, glyph) {
     route = w.count;
     path.forEach(([c, r], k) => lit(w, c, r, glyph(pathMark(k, r / dims.S)[0]), li));
   });
-  return { bytes, cover: W, solids, last: Math.max(cells.length ? cells[cells.length - 1][0] : 0, trees.length ? trees[trees.length - 1][1] : 0), route: [route, 2 * path.length], wash: { w: W, h: wash.h, y0: wash.y0, rgba } };
+  return { bytes, cover: W, solids, last: Math.max(cells.length ? cells[cells.length - 1][0] : 0, trees.length ? trees[trees.length - 1][1] : 0), route: [route, 2 * path.length], form, wash: { w: W, h: wash.h, y0: wash.y0, rgba } };
 }
 
 // The ground: earth under the line, the line hiding what is behind it, turf and soil and roots, and the hut.

@@ -50,24 +50,25 @@ export function paintLobe(l, d, N, kx, peakShows) {
   // the ground's tone, one sample a cell; where two meet, the stronger wins
   const y0 = apex - 7, H = G - y0, tone = new Uint8Array(W * H), strength = new Uint8Array(W * H);
   const wash = (c, r, name, alpha) => { const i = (r - y0) * W + c; if (r < y0 || r >= G || !(alpha * 255 > strength[i])) return; strength[i] = Math.round(alpha * 255); tone[i] = TONE[name]; };
+  // Rock gives way to wood, and snow to rock, at a height. Not at one height: the line rides up and down across a face,
+  // each mountain's its own way, so nothing ends along a ruled line. `lift` is how far it is raised or lowered at each column.
+  const lift = Float32Array.from({ length: W }, (_, c) => (N.fbm(0.03 * c + 1.3 * seed, 4.4, 3) - 0.5) * 0.9 * S + (N.noise(0.21 * c + seed, 8.8) - 0.5) * 0.12 * S);
   const wood = (r) => smooth(5.55, LAYOUT.forest, r / S), seamed = (r) => core && r <= seamRow + 5;
   for (let c = 0; c < W; c++) {
     if (!has(c)) continue;
-    for (let r = Math.ceil(crest[c]); r - crest[c] < 26 && r < G; r++) { if (seamed(r)) continue; const depth = r - crest[c], w = wood(r) > 0.5; wash(c, r, w ? 'pineDark' : 'rockDark', (w ? 0.32 : 0.2) * Math.exp(-depth / 6.5)); }   // the ground's tone begins at its outline
     for (const f of folds) if (!Number.isNaN(f.row[c])) for (let r = Math.ceil(f.row[c]); r - f.row[c] < 22; r++) { const under = r - f.row[c]; wash(c, r, 'pineDark', 0.3 * Math.exp(-under / 6) * Math.min(1, under + 0.3) * f.on[c]); }
-    if (smooth(5.55, LAYOUT.forest, crest[c] / S) >= 0.5) for (let up = 1; up <= 5; up++) { const r = Math.ceil(crest[c]) - up; if (!seamed(r)) wash(c, r, 'dim', 0.11 * (1 - (up - 0.5) / 5) ** 2); }   // the mist rises from the row its outline is drawn in
   }
 
   // the body, row by row, run by run
   const cells = [], pathAt = new Map(l.path.map(([c, r], k) => [r * W + c, k])), first = Math.ceil(Math.min(...crest)), shift = core ? 0 : d.ax - cx - 0.5;
   const snowAbs = (x) => 4.76 * S + (N.fbm(0.09 * x + seed, 2.2, 3) - 0.5) * 16;
   for (let r = first; r < G; r++) {
-    const at = r / S, wd = wood(r), cross = crossings.get(r) ?? [];
+    const cross = crossings.get(r) ?? [];
     for (let c = 0; c < W; c++) {
       if (!(crest[c] <= r)) continue;
       let e = c; while (e + 1 < W && crest[e + 1] <= r) e++;
       for (let x = c; x <= e; x++) {
-        const depth = r - crest[x]; if ((depth > deep && !(mount && wd <= 0.6)) || kept.has(r * W + x)) continue;   // a mountain is rock all the way down to its trees
+        const depth = r - crest[x], at = (r - lift[x]) / S, wd = wood(r - lift[x]); if ((depth > deep && !(mount && wd <= 0.6)) || kept.has(r * W + x)) continue;   // a mountain is rock all the way down to its trees
         let cell = null;
         const fold = wd > 0.6 && depth >= 1 ? folds.find((f) => r - f.row[x] >= 0 && r - f.row[x] < 9) : null;
         if (fold) {
@@ -84,7 +85,7 @@ export function paintLobe(l, d, N, kx, peakShows) {
           const light = clamp(0.16 + 0.28 * lit + 0.18 * (1 - across) + 1.3 * facet + grain - 0.0015 * depth, 0, 1);
           const line = snowAbs(x) - 0.3 * S + (A ? 11 : 0) + 0.25 * S * smooth(0.1, -0.25, facet), snow = at < 5.6 && r < line, topRow = depth < 1 && !(core && r <= bodyTop + 1), sn = light + (snow ? 0.25 : 0.2);
           const ch = topRow ? (snow ? (lit >= 0.5 ? '@' : '%') : Math.abs(slope[x]) <= 0.8 ? edge(frac(crest[x]), slope[x]) : slope[x] < 0 ? '/' : '\\') : A ?? (sn > 0.85 ? '#' : sn > 0.65 ? '%' : sn > 0.45 ? ':' : sn > 0.3 ? '.' : null);
-          if (!snow && !topRow && hash(r, x, seed) > bare * 1.6) cell = null;   // towards the trees the rock is not dimmed but thinned, so what is left of it stays crisp
+          if (!snow && !topRow && hash(r, x, seed) > 1 - smooth(0.05, 0.6, wd)) cell = null;   // towards the trees the rock is not dimmed but thinned, so what is left of it stays crisp
           else cell = snow ? [ch, 'snow', light > 0.45 || topRow ? 1 : 0.55] : [ch, topRow || A || sn > 0.65 ? 'rockLight' : 'rock', topRow || A || sn > 0.45 ? 1 : 0.7];
         } else {
           // rock and snow, lit from the left: the face left of an arête is lit, the face right of it in shadow
@@ -129,20 +130,20 @@ export function paintLobe(l, d, N, kx, peakShows) {
     trees.push([c, r, k, shape, leafy ? +olive : null, +dark, snowy]);
   };
   const grow = (c, r) => {
-    const at = r / S, leafy = R() < 0.22 * smooth(6.6, 8.3, at), set = leafy ? 'DEF' : at < LAYOUT.forest ? 'AC' : 'ABC', shape = set[Math.floor(R() * set.length)];
+    const at = (r - lift[c]) / S, leafy = R() < 0.22 * smooth(6.6, 8.3, at), set = leafy ? 'DEF' : at < LAYOUT.forest ? 'AC' : 'ABC', shape = set[Math.floor(R() * set.length)];
     const snowy = leafy ? 0 : at < 6.15 ? 2 : at < 6.6 ? (R() < 0.75 ? 2 : 1) : at < 7.25 ? (R() < 0.6 ? 1 : 0) : 0, far = density(at);
     plant(c, r, shape, leafy, slope[c] > 0.05, snowy, (0.82 + 0.18 * far) * (0.94 + R() * 0.12) * (leafy ? 4.4 : 4.6) / TREES[shape].length);
   };
   for (let c = 2 + Math.floor(R() * 3); c < W - 3; c += 3 + Math.floor(R() * 3)) {
     if (!has(c)) continue;
     const r = Math.round(crest[c]);
-    if (r >= G - 1 || R() > 1.1 * density(r / S) || (core && r <= bodyTop + 2)) continue;
+    if (r >= G - 1 || R() > 1.1 * density((r - lift[c]) / S) || (core && r <= bodyTop + 2)) continue;
     grow(c, r);
   }
   for (let r = Math.round(LAYOUT.treeline * S); r < G; r += 3) for (let c = 2 + (7 * r) % 5; c < W - 3; c += 5 + Math.floor(R() * 5)) {
     if (!has(c)) continue;
     const depth = r - crest[c];
-    if (depth < 4 || (depth > deep && !mount) || R() > 0.92 * density(r / S) * (1 - (l.folds ? 0.5 : 0.72) * smooth(10, 44, depth))) continue;
+    if (depth < 4 || (depth > deep && !mount) || R() > 0.92 * density((r - lift[c]) / S) * (1 - (l.folds ? 0.5 : 0.72) * smooth(10, 44, depth))) continue;
     grow(c, r);
   }
   l.trees = trees.map((t, i) => [t, i]).sort((a, b) => a[0][1] - b[0][1] || a[1] - b[1]).map((e) => e[0]);

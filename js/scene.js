@@ -15,6 +15,7 @@ export function makeScene(gl, model, view, flags = {}) {
   const d = model.dims, { lobes, turn, air, ground } = model, { layers: T, set, glyph } = gl, { S, cellW, cellH, cols, groundRow: G } = d;
   const palette = new Float32Array(ROOM * 3), R = {}, skyTop = rgb('sky'), skyBase = rgb('skyBase'), sky = [0, 0, 0];
   COLOURS.forEach((n, i) => palette.set(rgb(n).map((v) => v / 255), i * 3));
+  const tones = new Float32Array(['rockDark', 'pineDark', 'dim'].flatMap((n) => rgb(n).map((v) => v / 255)));   // the ground under a skyline, bare and wooded, and the mist over one
   const add = (name, bytes) => { R[name] = [gl.append(bytes), bytes.byteLength / 24]; };
   const [peak, rope] = packPeak(model, glyph);
   add('stars', packSky(model, glyph)); add('peak', peak); add('rope', rope); add('ground', packGround(model, glyph));
@@ -25,7 +26,7 @@ export function makeScene(gl, model, view, flags = {}) {
   const pose = lobes.map(() => ({ X: 0, s: 1, vis: 0, tone: 1, ref: 0, on: false })), made = lobes.map(() => null);
   function addLobe(i) {
     const p = packLobe(lobes[i], i, d, glyph), first = gl.append(p.bytes);
-    gl.wash(i, p.wash.w, p.wash.h, p.wash.rgba);
+    gl.wash(i, p.wash.w, p.wash.h, p.wash.rgba); gl.form(i, p.form);
     made[i] = { first, total: p.route[0], cover: p.cover, solids: p.solids, last: p.last, route: p.route[1] && [first + p.route[0], p.route[1]], draw: { test: true, wash: [i, 0, p.wash.y0, p.wash.w, p.wash.h] } };
   }
   lobes.forEach((l, i) => { if (l.cover) addLobe(i); });
@@ -83,7 +84,7 @@ export function makeScene(gl, model, view, flags = {}) {
     set.v2('uRes', w * dpr, h * dpr); set.v2('uCell', cellW * dpr, cellH * dpr); set.f('uType', d.typeSize * dpr); set.f('uAscent', Math.round(0.9 * d.typeSize) * dpr);
     set.f('uTime', time); set.f('uS', S); set.f('uPx', dpr); set.f('uCols', cols); set.fv3('uPalette', palette);
     set.v4('uLamp', state.lampX * dpr, state.lampY * dpr, state.r0 * dpr, state.r1 * dpr); set.f('uDark', state.dark);
-    set.v4('uFall', SNOW.z[0] * S, SNOW.z[1] * S, LEAVES.from * S, G); set.v3('uLeaf', glyph(','), glyph("'"), glyph('~')); set.f('uAltStar', glyph('*'));
+    set.v4('uFall', SNOW.z[0] * S, SNOW.z[1] * S, LEAVES.from * S, G); set.v3('uLeaf', glyph(','), glyph("'"), glyph('~')); set.fv3('uGround', tones); set.v2('uWood', 5.55, LAYOUT.forest); set.f('uAltStar', glyph('*'));
     if (live) live.uniforms(set); else { set.f('uHush', 0); set.v2('uLean', 0, 0); }
 
     // draw, back to front
