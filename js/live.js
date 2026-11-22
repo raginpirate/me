@@ -11,15 +11,11 @@ const MARKS = {   // what stands at a waypoint: [glyph, dx, dy, size] and its co
   axe: [[['|', -0.7, 0.45, 1], ['T', -0.7, -0.4, 1]], 'rockLight'], cairn: [[['O', -0.78, 0.3, 1.1], ['o', -0.82, -0.38, 0.9], ['o', -0.76, -0.95, 0.6]], 'rockLight'],
   post: [[['|', -0.75, 0.5, 1], ['|', -0.75, -0.35, 1], ['-', -0.4, -0.95, 1]], 'wood'], hut: [[], 'wood'],
 };
-// The animals, drawn at half the type's size so each has twice the detail: rows of type, facing right. `walk` is the
-// last rows on the other foot. Each kind has its ground on the mountain and keeps within it.
+// The animals, at the mountain's own scale: a pine is five rows of type, so a sheep is a mark or two of small type and a
+// squirrel barely a fleck. Rows of type, facing right. What tells them apart is how many there are and how they move.
 const BEASTS = {
-  stag: { tint: 'timber', rows: ['           \\ |/ /  ', '            \\|//   ', '            ,##.   ', "   .########%##'-  ", "  /##########%'    ", "  '#%%%%%%%##'     ", '   # #     # #     ', "   # '     ' #     "], walk: ['   # #     # #     ', "   ' #     # '     "] },
-  doe: { tint: 'timber', rows: ['            ,/     ', '            ##.    ', "   .#######%##'-   ", "  '##########'     ", "   #%%%%%%##'      ", '   # #    # #      ', "   # '    ' #      "], walk: ['   # #    # #      ', "   ' #    # '      "] },
-  ram: { tint: 'snow', rows: ['           _.   ', '   ,######(C#>  ', "  (#########'   ", '   %#######%    ', '   # #   # #    ', "   # '   ' #    "], walk: ['   # #   # #    ', "   ' #   # '    "] },
-  lamb: { tint: 'snow', rows: ['       ,.  ', '  ,####(#> ', "  '#####'  ", '   # # #   '], walk: ["   ' # '   "] },
-  squirrel: { tint: 'leaf', rows: [' .##.     ', '(####  ,o.', " '##\\.###>", "   '#####'", '    "  "  '], walk: ['    /  \\  '] },
-  owl: { tint: 'timber', eyes: 'o', rows: ['  ^ ^  ', ' (o,o) ', ' {###} ', ' {###} ', '  " "  '] },
+  sheep: { tint: 'snow', rows: ["n'"] }, stag: { tint: 'timber', rows: [' Y', "m'"] }, doe: { tint: 'timber', rows: ["m'"] },
+  squirrel: { tint: 'leaf', rows: ['s.'] }, owl: { tint: 'ember', eyes: 'o', rows: ['oo'] },
 };
 const TURNED = { '/': '\\', '\\': '/', '(': ')', ')': '(', '<': '>', '>': '<', '{': '}', '}': '{' }, SOFT = { '%': 0.7, '"': 0.8 };
 const ORDER = ['sky', 'birds', 'smoke', 'animals', 'bridges', 'litBridges', 'flag', 'lamps', 'waypoints', 'tethers'];
@@ -247,12 +243,12 @@ export function makeLive(gl, model, view, scene, cards) {
 
   // --- the animals. Each family has its ground: a height it keeps to and a stretch it wanders along. The owl just sits. ---
   // birds work back and forth by the peak's shoulder, where the clouds begin
-  const flock = Array.from({ length: 7 }, (_, i) => { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; return [-(1.5 * j + (RA() - 0.5) * 0.6), side * j * 0.42 + (RA() - 0.5) * 0.2, RA() * 6.28]; });
+  const flock = Array.from({ length: 11 }, (_, i) => { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; return [-(1.5 * j + (RA() - 0.5) * 0.6), side * j * 0.42 + (RA() - 0.5) * 0.2, RA() * 6.28]; });
   const roost = (() => { const r = Math.round(4.3 * S), span = model.peak.span[r] ?? model.peak.span[model.peak.span.length - 1]; return [span[1] + 16, r]; })();
   function drawBirds() {
     const y0 = (roost[1] - top) * cellH; if (y0 < -8 * cellH || y0 > view.h + 8 * cellH) return;
-    const sway = Math.sin(0.11 * time), heading = Math.tanh(4 * Math.cos(0.11 * time)), x0 = (roost[0] + 11 * sway) * cellW, rise = (1.6 * Math.sin(0.22 * time + 1) + 0.5 * Math.sin(0.5 * time)) * cellH, size = 0.62 * typeSize;
-    for (const [dx, dy, phase] of flock) ink(Math.sin(5.5 * time + phase) > 0.1 ? 'v' : '-', 'bird', x0 + heading * dx * size, y0 + rise + (dy + 0.12 * Math.sin(1.1 * time + phase)) * size * 1.6, size, 0.75);
+    const sway = Math.sin(0.11 * time), heading = Math.tanh(4 * Math.cos(0.11 * time)), x0 = (roost[0] + 11 * sway) * cellW, rise = (1.6 * Math.sin(0.22 * time + 1) + 0.5 * Math.sin(0.5 * time)) * cellH, size = 0.42 * typeSize;
+    for (const [dx, dy, phase] of flock) ink(Math.sin(5.5 * time + phase) > 0.1 ? 'v' : '-', 'bird', x0 + heading * dx * size * 1.5, y0 + rise + (dy + 0.12 * Math.sin(1.1 * time + phase)) * size * 2.4, size, 0.7);
   }
   // a beast with its feet at (x, y) of a layer, each character half the type's size times k
   function beast(li, x, y, name, k, left = false, stepping = false, shut = false) {
@@ -271,15 +267,15 @@ export function makeLive(gl, model, view, scene, cards) {
     const gap = q.to - q.x, stride = q.pace * dt; if (Math.abs(gap) <= stride) { q.x = q.to; q.wait = q.rest * (0.5 + RA()); return; }
     q.facing = Math.sign(gap); q.x += q.facing * stride; q.moving = true;
   }
-  const follow = (q, lead, back) => { const want = lead.x - lead.facing * back, gap = want - q.x; q.moving = Math.abs(gap) > 0.6; if (q.moving) { q.facing = Math.sign(gap); q.x += q.facing * Math.min(Math.abs(gap), q.pace * dt); } };
-  const stepping = (q) => q.moving && Math.floor(q.x * 1.4) % 2 === 0;
   // where each family's ground is, found once its ridge is made: [lobe, column, row]
   const core = lobes.findIndex((l) => l.kind === 'core'), ridges = lobes.map((l, i) => i).filter((i) => lobes[i].kind === 'route');
   const beside = (i, screens, aside) => { const l = lobes[i], r = Math.round(screens * S), at = l.path.find(([, pr]) => pr >= r); return at ? [i, at[0] + aside, r] : null; };
   const ridgeNear = (screens) => ridges.reduce((best, i) => best < 0 || Math.abs(lobes[i].apex / S - screens) < Math.abs(lobes[best].apex / S - screens) ? i : best, -1);
   const homes = { sheep: null, owl: null, deer: null };
-  const ram = roamer(7, 0.9, 9), lamb = { x: -5, facing: 1, pace: 1.6, moving: false }, stag = roamer(12, 1.3, 11), doe = roamer(10, 1.3, 8, 7);
-  const squirrels = [roamer(6, 7, 3.5, -13), roamer(5, 7, 5, 20), roamer(0, 0, 9, -3.5)];
+  // a herd on the rock, a few deer in the wood, squirrels by the hut: [roamer, rows off its ground, size]
+  const herd = Array.from({ length: 7 }, (_, i) => [roamer(4 + 3 * RA(), 0.35, 14, (i - 3) * 2.6 + RA()), Math.round((RA() - 0.5) * 3), i > 4 ? 0.8 : 1.15]);
+  const deer = [[roamer(9, 0.6, 12, -2), 0, 1.25, 'stag'], [roamer(8, 0.6, 9, 3), 1, 1.2, 'doe'], [roamer(8, 0.7, 8, 5), 1, 0.85, 'doe']];
+  const squirrels = [roamer(6, 5, 3.5, -13), roamer(5, 5, 5, 20), roamer(9, 5, 6, 30)];
   function settle() {
     if (!homes.sheep && made[core]) homes.sheep = beside(core, 5.02, 16);
     const o = ridgeNear(6.4), dr = ridgeNear(8.33);
@@ -294,15 +290,10 @@ export function makeLive(gl, model, view, scene, cards) {
   function drawAnimals() {
     settle();
     const s = homes.sheep, o = homes.owl, dr = homes.deer;
-    if (s && seen(s[0])) { const li = LAYER.lobe + s[0], [, c, r] = s; wander(ram); follow(lamb, ram, 6);
-      hollow(li, c + ram.x, r + 1, 5, 2.4); hollow(li, c + lamb.x, r + 1, 3.2, 1.7);
-      beast(li, c + ram.x, r + 1, 'ram', 1.15, ram.facing < 0, stepping(ram)); beast(li, c + lamb.x, r + 1, 'lamb', 1, lamb.facing < 0, stepping(lamb)); }
-    if (o?.length && seen(o[0])) { const li = LAYER.lobe + o[0], [, c, r, k] = o; beast(li, c, r + 0.35, 'owl', 1.25 * k, false, false, (0.31 * time + 0.2) % 1 > 0.95); }
-    if (dr?.length && seen(dr[0])) { const li = LAYER.lobe + dr[0], [, c, r] = dr; wander(stag); wander(doe);
-      hollow(li, c + stag.x, r + 1, 6, 3.2); hollow(li, c + doe.x, r + 1, 6, 2.8);
-      beast(li, c + stag.x, r + 1, 'stag', 1.2, stag.facing < 0, stepping(stag)); beast(li, c + doe.x, r + 1, 'doe', 1.1, doe.facing < 0, stepping(doe)); }
-    // squirrels about the hut: two that dart about, one that stays by the door
-    if ((G - state.centreRow) * ground.k * cellH < view.h) for (const q of squirrels) { wander(q); beast(LAYER.ground, ground.hutLeft + q.x, G + 0.2, 'squirrel', 0.8, q.facing < 0, stepping(q)); }
+    if (s && seen(s[0])) { const li = LAYER.lobe + s[0], [, c, r] = s; for (const [q, dy, k] of herd) { wander(q); hollow(li, c + q.x, r + 1 + dy, 0.75 * k, 0.5 * k); beast(li, c + q.x, r + 1 + dy, 'sheep', k, q.facing < 0); } }
+    if (o?.length && seen(o[0])) { const li = LAYER.lobe + o[0], [, c, r, k] = o; beast(li, c, r + 1.5 * k, 'owl', 0.75 * k, false, false, (0.31 * time + 0.2) % 1 > 0.95); }   // two eyes in the dark of a pine
+    if (dr?.length && seen(dr[0])) { const li = LAYER.lobe + dr[0], [, c, r] = dr; for (const [q, dy, k, kind] of deer) { wander(q); hollow(li, c + q.x, r + 1 + dy, 0.9 * k, 0.8 * k); beast(li, c + q.x, r + 1 + dy, kind, k, q.facing < 0); } }
+    if ((G - state.centreRow) * ground.k * cellH < view.h) for (const q of squirrels) { wander(q); beast(LAYER.ground, ground.hutLeft + q.x, G + 0.05 - (q.moving ? 0.12 * Math.abs(Math.sin(9 * q.x)) : 0), 'squirrel', 0.7, q.facing < 0); }
   }
 
   // One frame of everything alive. → how many instances were written
