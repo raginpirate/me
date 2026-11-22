@@ -1,6 +1,6 @@
 // The frame: where the page is → where every layer stands → the list of things to draw, back to front.
 
-import { clamp, smooth, mix } from './math.js';
+import { clamp, smooth } from './math.js';
 import { LAYOUT, MASSIF, FRAME } from './art.js';
 import { LAYERS, COLOURS as ROOM } from './glsl.js';
 import { COLOURS, rgb, LAYER, packSky, packPeak, packLobe, packGround, packClouds, packSnow, packLeaves, cloudSpan } from './pack.js';
@@ -46,7 +46,7 @@ export function makeScene(gl, model, view, flags = {}) {
   // the light you carry is on the route, at the height a stop's waypoint rests at
   const point = [0, 0], routeLobes = lobes.map((l, i) => i).filter((i) => lobes[i].path.length);
   function findLamp(planks) {
-    const { h, w } = view, m = Math.min(w, h), r0 = state.r0 = MASSIF.lamp.core * m, y0 = state.lampY = h / 2 - (CARD.rest.side * S + state.lift) * cellH, reach = 2.2 * r0;
+    const { h, w } = view, m = Math.min(w, h), r0 = state.r0 = MASSIF.lamp.core * m, y0 = state.lampY = h * (0.5 - CARD.rest.side) - state.lift * cellH, reach = 2.2 * r0;
     state.r1 = MASSIF.lamp.reach * m;
     let sum = 0, weight = 0;
     const take = (x, y, k) => { const u = (y - y0) / (2 * cellH), g = Math.exp(-u * u) * k; sum += x * g; weight += g; };
@@ -61,16 +61,9 @@ export function makeScene(gl, model, view, flags = {}) {
     if (weight > 0) state.lampX = sum / weight;
   }
 
-  // The window on the frame. Across, it stays in the middle unless the way down would come too near its edge, and then it
-  // goes with it. Where a card sits under its light, the view is lifted so the light stands clear above the card.
-  const way = [[S / 2, cols / 2], ...model.stops.filter((s) => s.at).map((s) => [s.y, s.mark === 'hut' ? ground.window[0] * ground.k : s.x])];
-  const wayAt = (row) => { let k = 1; while (k < way.length - 1 && way[k][0] < row) k++; const [r0, c0] = way[k - 1], [r1, c1] = way[k]; return c0 + (c1 - c0) * smooth(r0, r1, row); };
-  let pan = -1, panTop = 0;
   function frame(time, live) {
-    const { w, h, dpr, seen } = view, lift = state.lift = d.stack ? FRAME.lift * S * smooth(0.2 * S, 0.9 * S, scrollY / cellH) : 0, top = state.top = clamp(scrollY / cellH + lift, 0, d.end), centreRow = state.centreRow = top + S / 2, centre = state.centre = centreRow / S, yaw = turn.yawAt(centre);
-    // from the summit down the way is where the light you carry is; above, and at the hut, it is the line from light to light
-    const mid = (w - seen) / 2, on = mix((wayAt(centreRow) + 0.5) * cellW, state.lampX, 0.5 * smooth(3.7, 4.3, centre) * (1 - smooth(8.9, 9.4, centre))), want = clamp(clamp(mid, on - (1 - FRAME.keep) * seen, on - FRAME.keep * seen), 0, w - seen);
-    pan = pan < 0 || Math.abs(top - panTop) > S / 3 ? want : pan + (want - pan) * Math.min(1, 5 * clamp(time - state.time, 0, 0.05)); panTop = top; view.ox = Math.round(pan * dpr) / dpr; gl.pan(view.ox * dpr); state.time = time;
+    const { w, h, dpr } = view, lift = state.lift = d.stack ? FRAME.lift * S * smooth(0.2 * S, 0.9 * S, scrollY / cellH) : 0, top = state.top = clamp(scrollY / cellH + lift, 0, d.end), centreRow = state.centreRow = top + S / 2, centre = state.centre = centreRow / S, yaw = turn.yawAt(centre);
+    state.time = time;
     const shift = smooth(8.3, 9.7, centre); for (let i = 0; i < 3; i++) palette[i] = sky[i] = (skyTop[i] + (skyBase[i] - skyTop[i]) * shift) / 255;
 
     // where every layer stands
@@ -88,7 +81,7 @@ export function makeScene(gl, model, view, flags = {}) {
     const count = live ? live.step(time, state) : 0;
     findLamp(live?.planks);
     state.dark = MASSIF.lamp.dark * smooth(3.82, 4.87, centre);
-    set.v2('uRes', w * dpr, h * dpr); set.f('uLeft', view.ox * dpr); set.v2('uCell', cellW * dpr, cellH * dpr); set.f('uType', d.typeSize * dpr); set.f('uAscent', Math.round(0.9 * d.typeSize) * dpr);
+    set.v2('uRes', w * dpr, h * dpr); set.f('uLeft', Math.round(view.ox * dpr)); set.v2('uCell', cellW * dpr, cellH * dpr); set.f('uType', d.typeSize * dpr); set.f('uAscent', Math.round(0.9 * d.typeSize) * dpr);
     set.f('uTime', time); set.f('uS', S); set.f('uPx', dpr); set.f('uCols', cols); set.fv3('uPalette', palette);
     set.v4('uLamp', state.lampX * dpr, state.lampY * dpr, state.r0 * dpr, state.r1 * dpr); set.f('uDark', state.dark);
     set.v4('uFall', SNOW.z[0] * S, SNOW.z[1] * S, LEAVES.from * S, G); set.v3('uLeaf', glyph(','), glyph("'"), glyph('~')); set.fv3('uGround', tones); set.v2('uWood', 5.55, LAYOUT.forest); set.f('uAltStar', glyph('*'));

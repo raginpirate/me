@@ -9,11 +9,13 @@ export const PALETTE = {
 // colours mixed from two of the palette: [a, b, how much of b]
 export const MIXES = { earth: ['skyBase', 'groundDark', 0.3], timber: ['leaf', 'snow', 0.25], wood: ['ground', 'leaf', 0.45], bridge: ['ground', 'rockLight', 0.45], moss: ['pine', 'leafOlive', 0.45] };
 
-// The frame the world is composed in, in cells. There is one. A screen sets the type so the frame covers it and shows the
-// part that fits: a window on the frame, which follows the way down when the lights would leave it. `stage` is how far apart
-// the lights stand; `narrow` (css px) is the width under which a card sits under its light, and the view is lifted to suit.
-export const FRAME = { cols: 240, rows: 65, stage: 133, narrow: 600, lift: 0.155, keep: 0.36 };
-export const TYPE = { maxDpr: 2 };
+// the type size for a viewport width, and the narrow ("stack") layout, where a card sits under its light
+export const TYPE = { stackBelow: 600, sizes: [[600, 11], [1099, 13], [Infinity, 14]], maxDpr: 2, stage: 1120 };
+// The world is one width: what a screen `wide` css px across holds at type size `at`. A screen that wide shows all of it.
+// A narrower one is a window on its middle, at its own type size, or smaller if that is what it takes to see the `least`
+// columns the way down needs; a wider one sets the type larger until the world reaches its edges. `lift` is how far
+// (screens) the view is raised where a card sits under its light, so the light stands clear above it.
+export const FRAME = { wide: 2560, at: 14, least: 84, lift: 0.155 };
 
 // where things are down the page, in screens from the top
 export const LAYOUT = {

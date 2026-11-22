@@ -11,14 +11,14 @@ import { paintLobe } from './world/lobe.js';
 import { makeAir } from './world/air.js';
 import { hash } from './math.js';
 
-export function makeDims({ W, H, typeSize, cellW, cellH, stack, cols, S, stage, seen = W }) {
-  const rows = Math.ceil(LAYOUT.screens * S) + 2, end = rows - S, seamRow = Math.round(LAYOUT.seam * S);
-  return { W, H, typeSize, cellW, cellH, stack, cols, stage, seen: Math.min(W, seen), camera: MASSIF.camera * cols / 304, S, rows, end, maxScroll: LAYOUT.measure * S, summitRow: LAYOUT.summit * S,
+export function makeDims({ W, H, typeSize, cellW, cellH, stack, cols, stage, seen = W }) {
+  const S = H / cellH, rows = Math.ceil(LAYOUT.screens * S) + 2, end = rows - S, seamRow = Math.round(LAYOUT.seam * S);
+  return { W, H, typeSize, cellW, cellH, stack, cols, stage, seen, camera: MASSIF.camera * cols / 304, S, rows, end, maxScroll: LAYOUT.measure * S, summitRow: LAYOUT.summit * S,
     seamRow, bodyTop: seamRow - LAYOUT.blend, groundRow: Math.round(end + S / 2), u: typeSize / 11, aspect: cellW / cellH };
 }
 
 function makeStops(d) {
-  const mode = 'side', stage = d.stage;
+  const mode = 'side', stage = Math.min(d.cols, d.stage);
   const toT = (c) => clamp((c - 0.5) / LAYOUT.measure, 0, 1), restRow = (c) => clamp((c - 0.5) * d.S, 0, d.end);
   return STOPS.map((s, i) => {
     const stop = { id: s.id, at: s.at, x: null, y: null, side: null, band: null, snap: 0, mark: s.mark ?? null, lobe: null };

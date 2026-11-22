@@ -12,7 +12,7 @@ export function makeCards(model, view, go) {
   // the boxes the stars keep clear of (one a line of the tagline, one for "scroll" and its dots), and where each card is
   function measure() {
     quiet.fill(0); let k = 0;
-    const sky = els[0], tag = sky?.querySelector('.tag'), hint = sky?.querySelector('.hint'), box = (r, extra = 0) => { if (k < 24 && r.width) { quiet.set([r.left * view.dpr, r.top * view.dpr, r.right * view.dpr, (r.bottom + extra) * view.dpr], k); k += 4; } };
+    const sky = els[0], tag = sky?.querySelector('.tag'), hint = sky?.querySelector('.hint'), box = (r, extra = 0) => { if (k < 24 && r.width) { quiet.set([(r.left + view.ox) * view.dpr, r.top * view.dpr, (r.right + view.ox) * view.dpr, (r.bottom + extra) * view.dpr], k); k += 4; } };
     if (tag) { const range = document.createRange(), seen = []; range.selectNodeContents(tag); for (const r of range.getClientRects()) { const line = seen.find((s) => Math.abs(s.top - r.top) < 4); if (line) { line.left = Math.min(line.left, r.left); line.right = Math.max(line.right, r.right); line.width = line.right - line.left; } else seen.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width }); } seen.forEach((r) => box(r)); }
     if (hint) { const range = document.createRange(); range.selectNodeContents(hint); const r = range.getBoundingClientRect(); box(r, hint.getBoundingClientRect().bottom - r.bottom); }
     els.forEach((el, i) => { rects[i] = el ? el.getBoundingClientRect() : null; });

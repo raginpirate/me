@@ -21,8 +21,8 @@ export function makeLive(gl, model, view, scene, cards) {
   const ROOM = 16384, buffer = new ArrayBuffer(ROOM * BYTES), w = writer(buffer), ranges = Object.fromEntries(ORDER.map((n) => [n, [0, 0]])), glyphs = {}, RA = air.random;
   const g = (ch) => glyphs[ch] ??= gl.glyph(ch), pick = (list) => list[Math.floor(RA() * list.length)], PAGE = LAYER.page, SKY = 0;
   let top = 0, time = 0, dt = 0.016, last = -1, lastTop = 0, vel = 0, shove = 0, lean = 0, leanV = 0, lamps = 0;
-  const ptr = { x: 0, y: 0, sx: 0, at: -1e9, on: false, c: 0, r: 0 }, quiet = new Float32Array(24);
-  addEventListener('pointermove', (e) => { ptr.sx = e.clientX; ptr.x = e.clientX + view.ox; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
+  const ptr = { x: 0, y: 0, at: -1e9, on: false, c: 0, r: 0 };
+  addEventListener('pointermove', (e) => { ptr.x = e.clientX + view.ox; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
 
   // The pointer's past, for the springs in the shader. Each star, flake and leaf is a spring pushed by the pointer; where a
   // spring is now is its past pushes weighed by how a spring answers a knock (nothing at once, most a moment later, then
@@ -243,7 +243,7 @@ export function makeLive(gl, model, view, scene, cards) {
     if (!flock && flockIn <= 0 && state.centre > 4.87 && state.centre < 8.5 && clouds < 0.6 * H) {
       const dir = RA() < 0.5 ? 1 : -1, n = 7 + Math.floor(RA() * 7), far = 0.45 + RA() * 0.3, birds = [[0, 0, RA() * 6.28]], high = Math.max(0.18, clouds / H + 0.06);
       for (let i = 1; i < n; i++) { const j = Math.ceil(i / 2), side = i % 2 ? 1 : -0.8; birds.push([-dir * (2.1 * j + (RA() - 0.5) * 0.9) * far, (side * j * (0.5 + RA() * 0.12) + (RA() - 0.5) * 0.3) * far, RA() * 6.28]); }
-      flock = { dir, n, far, birds, x: dir > 0 ? L - 20 : W + 20, y: state.centreRow + ((high + RA() * Math.max(0.1, 0.62 - high)) * H - H / 2) / (cellH * k), v: 0.5 * Math.max(34, view.w / 20) * (0.5 + far), drift: (RA() - 0.5) * 0.5 };
+      flock = { dir, n, far, birds, x: dir > 0 ? L - 20 : W + 20, y: state.centreRow + ((high + RA() * Math.max(0.1, 0.62 - high)) * H - H / 2) / (cellH * k), v: 0.5 * Math.max(34, view.seen / 20) * (0.5 + far), drift: (RA() - 0.5) * 0.5 };
     }
     if (!flock) return;
     const f = flock, long = (Math.ceil(f.n / 2) * 2.1 + 3) * cellW, at = H / 2 + (f.y - state.centreRow) * cellH * k; f.x += f.dir * f.v * dt; f.y += f.drift * dt;
@@ -332,7 +332,7 @@ export function makeLive(gl, model, view, scene, cards) {
   function step(now, st) {
     time = now; dt = last < 0 ? 0.016 : clamp(now - last, 0, 0.05); last = now; top = st.top;
     const raw = dt > 0 ? (top - lastTop) / dt : 0; lastTop = top; vel += (raw - vel) * Math.min(1, 12 * dt); shove = -122 * Math.tanh(0.9 * vel / 122);
-    ptr.x = ptr.sx + view.ox; ptr.on = performance.now() - ptr.at < 2500; ptr.c = ptr.x / cellW; ptr.r = ptr.y / cellH + top;
+    ptr.on = performance.now() - ptr.at < 2500; ptr.c = ptr.x / cellW; ptr.r = ptr.y / cellH + top;
     remember();
     leanV += (-49 * lean - 7 * leanV + shove) * dt; lean += leanV * dt; if (Math.abs(lean) > 3) { lean = 3 * Math.sign(lean); leanV /= 2; }   // the field's one spring: stiffness 7, damping 0.5
     reveal = clamp((time - 0.4) / 3, 0, 1);
@@ -352,6 +352,6 @@ export function makeLive(gl, model, view, scene, cards) {
     section('tethers', drawTethers);
     return w.count;
   }
-  const uniforms = (set) => { set.f('uHush', cards.presence[0]); quiet.set(cards.quiet); for (let k = 0; k < 24; k += 4) if (quiet[k + 2] > quiet[k]) { quiet[k] += view.ox * view.dpr; quiet[k + 2] += view.ox * view.dpr; } set.fv4('uQuiet', quiet); set.v2('uLean', 0, lean); set.fv3('uTrail', trail); };
+  const uniforms = (set) => { set.f('uHush', cards.presence[0]); set.fv4('uQuiet', cards.quiet); set.v2('uLean', 0, lean); set.fv3('uTrail', trail); };
   return { step, uniforms, bytes: new Uint8Array(buffer), ranges, planks, spots, setLamps: (n) => { lamps = n; } };
 }
