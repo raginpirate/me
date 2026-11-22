@@ -41,6 +41,7 @@ export function makeWorld(params, name = 'daniel wyckoff') {
   const asterism = makeName(d, name), covered = (x, row) => { const s = peak.span[row]; return !!s && x >= s[0] && x < s[1]; };
   const { stars, firstShot } = makeStars(d, covered, asterism);
   // the ground and the hut; the last stop's light is the hut's window, as it stands at the end of the page
+  const flag = stops.find((s) => s.mark === 'flag'); if (flag) { flag.x = peak.topCol + 2; flag.y = Math.ceil(d.summitRow) - 4; }
   const base = stops[stops.length - 1], ground = makeGround(d, base.x), endRow = d.end + d.S / 2;
   base.x = ground.window[0] * GROUND_K - 0.5; base.y = endRow + (d.groundRow + 1 + ground.window[1] - endRow) * GROUND_K - 0.5;
   const { lobes, turn, N } = makeMassif(d, stops, ground.door, peak);

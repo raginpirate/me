@@ -89,14 +89,17 @@ export function makeLive(gl, model, view, scene, cards) {
       ink('✦', 'ember', x, y, mix(15, 17, lit) * u, 1); ink('✦', 'emberHot', x, y, mix(15, 17, lit) * u, lit);
     }
   }
+  // every light is tied to its card while the card is open: a thread of motes, starlight in the sky and embers on the mountain
+  const ties = stops.map((s, n) => s.mark ? { n, sx: 0, sy: -1e4, string: null, warm: true } : lights[n]);
   function drawTethers() {
-    for (const p of lights) {
+    for (const p of ties) {
       if (!p) continue;
+      if (p.warm) { p.sx = spots[p.n][0]; p.sy = spots[p.n][1]; }
       const presence = cards.presence[p.n], A = presence >= 0.02 && p.sy > -1e3 ? cards.anchor(p.n) : null;
       if (!A) { p.string = null; continue; }
       const R = Math.random;
       if (!p.string) {   // a new string each time the card opens: no two are alike
-        const gap = Math.hypot(A[0] - (p.hx + 0.5) * cellW, A[1] - (p.hy + 0.5 - stops[p.n].snap) * cellH), rest = Math.max(20 * u, gap - 32 * u), n = Math.max(6, Math.round(rest / (mix(6, 9, R()) * u)));
+        const gap = p.warm ? Math.hypot(A[0] - p.sx, A[1] - p.sy) : Math.hypot(A[0] - (p.hx + 0.5) * cellW, A[1] - (p.hy + 0.5 - stops[p.n].snap) * cellH), rest = Math.max(20 * u, gap - 32 * u), n = Math.max(6, Math.round(rest / (mix(6, 9, R()) * u)));
         p.string = { rest, sway: [[4.5, 1.1, 2.4], [2, 3, 5.5]].map(([far, few, most]) => [far * (0.7 + 0.6 * R()), mix(few, most, R()) * 2 * Math.PI, R() * 2 * Math.PI]),
           dots: Array.from({ length: n }, (_, k) => ({ f: (k + 0.5 + (R() - 0.5) * 0.9) / n, a: R() > 0.08 ? mix(0.45, 0.95, R()) : 0, late: R(), tw: R() * 2 * Math.PI, hx: NaN, hy: 0, x: 0, y: 0, vx: 0, vy: 0 })) };
       }
@@ -114,7 +117,7 @@ export function makeLive(gl, model, view, scene, cards) {
         const follow = 1 - q.free * share; q.x += (q.nx - q.hx) * follow; q.y += (q.ny - q.hy) * follow; q.hx = q.nx; q.hy = q.ny;   // the ends are held, the middle is left behind a little
         if (!q.a) continue;
         spring(q, SPRING.dot, q.free);
-        if (q.y < floor) put('·', 'thread', q.x, q.y, q.a * 0.95 * smooth(0.55 * q.late, 0.55 * q.late + 0.45, presence) * flicker(q.tw));
+        if (q.y < floor) put('·', p.warm ? 'ember' : 'thread', q.x, q.y, q.a * (p.warm ? 1.25 : 0.95) * smooth(0.55 * q.late, 0.55 * q.late + 0.45, presence) * flicker(q.tw));
       }
     }
   }
@@ -159,8 +162,10 @@ export function makeLive(gl, model, view, scene, cards) {
   }
 
   // --- the flag on the summit ---
+  const flagAt = stops.findIndex((q) => q.mark === 'flag');
   function drawFlag() {
     const x = (d.topCol + 0.5) * cellW, y = (Math.ceil(d.summitRow) - top) * cellH, fu = 1.7 * typeSize, wave = Math.sin(3.2 * time);
+    if (flagAt >= 0) { spots[flagAt][0] = x + 0.6 * fu; spots[flagAt][1] = y < -4 * fu || y > view.h + fu ? -1e4 : y - 2.5 * fu; }
     if (y < -4 * fu || y > view.h + fu) return;
     for (const up of [0.45, 1.4, 2.3]) ink('|', 'rockLight', x, y - up * fu, 1.3 * fu, 1);
     ink('o', 'ember', x + 0.6 * fu, y - 2.5 * fu, 2.6 * fu, 0.12); ink(wave > 0.3 ? '}' : '>', 'ember', x + (0.58 + 0.05 * wave) * fu, y - 2.5 * fu, 1.45 * fu, 1);
@@ -214,7 +219,7 @@ export function makeLive(gl, model, view, scene, cards) {
   const P = [0, 0];
   function drawWaypoints() {
     stops.forEach((s, n) => {
-      if (!s.mark) return;
+      if (!s.mark || s.mark === 'flag') return;
       const hut = s.lobe == null, li = hut ? LAYER.ground : LAYER.lobe + s.lobe, [parts, tint] = MARKS[s.mark], lit = cards.glow[n], live = lit * twinkle(time, n, 0.6, 2.4);
       let x, y;
       if (hut) { x = ground.window[0]; y = G + 1 + ground.window[1]; spots[n][0] = x * cellW * ground.k; spots[n][1] = view.h / 2 + (y - state.centreRow) * cellH * ground.k; }

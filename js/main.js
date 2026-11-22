@@ -35,7 +35,7 @@ function measure(font) {
   let typeSize = TYPE.sizes.find(([below]) => W <= below)[1];
   if (W > FRAME.wide) typeSize = FRAME.at * W / FRAME.wide; else if (W < FRAME.least * wide(typeSize)) typeSize = Math.floor(typeSize * W / (FRAME.least * wide(typeSize)) * 4) / 4;
   const cellW = wide(typeSize), cellH = Number.isInteger(typeSize) ? Math.round(1.2 * typeSize) : Math.round(1.2 * typeSize * dpr) / dpr, full = across * cellW;
-  return { W: full, H, typeSize, cellW, cellH, stack: W <= TYPE.stackBelow, cols: Math.ceil(across) + 1, stage: TYPE.stage / wide(FRAME.at), seen: Math.min(W, full), ox: Math.max(0, Math.round((full - W) / 2 * dpr) / dpr), screen: W };
+  return { W: full, H, typeSize, cellW, cellH, stack: W <= TYPE.stackBelow, cols: Math.ceil(across) + 1, stage: TYPE.stage / wide(FRAME.at), seen: Math.min(W, full), ox: Math.round(Math.min(Math.max(0, full - W), Math.max(0, (Math.ceil(across) / 2 + 1) * cellW - W / 2)) * dpr) / dpr, screen: W };
 }
 
 function start() {

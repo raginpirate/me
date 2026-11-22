@@ -29,7 +29,7 @@ export function makeTurn(d) {
 export function makeMassif(d, stops, door, peak) {
   const T = makeTurn(d), { S, cols, groundRow: G, bodyTop, summitRow } = d, { kx, reach, ref, leadRows, yawAt, face, pose } = T, R = mulberry32(3), N = makeNoise(77);
   const out = (at) => kx * (15 + 4.3 * (at - 5.4)), ridgeHalf = (n) => kx * 3.1 * n ** 0.62, mode = 'side';
-  const marked = stops.filter((s) => s.mark && s.mark !== 'hut'), screens = (s) => s.at[0], lobes = [];
+  const marked = stops.filter((s) => s.mark && s.mark !== 'hut' && s.mark !== 'flag'), screens = (s) => s.at[0], lobes = [];
 
   // the core: the mountain the peak is the top of. From the seam its two sides run on down at the pitch of the peak's
   // upper slopes, easing as they go, with the same broken skyline: one silhouette from the summit to the trees.
@@ -99,8 +99,8 @@ export function makeMassif(d, stops, door, peak) {
   }
 
   // the route: where it arrives on each lobe, where it steps off to the next, and the path between
-  const route = lobes.filter((l) => l.kind === 'core' || l.kind === 'route');
-  for (const l of route) l.arrive = l.kind === 'core' ? [l.cx + 1, bodyTop] : l.onCrest(l.cx - Math.round((3 + R() * 3) * kx));
+  const route = lobes.filter((l) => l.kind === 'core' || l.kind === 'route'), late = Math.max(...marked.map((s) => s.y));
+  for (const l of route) l.arrive = l.kind === 'core' ? [l.cx + 1, bodyTop] : l.onCrest(l.cx - Math.round((3 + R() * 3) * kx * (!l.stop && l.apex > late ? 0.3 : 1)));   // the last ridges are taken nearer their middle
   route.forEach((l, i) => {
     const nx = route[i + 1], core = l.kind === 'core';
     if (!nx) { const e = pose(l, yawAt(99), d.end + S / 2); l.depart = [l.inside(Math.round(l.cx + (door[0] * GROUND_K - e.X) / e.s), G - 1), G - 1]; }

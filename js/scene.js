@@ -62,7 +62,7 @@ export function makeScene(gl, model, view, flags = {}) {
   }
 
   function frame(time, live) {
-    const { w, h, dpr } = view, lift = state.lift = d.stack ? FRAME.lift * S * smooth(0.2 * S, 0.9 * S, scrollY / cellH) : 0, top = state.top = clamp(scrollY / cellH + lift, 0, d.end), centreRow = state.centreRow = top + S / 2, centre = state.centre = centreRow / S, yaw = turn.yawAt(centre);
+    const { w, h, dpr } = view, lift = state.lift = d.stack ? FRAME.lift * S * smooth(0.1 * S, 0.55 * S, scrollY / cellH) : 0, top = state.top = clamp(scrollY / cellH + lift, 0, d.end), centreRow = state.centreRow = top + S / 2, centre = state.centre = centreRow / S, yaw = turn.yawAt(centre);
     state.time = time;
     const shift = smooth(8.3, 9.7, centre); for (let i = 0; i < 3; i++) palette[i] = sky[i] = (skyTop[i] + (skyBase[i] - skyTop[i]) * shift) / 255;
 
