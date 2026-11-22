@@ -15,7 +15,7 @@ export const TYPE = { stackBelow: 600, sizes: [[600, 11], [1099, 13], [Infinity,
 // A narrower one is a window on its middle, at its own type size, or smaller if that is what it takes to see the `least`
 // columns the way down needs; a wider one sets the type larger until the world reaches its edges. `lift` is how far
 // (screens) the view is raised where a card sits under its light, so the light stands clear above it.
-export const FRAME = { wide: 2560, at: 14, least: 84, lift: 0.155 };
+export const FRAME = { wide: 2560, at: 14, least: 84, lift: 0.155, span: 0.27 };   // span: from a light down to its card's edge (screens)
 
 // where things are down the page, in screens from the top
 export const LAYOUT = {

@@ -1,6 +1,6 @@
 // The frame: where the page is → where every layer stands → the list of things to draw, back to front.
 
-import { clamp, smooth } from './math.js';
+import { clamp, smooth, mix } from './math.js';
 import { LAYOUT, MASSIF, FRAME } from './art.js';
 import { LAYERS, COLOURS as ROOM } from './glsl.js';
 import { COLOURS, rgb, LAYER, packSky, packPeak, packLobe, packGround, packClouds, packSnow, packLeaves, cloudSpan } from './pack.js';
@@ -38,7 +38,7 @@ export function makeScene(gl, model, view, flags = {}) {
   };
 
   // Is the screen point (css px) behind lobe i's body, as it stands? And: behind any lobe nearer than `from` that is at least `solid`?
-  const state = { lift: 0, top: 0, centreRow: 0, centre: 0, time: 0, lampX: view.w / 2, lampY: 0, r0: 0, r1: 0, dark: 0, pose, sky };
+  const state = { span: FRAME.span, lift: 0, top: 0, centreRow: 0, centre: 0, time: 0, lampX: view.w / 2, lampY: 0, r0: 0, r1: 0, dark: 0, pose, sky };
   const behind = (i, x, y) => { const l = lobes[i], p = pose[i], c = Math.floor((x / cellW - p.X) / p.s + l.cx + 0.5), r = state.centreRow + (y - view.h / 2) / (cellH * p.s); return c >= 0 && c < l.W && r >= l.cover[c]; };
   const hidden = (from, x, y, solid = 0.5) => { for (let i = from + 1; i < lobes.length; i++) if (made[i] && pose[i].vis >= solid && behind(i, x, y)) return true; return false; };
   const place = (i, c, r, out) => { const p = pose[i]; out[0] = (p.X + (c - lobes[i].cx - 0.5) * p.s) * cellW; out[1] = view.h / 2 + (r - state.centreRow) * cellH * p.s; return out; };
@@ -46,8 +46,10 @@ export function makeScene(gl, model, view, flags = {}) {
   // the light you carry is on the route, at the height a stop's waypoint rests at
   const point = [0, 0], routeLobes = lobes.map((l, i) => i).filter((i) => lobes[i].path.length);
   function findLamp(planks) {
-    const { h, w } = view, m = Math.min(w, h), r0 = state.r0 = MASSIF.lamp.core * m, y0 = state.lampY = h * (0.5 - CARD.rest.side) - state.lift * cellH, reach = 2.2 * r0;
-    state.r1 = MASSIF.lamp.reach * m;
+    const { h } = view, m = Math.min(view.seen, h), under = state.lift / (FRAME.lift * S), reach0 = MASSIF.lamp.core * m;
+    // where a card sits under its light, the light you carry hangs between the two and reaches from one to the other
+    const r0 = state.r0 = mix(reach0, state.span * h / 3, under), y0 = state.lampY = h * (0.5 - CARD.rest.side) - state.lift * cellH + under * state.span * h / 2, reach = 2.2 * r0;
+    state.r1 = MASSIF.lamp.reach * m * r0 / reach0;
     let sum = 0, weight = 0;
     const take = (x, y, k) => { const u = (y - y0) / (2 * cellH), g = Math.exp(-u * u) * k; sum += x * g; weight += g; };
     for (const i of routeLobes) {
@@ -94,13 +96,14 @@ export function makeScene(gl, model, view, flags = {}) {
     if (top < LAYOUT.deck[1] * S) gl.draw(...R.stars, TEST);
     drawLive('sky', TEST);
     if (top + S > 2.9 * S) {
-      if (snowing) gl.draw(...R.snow0, TEST); drawLive('flock', TEST);
+      if (snowing) gl.draw(...R.snow0, TEST);
       if (Math.abs(air.deckRow - centreRow) * CLOUDS[0].k < 1.5 * S) gl.draw(...R.clouds0, TEST);
     }
+    drawLive('birds', TEST);
     for (let i = 0; i < lobes.length; i++) if (pose[i].on && flags.try !== 'nolobes') gl.draw(made[i].first, flags.try === 'cover' ? made[i].cover : flags.try !== 'solids' && (made[i].last + 3 - centreRow) * pose[i].s > -S / 2 ? made[i].total : made[i].solids, made[i].draw);   // above the screen it is only a dark body
     if ((G - 7 - centreRow) * ground.k < S / 2) gl.draw(...R.ground, PLAIN);
     if (top < d.seamRow + 4) gl.draw(...R.peak, PLAIN);
-    drawLive('smoke', PLAIN); if (snowing) gl.draw(...R.snow12, PLAIN); drawLive('owl', PLAIN); drawLive('squirrels', PLAIN);
+    drawLive('smoke', PLAIN); if (snowing) gl.draw(...R.snow12, PLAIN); drawLive('animals', PLAIN);
     drawLive('bridges', LIT);
     for (const i of routeLobes) if (pose[i].on && made[i].route) gl.draw(...made[i].route, LIT_TEST);
     if (top < d.bodyTop) gl.draw(...R.rope, LIT);
