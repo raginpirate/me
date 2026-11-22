@@ -4,7 +4,7 @@ export const PALETTE = {
   sky: '#070a14', skyBase: '#0b0907', ink: '#e3e9f3', muted: '#8d9bb4', dim: '#5a6a86', rule: '#7f93b4', star: '#c9d8ee',
   starBright: '#f2f6ff', white: '#ffffff', thread: '#becee8', ember: '#f3c86b', emberHot: '#ffe196', rockLight: '#8c9bb8',
   rock: '#4f5e7c', rockDark: '#2f3a56', far: '#2a3450', snow: '#eef3fb', bird: '#b8c6da', pine: '#3f7a55', pineDark: '#24513a',
-  leaf: '#d08a3a', leafOlive: '#9aa84a', ground: '#6b5236', groundDark: '#3d2e21',
+  leaf: '#d08a3a', heart: '#f08aa0', leafOlive: '#9aa84a', ground: '#6b5236', groundDark: '#3d2e21',
 };
 // colours mixed from two of the palette: [a, b, how much of b]
 export const MIXES = { earth: ['skyBase', 'groundDark', 0.3], timber: ['leaf', 'snow', 0.25], wood: ['ground', 'leaf', 0.45], bridge: ['ground', 'rockLight', 0.45], moss: ['pine', 'leafOlive', 0.45] };
@@ -28,9 +28,9 @@ export const STOPS = [
   { id: 'sky', open: 0.72 },
   { id: 'ucp', at: [1.15, 0.66] }, { id: 'w3c', at: [1.8, 0.30] }, { id: 'fido', at: [2.45, 0.70] }, { id: 'shopify', at: [3.1, 0.34] },   // a step apart, from the name to the flag
   { id: 'summit', at: [3.75, 0.44], mark: 'flag' },   // the flag stands where the peak puts it
-  { id: 'climb', at: [4.62, 0.62], mark: 'axe' }, { id: 'subscriptions', at: [5.5, 0.30], mark: 'cairn' },   // and a step apart from the flag to the hut
-  { id: 'fera', at: [6.35, 0.70], mark: 'post' }, { id: 'first', at: [7.2, 0.34], mark: 'post' },
-  { id: 'lorem', at: [8.03, 0.68], mark: 'post' }, { id: 'ipsum', at: [8.87, 0.34], mark: 'post' },
+  { id: 'climb', at: [4.7, 0.62], mark: 'lantern' }, { id: 'subscriptions', at: [5.5, 0.30], mark: 'snowman' },   // and a step apart from the flag to the hut
+  { id: 'fera', at: [6.35, 0.70], mark: 'lantern' }, { id: 'first', at: [7.2, 0.34], mark: 'lantern' },
+  { id: 'lorem', at: [8.03, 0.68], mark: 'lantern' }, { id: 'ipsum', at: [8.87, 0.34], mark: 'lantern' },
   { id: 'base', at: [9.7, 0.66], mark: 'hut' },
 ];
 // when a card is open (viewport centre, screens from its light) and where a glide settles, by layout
@@ -54,7 +54,7 @@ export const LETTERS = {
 export const NAME = { advance: { i: 0.72, l: 0.84 }, wide: 1.12, last: 0.75, tight: 0.84, lines: [0.62, -0.78], indent: [1.0, 0.4], clear: [20, 15] };
 
 // every character the scene sets
-export const CHARS = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·✦';
+export const CHARS = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·✦♥';
 
 // the massif: cut-outs on a turntable
 export const MASSIF = {
