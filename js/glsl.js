@@ -35,7 +35,7 @@ uniform vec2 uRes, uCell;                 // device px: the canvas, a cell at th
 uniform float uType, uTime, uS, uPx;      // type size in device px; seconds; rows to a screen; device px to a css px
 uniform vec3 uPalette[${COLOURS}];                // [0] is the sky of the moment
 uniform vec4 uLamp;                       // the light you carry: x, y, where its dark begins, where it is full (device px)
-uniform float uDark, uLit, uMask, uHeat;         // how dark the dark is; 1 for things drawn after it; 1 when only what hides is wanted
+uniform float uDark, uLit, uMask, uHeat, uLeft;         // how dark the dark is; 1 for things drawn after it; 1 when only what hides is wanted
 uniform vec4 uWashBox;                    // this lobe's ground texture: its first column and row, its size in cells
 `;
 
@@ -150,6 +150,6 @@ void main() {
     if (vSoft.w > 0.) c *= clamp(min(pos.y, vSoft.y - pos.y) / vSoft.w, 0., 1.);
   }
   // the dark: everything drawn before it is put out, away from the light you carry
-  if (uLit < .5 && uDark > 0.) { float u = clamp((distance(vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y), uLamp.xy) - uLamp.z) / (uLamp.w - uLamp.z), 0., 1.); c.rgb = mix(c.rgb, sky * c.a, uDark * (u < .5 ? u * 1.24 : .62 + (u - .5) * .76)); }
+  if (uLit < .5 && uDark > 0.) { float u = clamp((distance(vec2(gl_FragCoord.x + uLeft, uRes.y - gl_FragCoord.y), uLamp.xy) - uLamp.z) / (uLamp.w - uLamp.z), 0., 1.); c.rgb = mix(c.rgb, sky * c.a, uDark * (u < .5 ? u * 1.24 : .62 + (u - .5) * .76)); }
   o = c;
 }`;

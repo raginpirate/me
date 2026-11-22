@@ -46,7 +46,7 @@ export function makeScene(gl, model, view, flags = {}) {
   // the light you carry is on the route, at the height a stop's waypoint rests at
   const point = [0, 0], routeLobes = lobes.map((l, i) => i).filter((i) => lobes[i].path.length);
   function findLamp(planks) {
-    const { h, w } = view, m = Math.min(w, h), r0 = state.r0 = MASSIF.lamp.core * m, y0 = state.lampY = h * (0.5 - CARD.rest[d.stack ? 'stack' : 'side']), reach = 2.2 * r0;
+    const { h, w } = view, m = Math.min(w, h), r0 = state.r0 = MASSIF.lamp.core * m, y0 = state.lampY = h / 2 - CARD.rest[d.stack ? 'stack' : 'side'] * S * cellH, reach = 2.2 * r0;
     state.r1 = MASSIF.lamp.reach * m;
     let sum = 0, weight = 0;
     const take = (x, y, k) => { const u = (y - y0) / (2 * cellH), g = Math.exp(-u * u) * k; sum += x * g; weight += g; };
@@ -81,7 +81,7 @@ export function makeScene(gl, model, view, flags = {}) {
     const count = live ? live.step(time, state) : 0;
     findLamp(live?.planks);
     state.dark = MASSIF.lamp.dark * smooth(3.82, 4.87, centre);
-    set.v2('uRes', w * dpr, h * dpr); set.v2('uCell', cellW * dpr, cellH * dpr); set.f('uType', d.typeSize * dpr); set.f('uAscent', Math.round(0.9 * d.typeSize) * dpr);
+    set.v2('uRes', w * dpr, h * dpr); set.f('uLeft', Math.round(view.ox * dpr)); set.v2('uCell', cellW * dpr, cellH * dpr); set.f('uType', d.typeSize * dpr); set.f('uAscent', Math.round(0.9 * d.typeSize) * dpr);
     set.f('uTime', time); set.f('uS', S); set.f('uPx', dpr); set.f('uCols', cols); set.fv3('uPalette', palette);
     set.v4('uLamp', state.lampX * dpr, state.lampY * dpr, state.r0 * dpr, state.r1 * dpr); set.f('uDark', state.dark);
     set.v4('uFall', SNOW.z[0] * S, SNOW.z[1] * S, LEAVES.from * S, G); set.v3('uLeaf', glyph(','), glyph("'"), glyph('~')); set.fv3('uGround', tones); set.v2('uWood', 5.55, LAYOUT.forest); set.f('uAltStar', glyph('*'));

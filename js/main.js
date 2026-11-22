@@ -1,6 +1,6 @@
 // The page is a text document. This turns it into the mountain when the browser can draw it, and back.
 
-import { TYPE, CHARS } from './art.js';
+import { TYPE, FRAMES, CHARS } from './art.js';
 import { LAYERS } from './glsl.js';
 import { makeWorld } from './world.js';
 import { makeGL } from './gl.js';
@@ -30,17 +30,20 @@ function cannot() {
 function measure(font) {
   const W = innerWidth, probe = document.createElement('div'); probe.style.cssText = 'position:fixed;height:100lvh;visibility:hidden'; document.body.append(probe);
   const H = Math.max(probe.getBoundingClientRect().height, innerHeight); probe.remove();
-  const typeSize = TYPE.sizes.find(([below]) => W <= below)[1], x = document.createElement('canvas').getContext('2d'); x.font = `${typeSize}px ${font}`;
-  return { W, H, typeSize, cellW: x.measureText('M').width, cellH: Math.round(1.2 * typeSize), stack: W <= TYPE.stackBelow };
+  // the frame covers the screen: the type is as small as lets it, on whole device pixels a row
+  const stack = W / H < FRAMES.turn, f = FRAMES[stack ? 'stack' : 'side'], dpr = Math.min(devicePixelRatio, TYPE.maxDpr), x = document.createElement('canvas').getContext('2d');
+  x.font = `100px ${font}`; const em = x.measureText('M').width / 100;
+  const cellH = Math.ceil(Math.max(H / f.rows, 1.2 * W / (f.cols * em)) * dpr - 1e-3) / dpr, typeSize = cellH / 1.2, cellW = em * typeSize;
+  return { W: f.cols * cellW, H, typeSize, cellW, cellH, stack, cols: f.cols + 1, S: f.rows, stage: f.stage, dpr, screen: [W, innerHeight], ox: Math.max(0, (f.cols * cellW - W) / 2) };
 }
 
 function start() {
   const old = document.querySelector('canvas.scene'), canvas = old.cloneNode(); old.replaceWith(canvas);   // a fresh canvas each time: nothing of the last world is left on the card
   const font = getComputedStyle(html).getPropertyValue('--mono').trim(), params = measure(font), model = makeWorld({ ...params, lazy: true }), d = model.dims;
-  const dpr = Math.min(devicePixelRatio, TYPE.maxDpr), view = { w: params.W, h: params.H, dpr };
-  html.style.setProperty('--world-height', `${Math.round(d.rows * params.cellH)}px`);
+  const dpr = params.dpr, view = { w: params.W, h: params.H, ox: params.ox, dpr };   // the scene's own px are the frame's: `ox` of them are off the screen's left edge
+  html.classList.toggle('is-stack', params.stack); html.style.setProperty('--world-height', `${Math.round(d.end * params.cellH + params.H)}px`);
   const gl = makeGL(canvas, { font, chars: CHARS, force, heat: query.get('try') === 'heat' }); if (!gl) throw new Error('no context');
-  gl.resize(Math.round(view.w * dpr), Math.round(view.h * dpr)); gl.atlas(params.typeSize * dpr);
+  gl.resize(Math.round((view.w - 2 * view.ox) * dpr), Math.round(view.h * dpr), Math.round(view.ox * dpr), Math.round(view.w * dpr)); gl.atlas(params.typeSize * dpr);
   const scene = makeScene(gl, model, view, { prepass: query.get('prepass') !== '0', try: query.get('try') }), glide = makeGlide(() => model.stops.map((s) => s.snap * params.cellH).sort((a, b) => a - b));
   const cards = makeCards(model, view, (y, smoothly) => glide.go(y, smoothly && !reduced)), live = makeLive(gl, model, view, scene, cards);
   live.setLamps(lamps); glide.on();
@@ -86,7 +89,7 @@ else {
   // the world is laid out again when the width changes, or the height by a fifth (a phone's bars come and go: that is not a new page)
   let pending = 0;
   addEventListener('resize', () => { clearTimeout(pending); pending = setTimeout(() => {
-    if (!world) return; const { W, H } = world.params; if (innerWidth === W && Math.abs(innerHeight - H) / H < 0.2) return;
+    if (!world) return; const [W, H] = world.params.screen; if (innerWidth === W && Math.abs(innerHeight - H) / H < 0.2) return;
     const at = scrollY / Math.max(1, html.scrollHeight - innerHeight); show('scene'); scrollTo(0, at * (html.scrollHeight - innerHeight));
   }, 150); });
 }

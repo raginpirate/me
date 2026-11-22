@@ -76,7 +76,8 @@ time { display: block; color: var(--dim); font-size: var(--small); }
   .is-scene .hint { animation-delay: 3.9s; }
 }
 @keyframes arrive { from { opacity: 0; } }
-@media (max-width: 600px) {
-  .is-scene .card, .is-scene .card[data-side] { left: 50%; right: auto; top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: calc(100% - 2 * var(--gutter)); }
-  .is-scene .card-sky { top: 56%; bottom: auto; width: max-content; }
+/* the upright frame: the card sits under its light */
+@media all {
+  .is-scene.is-stack .card, .is-scene.is-stack .card[data-side] { left: 50%; right: auto; top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: calc(100% - 2 * var(--gutter)); }
+  .is-scene.is-stack .card-sky { top: 56%; bottom: auto; width: max-content; }
 }

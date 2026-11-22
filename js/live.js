@@ -22,7 +22,7 @@ export function makeLive(gl, model, view, scene, cards) {
   const g = (ch) => glyphs[ch] ??= gl.glyph(ch), pick = (list) => list[Math.floor(RA() * list.length)], PAGE = LAYER.page, SKY = 0;
   let top = 0, time = 0, dt = 0.016, last = -1, lastTop = 0, vel = 0, shove = 0, lean = 0, leanV = 0, lamps = 0;
   const ptr = { x: 0, y: 0, at: -1e9, on: false, c: 0, r: 0 };
-  addEventListener('pointermove', (e) => { ptr.x = e.clientX; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
+  addEventListener('pointermove', (e) => { ptr.x = e.clientX + view.ox; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
 
   // The pointer's past, for the springs in the shader. Each star, flake and leaf is a spring pushed by the pointer; where a
   // spring is now is its past pushes weighed by how a spring answers a knock (nothing at once, most a moment later, then
