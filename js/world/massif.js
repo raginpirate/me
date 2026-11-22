@@ -8,7 +8,7 @@ const wrapPi = (a) => { a %= 2 * Math.PI; return a > Math.PI ? a - 2 * Math.PI :
 
 // How the table turns and where a lobe stands. pose() writes X, s, vis, tone, ref into `out`.
 export function makeTurn(d) {
-  const { S } = d, ref = Math.min(d.cols, 170), kx = ref / 60, reach = 34 * kx, leadScreens = CARD.rest[d.stack ? 'stack' : 'side'] + MASSIF.lead, leadRows = leadScreens * S;
+  const { S } = d, ref = Math.min(d.cols, 170), kx = ref / 60, reach = 34 * kx, leadScreens = CARD.rest.side + MASSIF.lead, leadRows = leadScreens * S;
   const [t0, t1] = MASSIF.turn, k = MASSIF.ease;
   const yawAt = (centre) => { const tt = clamp((centre - t0) / (t1 - t0), 0, 1), e = tt < k ? tt * tt / (2 * k) : tt <= 1 - k ? tt - k / 2 : 1 - k - (1 - tt) ** 2 / (2 * k); return MASSIF.turns * 2 * Math.PI * e / (1 - k); };
   const gain = (rows) => Math.exp(MASSIF.depth * clamp(rows / S, -1.6, 1.6));
@@ -28,7 +28,7 @@ export function makeTurn(d) {
 // The lobes, back to front, each with its outline, and the route laid over the ones it crosses.
 export function makeMassif(d, stops, door, peak) {
   const T = makeTurn(d), { S, cols, groundRow: G, bodyTop, summitRow } = d, { kx, reach, ref, leadRows, yawAt, face, pose } = T, R = mulberry32(3), N = makeNoise(77);
-  const out = (at) => kx * (15 + 4.3 * (at - 5.4)), ridgeHalf = (n) => kx * 3.1 * n ** 0.62, mode = d.stack ? 'stack' : 'side';
+  const out = (at) => kx * (15 + 4.3 * (at - 5.4)), ridgeHalf = (n) => kx * 3.1 * n ** 0.62, mode = 'side';
   const marked = stops.filter((s) => s.mark && s.mark !== 'hut'), screens = (s) => s.at[0], lobes = [];
 
   // the core: the mountain the peak is the top of. From the seam its two sides run on down at the pitch of the peak's

@@ -9,11 +9,10 @@ export const PALETTE = {
 // colours mixed from two of the palette: [a, b, how much of b]
 export const MIXES = { earth: ['skyBase', 'groundDark', 0.3], timber: ['leaf', 'snow', 0.25], wood: ['ground', 'leaf', 0.45], bridge: ['ground', 'rockLight', 0.45], moss: ['pine', 'leafOlive', 0.45] };
 
-// The two frames the world is composed in, in cells: the wide one and the upright one ("stack": the card sits under the
-// light). A screen takes the frame nearer its shape, sets the type so the frame covers it, and slices off what hangs over:
-// the sides or the top and bottom, evenly. `turn` is the width over height at which the frame changes; `stage` is how far
-// apart the lights stand.
-export const FRAMES = { turn: 0.93, side: { cols: 240, rows: 65, stage: 133 }, stack: { cols: 56, rows: 65, stage: 56 } };
+// The frame the world is composed in, in cells. There is one. A screen sets the type so the frame covers it and shows the
+// part that fits: a window on the frame, which follows the way down when the lights would leave it. `stage` is how far apart
+// the lights stand; `narrow` (css px) is the width under which a card sits under its light, and the view is lifted to suit.
+export const FRAME = { cols: 240, rows: 65, stage: 133, narrow: 600, lift: 0.155, keep: 0.36 };
 export const TYPE = { maxDpr: 2 };
 
 // where things are down the page, in screens from the top

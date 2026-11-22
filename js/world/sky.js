@@ -27,7 +27,7 @@ export function makeName(d, name) {
     }
   });
   const xs = stars.map((s) => s[0]), mid = (Math.min(...xs) + Math.max(...xs)) / 2, seed = mulberry32(31);
-  const unit = Math.min((tight ? 3.4 : 4.4) * d.cellH / 0.58, (tight ? 0.94 : 0.7) * d.W / (tight ? 5.9 : 7.3));
+  const unit = Math.min((tight ? 3.4 : 4.4) * d.cellH / 0.58, (tight ? 0.94 : 0.7) * d.seen / (tight ? 5.9 : 7.3));
   for (const s of stars) { s[0] = d.cols / 2 + (s[0] - mid) * unit / d.cellW; s[1] = LAYOUT.name * d.S - s[1] * unit / d.cellH; s[3] = seed(); }
   return { stars, lines };
 }

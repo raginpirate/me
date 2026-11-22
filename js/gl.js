@@ -67,7 +67,7 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
   return {
     gl, layers, set, glyph: (ch) => { const i = chars.indexOf(ch); if (i < 0) throw new Error(`no glyph for ${ch}`); return i + GLYPH0; },
     get typePx() { return typePx; }, atlas,
-    resize(w, h, left = 0, wide = w) { canvas.width = w; canvas.height = h; gl.viewport(-left, 0, wide, h); },   // the canvas is the screen; the frame may hang over its sides
+    resize(w, h, wide = w) { canvas.width = w; canvas.height = h; this.pan = (left) => gl.viewport(-left, 0, wide, h); this.pan(0); },   // the canvas is the screen, a window on the frame
     // add instances to the world; returns the index of the first
     append(bytes) { const first = used / BYTES; chunks.push([used, bytes]); used += bytes.byteLength; world.grow(used, () => { for (const [at, b] of chunks.slice(0, -1)) gl.bufferSubData(gl.ARRAY_BUFFER, at, new Uint8Array(b)); }); gl.bindBuffer(gl.ARRAY_BUFFER, world.buf); gl.bufferSubData(gl.ARRAY_BUFFER, first * BYTES, new Uint8Array(bytes)); return first; },
     // a lobe's ground: one texel per cell, premultiplied
