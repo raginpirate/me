@@ -4,7 +4,7 @@ export const PALETTE = {
   sky: '#070a14', skyBase: '#0b0907', ink: '#e3e9f3', muted: '#8d9bb4', dim: '#5a6a86', rule: '#7f93b4', star: '#c9d8ee',
   starBright: '#f2f6ff', white: '#ffffff', thread: '#becee8', ember: '#f3c86b', emberHot: '#ffe196', rockLight: '#8c9bb8',
   rock: '#4f5e7c', rockDark: '#2f3a56', far: '#2a3450', snow: '#eef3fb', bird: '#b8c6da', pine: '#3f7a55', pineDark: '#24513a',
-  leaf: '#d08a3a', heart: '#f08aa0', leafOlive: '#9aa84a', ground: '#6b5236', groundDark: '#3d2e21',
+  leaf: '#d08a3a', heart: '#f08aa0', lime: '#cddc2e', mauve: '#c77db8', leafOlive: '#9aa84a', ground: '#6b5236', groundDark: '#3d2e21',
 };
 // colours mixed from two of the palette: [a, b, how much of b]
 export const MIXES = { earth: ['skyBase', 'groundDark', 0.3], timber: ['leaf', 'snow', 0.25], wood: ['ground', 'leaf', 0.45], bridge: ['ground', 'rockLight', 0.45], moss: ['pine', 'leafOlive', 0.45] };
@@ -77,3 +77,36 @@ export const TREES = {
   F: ['  ,&&,  ', ' (&&&&) ', '(&&&&&&)', '(&&&&&&)', '  \\||/  ', '   ||   '],
 };
 export const LEAF_ROW = 0.74;   // a broadleaf's rows sit this close, so its crown is one mass of leaves
+
+// The flag on the summit, a pixel to a letter: w cloth, k ink, g the ball, p its tongue, . cloth too (the flag is a rectangle).
+export const FLAG = [
+  '.........wwwwwww...........',
+  '........wwkkwkkww....www...',
+  '.......wwkwwkwwkww..wwkww..',
+  '.......wkwwkwkkkkwwwwkwkww.',
+  '.....wwwkkkkkgggkkkwkwkwkww',
+  '.....wkkggggggggkgkwwkwwwkw',
+  '....wwkgggggggggkgkwkwwwkww',
+  '....wkggkkggkkggkgkwwkkkwkw',
+  '....wkgkkggkkgggkggkwwwwwkw',
+  '....wkgkkkgkkkggkggkwwwwwkw',
+  '..wwwkgkkkgkkkggkggkwwwwkww',
+  '.wwkkgggkgggkgggkggkkkkkww.',
+  'wwkwkgggggggggggkgggkwwww..',
+  'wkwwkggkgggggkgggkggkw.....',
+  'wkwwkgggkkkkkggggkggkw.....',
+  'wkwkkgggkpppkggggkggkw.....',
+  'wwkwkggggkkkgggggkggkw.....',
+  'wkwwwkgggggggggggkgkww.....',
+  'wkwwkwkkggggggggggkww......',
+  'wwkkwkwwkkkkkkkkkkww.......',
+  '.wwwkwwwwkwwwwwkwww........',
+  '...wwwwwwkwwwwwkwww........',
+  '...wwwwwkkwwwwwkkww........',
+  '...wwwwkwwkwwwkwwkwwww.....',
+  '..wwkkkwkkkwwwkkkwkkkww....',
+  '..wkkwwkwwwkwkwwwkwwkkw....',
+  '..wkwwwwkwwkwkwwkwwwwkw....',
+  '..wwkkkkkkkwwwkkkkkkkww....',
+  '...wwwwwwwwwwwwwwwwwww.....',
+];
