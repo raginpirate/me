@@ -82,11 +82,21 @@ export function paintLobe(l, d, N, kx, peakShows) {
           const bare = 1 - wd, A = arete.get(r * W + x), turn = x + 0.5 - middle + 0.5 * shoulder * (N.fbm(0.018 * r + seed, 3.3, 2) - 0.5) * 2;   // where light gives way to shadow wanders down the face
           const lit = 1 - smooth(-0.5 * shoulder, 0.5 * shoulder, turn), across = clamp(Math.abs(x - cx) / (0.5 * W), 0, 1);
           const facet = (N.fbm(0.17 * x + 4.2 + seed, 0.11 * r + 1.1, 3) - 0.5) * 0.75, grain = (N.noise(0.9 * x + seed, 0.9 * r) - 0.5) * 0.2;
-          const light = clamp(0.16 + 0.28 * lit + 0.18 * (1 - across) + 1.3 * facet + grain - 0.0015 * depth, 0, 1);
+          // Below the clouds the main mountain is close enough to see its build: ribs running down and fanning out from the
+          // summit, each lit on the side that faces the light and dark on the other, with a line along its crest. `rel` brings
+          // that in under the snow; `rise` is how the ground climbs to the right here, which is what the light catches.
+          const rel = core ? smooth(4.5, 4.85, at) : 0; let rise = 0, spine = false;
+          if (rel > 0) {
+            const fan = 1 + 1.1 * (r - bodyTop) / S, u = (x + 0.5 - middle) / fan + 9 * (N.fbm(0.04 * r + seed, 0.015 * x + 5, 2) - 0.5), high = (v) => N.fbm(0.105 * v + seed + 31, 0.03 * r + 2.3, 3) + 0.35 * N.noise(0.31 * v + seed, 0.06 * r);
+            const h = high(u), hl = high(u - 1 / fan), hr = high(u + 1 / fan), wide = high(u + 1.6) - high(u - 1.6);
+            rise = clamp(3.2 * wide, -1, 1); spine = h > hl && h >= hr && Math.abs(wide) < 0.09 && h > 0.52;
+          }
+          const light = clamp(0.16 + 0.28 * lit * (1 - 0.5 * rel) + 0.18 * (1 - across) + 1.3 * facet * (1 - 0.75 * rel) + 0.42 * rel * rise + grain - 0.0015 * depth, 0, 1);
           const line = snowAbs(x) - 0.3 * S + (A ? 11 : 0) + 0.25 * S * smooth(0.1, -0.25, facet), snow = at < 5.6 && r < line, topRow = depth < 1 && !(core && r <= bodyTop + 1), sn = light + (snow ? 0.25 : 0.2);
-          const ch = topRow ? (snow ? (lit >= 0.5 ? '@' : '%') : Math.abs(slope[x]) <= 0.8 ? edge(frac(crest[x]), slope[x]) : slope[x] < 0 ? '/' : '\\') : A ?? (sn > 0.85 ? '#' : sn > 0.65 ? '%' : sn > 0.45 ? ':' : sn > 0.3 ? '.' : null);
+          const rib = spine && !snow ? (x + 0.5 < middle - 3 ? '/' : x + 0.5 > middle + 3 ? '\\' : '|') : null, dark = rel > 0 && !snow && rise < -0.15 && hash(r + 3, x, seed) < 0.75 * rel * smooth(-0.15, -0.6, rise);   // the side turned away is left dark
+          const ch = topRow ? (snow ? (lit >= 0.5 ? '@' : '%') : Math.abs(slope[x]) <= 0.8 ? edge(frac(crest[x]), slope[x]) : slope[x] < 0 ? '/' : '\\') : A ?? rib ?? (dark ? null : sn > 0.85 ? '#' : sn > 0.65 ? '%' : sn > 0.45 ? ':' : sn > 0.3 ? '.' : null);
           if (!snow && !topRow && hash(r, x, seed) > 1 - smooth(0.05, 0.6, wd)) cell = null;   // towards the trees the rock is not dimmed but thinned, so what is left of it stays crisp
-          else cell = snow ? [ch, 'snow', light > 0.45 || topRow ? 1 : 0.55] : [ch, topRow || A || sn > 0.65 ? 'rockLight' : 'rock', topRow || A || sn > 0.45 ? 1 : 0.7];
+          else cell = snow ? [ch, 'snow', light > 0.45 || topRow ? 1 : 0.55] : [ch, topRow || A || rib || sn > 0.65 ? 'rockLight' : 'rock', topRow || A || sn > 0.45 ? 1 : rib ? 0.85 : 0.7];
         } else {
           // rock and snow, lit from the left: the face left of an arête is lit, the face right of it in shadow
           let k = 0; while (k < cross.length && cross[k] < x) k++;

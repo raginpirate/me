@@ -28,8 +28,9 @@ export const STOPS = [
   { id: 'sky', open: 0.72 },
   { id: 'ucp', at: [1.15, 0.66] }, { id: 'w3c', at: [1.8, 0.30] }, { id: 'fido', at: [2.45, 0.70] }, { id: 'shopify', at: [3.1, 0.34] },   // a step apart, from the name to the flag
   { id: 'summit', at: [3.75, 0.44], mark: 'flag' },   // the flag stands where the peak puts it
-  { id: 'climb', at: [4.69, 0.62], mark: 'axe' }, { id: 'subscriptions', at: [5.84, 0.30], mark: 'cairn' },
-  { id: 'fera', at: [6.54, 0.70], mark: 'post' }, { id: 'first', at: [7.24, 0.34], mark: 'post' },
+  { id: 'climb', at: [4.62, 0.62], mark: 'axe' }, { id: 'subscriptions', at: [5.5, 0.30], mark: 'cairn' },   // and a step apart from the flag to the hut
+  { id: 'fera', at: [6.35, 0.70], mark: 'post' }, { id: 'first', at: [7.2, 0.34], mark: 'post' },
+  { id: 'lorem', at: [8.03, 0.68], mark: 'post' }, { id: 'ipsum', at: [8.87, 0.34], mark: 'post' },
   { id: 'base', at: [9.7, 0.66], mark: 'hut' },
 ];
 // when a card is open (viewport centre, screens from its light) and where a glide settles, by layout
