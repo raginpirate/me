@@ -88,11 +88,12 @@ export function packLobe(l, i, dims, glyph) {
 // The ground: earth under the line, the line hiding what is behind it, turf and soil and roots, and the hut.
 export function packGround({ ground, dims }, glyph) {
   const li = LAYER.ground, G = dims.groundRow + 1, { cols, deep, hutLeft, cells } = ground;
-  return run(1 + 2 * cells.length + 1 + 72, (w) => {
+  return run(1 + 2 * cells.length + 5 + 72, (w) => {
     w.solid(0, G, 0, 0, cols, deep + 4, 1, colour('earth'), 1, li);
     for (const [row, col] of cells) if (row === -1) w.solid(col, G - 1, 0, 0, 1, 1, 1, SKY, 1, li);
     for (const [row, col, ch, name, alpha] of cells) w.put(col, G + row, 0, 0, 0, 0, 1, glyph(ch), colour(name), alpha, li);
-    w.solid(hutLeft + 1, G - 6, 0, 0, 11, 5, 1, SKY, 1, li);
+    // the hut hides what is behind it, to its own outline and no further: under the ridge line, between the roof's slopes, between the walls
+    for (const [row, from, to, top] of [[1, 3, 10, 0.78], [2, 2.5, 10.5, 0], [3, 1.5, 11.5, 0], [4, 1.5, 11.5, 0], [5, 1.5, 11.5, 0]]) w.solid(hutLeft + from, G + row - 7 + top, 0, 0, to - from, 1 - top, 1, SKY, 1, li);
     HUT.forEach((text, i) => [...text].forEach((ch, j) => { if (ch !== ' ') w.put(hutLeft + j, G + i - 7, 0, 0, 0, 0, 1, glyph(ch), colour('[]'.includes(ch) ? 'ember' : 'timber'), 1, li); }));
   });
 }

@@ -4,7 +4,7 @@ export const PALETTE = {
   sky: '#070a14', skyBase: '#0b0907', ink: '#e3e9f3', muted: '#8d9bb4', dim: '#5a6a86', rule: '#7f93b4', star: '#c9d8ee',
   starBright: '#f2f6ff', white: '#ffffff', thread: '#becee8', ember: '#f3c86b', emberHot: '#ffe196', rockLight: '#8c9bb8',
   rock: '#4f5e7c', rockDark: '#2f3a56', far: '#2a3450', snow: '#eef3fb', bird: '#b8c6da', pine: '#3f7a55', pineDark: '#24513a',
-  leaf: '#d08a3a', heart: '#f08aa0', lime: '#cddc2e', mauve: '#c77db8', leafOlive: '#9aa84a', ground: '#6b5236', groundDark: '#3d2e21',
+  leaf: '#d08a3a', heart: '#f08aa0', lime: '#cddc2e', mauve: '#c77db8', black: '#000000', leafOlive: '#9aa84a', ground: '#6b5236', groundDark: '#3d2e21',
 };
 // colours mixed from two of the palette: [a, b, how much of b]
 export const MIXES = { earth: ['skyBase', 'groundDark', 0.3], timber: ['leaf', 'snow', 0.25], wood: ['ground', 'leaf', 0.45], bridge: ['ground', 'rockLight', 0.45], moss: ['pine', 'leafOlive', 0.45] };
@@ -110,3 +110,10 @@ export const FLAG = [
   '..wwkkkkkkkwwwkkkkkkkww....',
   '...wwwwwwwwwwwwwwwwwww.....',
 ];
+
+// The cats by the hut, a pixel to a letter: k black, e an eye. Each is given a thin pale edge when drawn, or it would be lost in the dark.
+export const CATS = {
+  sit: ['.k.....k....', '.kk...kk....', '.kkkkkkk....', '.kekkkek....', '.kkkkkkk....', '..kkkkk.....', '..kkkkkk....', '.kkkkkkk....', '.kkkkkkkk..k', '.kkkkkkkk.kk', '.kkkkkkkkkk.', '.kk.kk.kkk..'],
+  sleep: ['...........k..k.', '..kkkkkkk..kkkk.', '.kkkkkkkkkkkkkk.', 'kkkkkkkkkkkkkkk.', 'kkkkkkkkkkkkkk..', '.kkkkkkkkkkkk...'],
+  play: ['.............k..', '............kk..', '.k..k......kk...', '.kkkk...kkkkk...', '.kekk.kkkkkkk...', '.kkkkkkkkkkkk...', '..kkkkkkkkkk....', '.kk.......kkk...', 'kk.........kk...'],
+};
