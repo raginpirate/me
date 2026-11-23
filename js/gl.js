@@ -5,7 +5,7 @@ import { BYTES, FORMAT, LAYERS, LADDER, VERTEX, FRAGMENT } from './glsl.js';
 export const GLYPH0 = 2;   // glyph ids 0 and 1 are not characters (0 is a solid)
 
 export function makeGL(canvas, { font, chars, force = false, heat = false }) {
-  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: !force });
+  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: true, stencil: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: !force });
   if (!gl) return null;
   const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const program = gl.createProgram();
@@ -63,7 +63,7 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, gl.createTexture()); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));   // no ground until a lobe brings one
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, heat ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA); gl.uniform1f(U.uHeat, heat ? 1 : 0); gl.depthFunc(gl.LEQUAL);
   const set = { f: (n, v) => gl.uniform1f(U[n], v), v3: (n, a, b, c) => gl.uniform3f(U[n], a, b, c), v2: (n, a, b) => gl.uniform2f(U[n], a, b), v4: (n, a, b, c, d) => gl.uniform4f(U[n], a, b, c, d), fv3: (n, arr) => gl.uniform3fv(U[n], arr), fv4: (n, arr) => gl.uniform4fv(U[n], arr) };
-  let lit = -1, test = -1, wash = -1, mask = -1;
+  let lit = -1, test = -1, wash = -1, mask = -1, under = -2;
   return {
     gl, layers, set, glyph: (ch) => { const i = chars.indexOf(ch); if (i < 0) throw new Error(`no glyph for ${ch}`); return i + GLYPH0; },
     get typePx() { return typePx; }, atlas,
@@ -88,17 +88,26 @@ export function makeGL(canvas, { font, chars, force = false, heat = false }) {
     },
     // a frame: the sky, the layer table, what is alive
     begin(sky, liveBytes, liveCount) {
-      gl.depthMask(true); gl.colorMask(true, true, true, true); gl.clearColor(heat ? 0 : sky[0], heat ? 0 : sky[1], heat ? 0 : sky[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.depthMask(true); gl.colorMask(true, true, true, true); gl.clearColor(heat ? 0 : sky[0], heat ? 0 : sky[1], heat ? 0 : sky[2], 1); gl.stencilMask(0xff); gl.clearStencil(0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
       gl.bindBuffer(gl.UNIFORM_BUFFER, ubo); gl.bufferSubData(gl.UNIFORM_BUFFER, 0, layers);
       if (liveCount) { gl.bindBuffer(gl.ARRAY_BUFFER, live.buf); gl.bufferSubData(gl.ARRAY_BUFFER, 0, liveBytes, 0, liveCount * BYTES); }
-      lit = test = mask = -1;
+      lit = test = mask = -1; under = -2;
     },
-    // draw a range. o.live: from the live buffer · o.test: hidden behind nearer opaque lobes · o.lit: after the dark · o.wash: [texture, x, y, w, h] · o.mask: depth only
-    draw(first, count, o) {
+    // Draw a range. o.live: from the live buffer · o.test: not where something nearer is in the depth · o.lit: after the dark
+    // · o.wash: [texture, x, y, w, h] · o.mask: into the depth only (1), or only marking where it is with the number `mark` (2).
+    // `below`: for ink, drawn only where nothing marked with a higher number hides it (-1: no such test).
+    draw(first, count, o, mark = 0, below = -1) {
       if (count <= 0) return;
       (o.live ? live : world).point(first);
-      const m = o.mask ? 1 : 0, t = o.test || m ? 1 : 0, l = o.lit ? 1 : 0;
-      if (m !== mask) { gl.colorMask(!m, !m, !m, !m); gl.depthMask(!!m); gl.uniform1f(U.uMask, m); mask = m; }
+      const m = o.mask ? (mark ? 2 : 1) : 0, t = o.test || m ? 1 : 0, l = o.lit ? 1 : 0;
+      if (m !== mask) { gl.colorMask(!m, !m, !m, !m); gl.depthMask(m === 1); gl.uniform1f(U.uMask, m ? 1 : 0); mask = m; under = -2; }
+      const want = m === 2 ? 1000 + mark : below;   // the stencil's state: writing a mark, testing against one, or off
+      if (want !== under) {
+        under = want;
+        if (m === 2) { gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.ALWAYS, mark, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE); }
+        else if (below >= 0) { gl.enable(gl.STENCIL_TEST); gl.stencilFunc(gl.GEQUAL, below, 0xff); gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP); }
+        else gl.disable(gl.STENCIL_TEST);
+      }
       if (t !== test) { t ? gl.enable(gl.DEPTH_TEST) : gl.disable(gl.DEPTH_TEST); test = t; }
       if (l !== lit) { gl.uniform1f(U.uLit, l); lit = l; }
       if (o.wash && o.wash[0] !== wash) { wash = o.wash[0]; gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, formTex[wash]); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, washTex[wash]); gl.uniform4f(U.uWashBox, o.wash[1], o.wash[2], o.wash[3], o.wash[4]); }

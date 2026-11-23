@@ -7,10 +7,16 @@ export const FORMAT = [['aAnchor', 2, 'FLOAT', 0], ['aLocal', 2, 'SHORT', 8], ['
 export const KIND = { plain: 0, star: 1, tree: 2, snow: 3, leaf: 4, cloud: 5, route: 6 };
 // bits of p. INK: centred on its ink, not set as type · WASH: a solid filled with its lobe's ground · MIST: the ground alone, hiding nothing
 // HOT: the bright heart of the lit route · snow and leaves keep their depth in bits 4-5 and their first frame in bits 6-7
-// on a plain glyph, BARE: not dimmed by its lobe's tone · FREE: it moves, so it is not set on the pixel. On a solid, DISC: a soft round hollow
-export const INK = 1, WASH = 2, MIST = 4, HOT = 8, DISC = 8, BARE = 16, FREE = 32;
+// on a plain glyph, BARE: not dimmed by its lobe's tone · FREE: it moves, so it is not set on the pixel
+export const INK = 1, WASH = 2, MIST = 4, HOT = 8, BARE = 16, FREE = 32;
 // How a solid meets what is behind it. EDGE: its top is a slope (aLocal holds the top at its left and right, in rows) with
 // a haze rising off it · SOFT_X, SOFT_Y: its ends, or its top and bottom, are feathered
+// HIDE: it has no colour at all. It is drawn into the depth alone, and what it does is keep farther ink from being drawn
+// where it is; the surface behind it is left as it was. This is the only way anything hides what is behind it: nothing is
+// ever painted in a colour that stands for "what is behind", so there is nothing to mismatch and no edge to see.
+// A HIDE solid's colour byte is its rank (1-255): how far in front of its layer it stands, in STEPs. A glyph's second
+// parameter is its rank too, and it stands half a step in front of that, so a thing's own ink is never hidden by itself.
+export const HIDE = 128, STEP = 0.00007;
 export const EDGE = 16, SOFT_X = 32, SOFT_Y = 64, HAZE = [0.45, 0.5];   // the haze is a hairline: how many rows it rises, how much it hides at the edge
 export const TRAIL = 32;   // how many moments of the pointer's past the shader is given
 export const LAYERS = 40, COLOURS = 40, LADDER = [-8, 5];   // layers in the table; palette entries; the atlas's sizes, in quarter octaves of the type size
@@ -26,7 +32,10 @@ export function writer(buffer) {
     view.setUint16(o + 12, ex, true); view.setUint16(o + 14, ey, true); view.setUint16(o + 16, Math.round(k * 1024), true);
     view.setUint8(o + 18, glyph); view.setUint8(o + 19, colour); view.setUint8(o + 20, Math.round(alpha * 255)); view.setUint8(o + 21, layer); view.setUint8(o + 22, kind); view.setUint8(o + 23, p);
   };
-  return { put, solid: (ax, ay, lx, ly, w, h, k, colour, alpha, layer, p = 0, kind = 0) => put(ax, ay, lx, ly, Math.round(w * 32), Math.round(h * 32), k, 0, colour, alpha, layer, kind, p), get count() { return n; }, set count(v) { n = v; } };
+  const SURFACE = WASH | HIDE;   // a solid is a surface with a colour of its own, a layer's ground (WASH: its colour is the ground rule's), or it only hides
+  return { put, solid: (ax, ay, lx, ly, w, h, k, colour, alpha, layer, p = 0, kind = 0) => {
+    if (colour === 0 && !(p & SURFACE)) throw new Error('a solid in the sky\'s colour: nothing may be painted to stand for what is behind it (use HIDE)');
+    put(ax, ay, lx, ly, Math.round(w * 32), Math.round(h * 32), k, 0, colour, alpha, layer, kind, p); }, get count() { return n; }, set count(v) { n = v; } };
 }
 
 const COMMON = `#version 300 es
@@ -65,7 +74,10 @@ vec2 pushed(vec2 px) {
 void main() {
   int li = int(aG.w), kind = int(aKP.x), p = int(aKP.y); float glyph = aG.x, alpha = aG.z / 255., k = aK / 1024.;
   vec4 a = A[li], b = B[li], c = C[li]; vec2 anchor = aAnchor, corner = vec2(gl_VertexID & 1, gl_VertexID >> 1), nudge = vec2(0.);
-  float s = a.y, vis = a.w, tone = b.x; bool ink = (p & ${INK}) != 0;
+  float s = a.y, vis = a.w, tone = b.x; bool ink = (p & ${INK}) != 0, hides = glyph < .5 && (p & ${HIDE}) != 0;
+  // what only hides is drawn into the depth and nowhere else; and into the depth goes only what hides, and a layer's own body
+  if (hides ? uMask < .5 : uMask > .5 && !(glyph < .5 && (p & ${EDGE}) != 0)) { gl_Position = vec4(2., 2., 2., 1.); return; }
+  float rank = hides ? aG.y : glyph >= .5 && (kind == ${KIND.plain} || kind == ${KIND.tree} || kind == ${KIND.route} || kind == ${KIND.cloud}) && aExt.y > 0. ? aExt.y + .5 : 0.;
   vec2 origin = vec2((a.x - c.y * s) * uCell.x, uRes.y / 2. - a.z * uCell.y * s);   // where its layer's (0, 0) is
   if (kind == ${KIND.cloud}) anchor.x = mod(anchor.x + c.z * uTime, c.w);                                               // a cloud drifts round its layer
   else if (kind == ${KIND.tree}) k = min(2. / s, k * exp(.42 * clamp((clamp(anchor.y, b.z, b.w) - b.y) / uS, -1.6, 1.6)));   // a tree grows as you come down to it
@@ -92,10 +104,10 @@ void main() {
   vec2 own = uCell * s * k;                                   // its own cell, device px
   bool sloped = glyph < .5 && (p & ${EDGE}) != 0;
   vec2 at = origin + anchor * uCell * s + (sloped ? vec2(0.) : aLocal / 256. * own) + nudge, size;
-  vColour = vec4(uPalette[int(aG.y)], alpha * vis); vTone = tone; vMode = 0.;
+  vColour = vec4(uPalette[min(int(aG.y), ${COLOURS - 1})], alpha * vis); vTone = tone; vMode = 0.;
   if (kind == ${KIND.leaf}) vColour.a *= .2 + .8 * (1. - smooth01(uLamp.z, uLamp.w, distance(at, uLamp.xy)));           // brightest in your light
   if (glyph < .5) {                                           // a solid
-    size = aExt / 32. * own; vMode = float(1 + (p & ${WASH | MIST | DISC})); vUV = corner; vEdge = vec4(0.);
+    size = aExt / 32. * own; vMode = float(1 + (p & ${WASH | MIST})); vUV = corner; vEdge = vec4(0.);
     if (sloped) {
       vec2 tops = aLocal / 256.;                              // rows down from the solid's own top to its edge, at the left and at the right
       if (uMask > .5) { float cut = max(tops.x, tops.y); at.y += cut * own.y; size.y -= cut * own.y; tops -= cut; }   // what it hides outright is the part under its edge
@@ -115,7 +127,7 @@ void main() {
     if (page && (p & ${FREE}) == 0) at = floor(at + .5);
     vUV = box.xy + corner * box.zw;
   }
-  gl_Position = vec4((at + corner * size) / uRes * vec2(2., -2.) + vec2(-1., 1.), c.x, 1.);
+  gl_Position = vec4((at + corner * size) / uRes * vec2(2., -2.) + vec2(-1., 1.), c.x - rank * ${STEP} + (kind == ${KIND.star} ? .05 : 0.), 1.);   // the stars are behind everything
 }`;
 
 export const FRAGMENT = COMMON + `
@@ -129,7 +141,6 @@ void main() {
   vec3 sky = uPalette[0]; vec4 c;
   if (vMode < .5) c = vec4(vColour.rgb, 1.) * (vColour.a * texture(uAtlas, vUV / vec2(textureSize(uAtlas, 0))).r);
   else if (vMode < 1.5) c = vec4(vColour.rgb, 1.) * vColour.a;
-  else if (vMode > 8.5) c = vec4(sky, 1.) * (vColour.a * clamp((1. - length(vUV * 2. - 1.)) / .55, 0., 1.));
   else {
     // A layer's ground, at this pixel, from its skyline alone. Under the skyline: the layer hides everything, and its
     // ground is toned, most just under the edge. Above it: nothing but a hairline of haze and, off wooded ground, mist
@@ -144,7 +155,7 @@ void main() {
     float hides = vEdge.z > 0. ? mix(${HAZE[1]} * hair * hair, 1., clamp(under * vEdge.w + .5, 0., 1.)) : 1.;   // the layer's own body; what stands on it hides outright
     c = vec4(sky * hides * (1. - ground.a) + ground.rgb, hides + ground.a * (1. - hides)) * vColour.a;
   }
-  if (vMode > .5 && vMode < 8.5) {   // feathered ends
+  if (vMode > .5) {   // feathered ends
     vec2 pos = vUV * vSoft.xy;
     if (vSoft.z > 0.) c *= clamp(min(pos.x, vSoft.x - pos.x) / vSoft.z, 0., 1.);
     if (vSoft.w > 0.) c *= clamp(min(pos.y, vSoft.y - pos.y) / vSoft.w, 0., 1.);

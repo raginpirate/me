@@ -2,7 +2,7 @@
 // way down. Each frame it writes them, in drawing order, into one buffer of instances.
 
 import { clamp, smooth, mix, twinkle, mulberry32 } from './math.js';
-import { BYTES, KIND, INK, HOT, DISC, BARE, FREE, TRAIL, SOFT_Y, writer } from './glsl.js';
+import { BYTES, KIND, INK, HOT, HIDE, BARE, FREE, TRAIL, writer } from './glsl.js';
 import { LAYER, colour } from './pack.js';
 import { TREES, LEAF_ROW, FRAME, FLAG, CATS } from './art.js';
 
@@ -12,9 +12,8 @@ const SPRING = { star: [7, 0.5, 3, 5, 2.5, 1], light: [12, 0.6, 1.2, 5, 0.5, 0.6
 const POST = [['|', -1.05, 0.55, 1], ['|', -1.05, -0.3, 1], ['|', -1.05, -1.15, 1], [',', -0.95, -1.82, 1], ['-', -0.5, -1.96, 1], ["'", -0.02, -1.8, 1]];
 const MARKS = {
   lantern: [POST, 0.85], hut: [POST, 0.85],
-  // a snowman in a top hat, its two branches held out level, the lantern hanging from the end of one
-  snowman: [[['O', -1.75, 0.3, 1.7, 'snow'], ['o', -1.75, -0.75, 1.2, 'snow'], ['o', -1.75, -1.55, 0.85, 'snow'], ['=', -1.75, -2.02, 0.95, 'rule'], ['n', -1.75, -2.36, 0.85, 'rule'],
-    ['-', -2.6, -0.85, 1, 'wood'], ['-', -3.1, -0.85, 1, 'wood'], ['-', -0.95, -0.85, 1, 'wood'], ['-', -0.42, -0.85, 1, 'wood'], ["'", -0.02, -0.72, 1]], -0.02],
+  // a snowman, its two branches held out level, the lantern hanging from the end of one (its top hat is drawn in pixels, below)
+  snowman: [[['O', -1.75, 0.3, 1.7, 'snow'], ['o', -1.75, -0.75, 1.2, 'snow'], ['o', -1.75, -1.55, 0.85, 'snow'], ['-', -2.6, -0.85, 1, 'wood'], ['-', -3.1, -0.85, 1, 'wood'], ['-', -0.95, -0.85, 1, 'wood'], ['-', -0.42, -0.85, 1, 'wood'], ["'", -0.02, -0.72, 1]], -0.02],
 };
 // The animals. Each drawing here was put, alone and unlabelled, at the size it has in the scene, in front of a reader who
 // was told nothing, and kept only once that reader named the animal. They are drawn in small type (z of the page's size,
@@ -30,12 +29,12 @@ const BEASTS = {
   owl: { tint: 'timber', eyes: 'o', rows: ['  ^ ^ ', ' {o,o}', ' /)_) ', '  " " '] },
 };
 const TURNED = { '/': '\\', '\\': '/', '(': ')', ')': '(', '<': '>', '>': '<', '{': '}', '}': '{' };
-const ORDER = ['sky', 'birds', 'smoke', 'animals', 'bridges', 'litBridges', 'flag', 'lamps', 'waypoints', 'tethers'];
+const ORDER = ['sky', 'birds', 'smoke', 'animals', 'bridges', 'litBridges', 'flag', 'lamps', 'waypoints', 'tethers', 'hides', 'hidesFront'];
 
 export function makeLive(gl, model, view, scene, cards) {
   const d = model.dims, { lobes, stops, ground, turn, air } = model, { S, cellW, cellH, cols, typeSize, aspect, u, groundRow: G } = d, { state, made, place, hidden } = scene;
   const ROOM = 16384, buffer = new ArrayBuffer(ROOM * BYTES), w = writer(buffer), ranges = Object.fromEntries(ORDER.map((n) => [n, [0, 0]])), glyphs = {}, RA = air.random;
-  const g = (ch) => glyphs[ch] ??= gl.glyph(ch), pick = (list) => list[Math.floor(RA() * list.length)], PAGE = LAYER.page, SKY = 0;
+  const g = (ch) => glyphs[ch] ??= gl.glyph(ch), pick = (list) => list[Math.floor(RA() * list.length)], PAGE = LAYER.page, AIR = LAYER.air, FRONT = LAYER.front, NEAR = 255;   // FRONT: the ground's layer again, in front of the hut. NEAR: the rank of what stands in front of its layer's trees
   let top = 0, time = 0, dt = 0.016, last = -1, lastTop = 0, vel = 0, shove = 0, lean = 0, leanV = 0, lamps = 0;
   const ptr = { x: 0, y: 0, at: -1e9, on: false, c: 0, r: 0 };
   addEventListener('pointermove', (e) => { ptr.x = e.clientX + view.ox; ptr.y = e.clientY; ptr.at = performance.now(); }, { passive: true });
@@ -56,10 +55,21 @@ export function makeLive(gl, model, view, scene, cards) {
   }
 
   // placing: an object by its ink, at a screen point (css px); type on the page's lines, at a cell
-  const ink = (ch, name, x, y, size, alpha, kind = 0, p = 0) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x / cellW, top + y / cellH, 0, 0, 0, 0, size / typeSize, g(ch), colour(name), Math.min(1, alpha), PAGE, kind, INK | p); };
+  const ink = (ch, name, x, y, size, alpha, kind = 0, p = 0, layer = PAGE) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x / cellW, top + y / cellH, 0, 0, 0, 0, size / typeSize, g(ch), colour(name), Math.min(1, alpha), layer, kind, INK | p); };
   const put = (ch, name, c, r, alpha) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(c, r, 0, 0, 0, 0, 1, g(ch), colour(name), Math.min(1, alpha), PAGE, 0, FREE); };
   // on a layer of its own (a lobe, the ground): offsets and sizes in that layer's type
-  const on = (li, x, y, ch, name, dx, dy, size, alpha, kind = 0, lx = 0, ly = 0) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x, y, (dx * typeSize / cellW + lx) / size, (dy * typeSize / cellH + ly) / size, 0, 0, size, g(ch), colour(name), Math.min(1, alpha), li, kind, INK | BARE); };
+  const on = (li, x, y, ch, name, dx, dy, size, alpha, kind = 0, lx = 0, ly = 0, rank = 0) => { if (alpha > 0.004 && w.count < ROOM - 8) w.put(x, y, (dx * typeSize / cellW + lx) / size, (dy * typeSize / cellH + ly) / size, 0, rank, size, g(ch), colour(name), Math.min(1, alpha), li, kind, INK | BARE); };
+  // What hides: a rectangle on a layer that keeps farther ink from being drawn where it is, and paints nothing. They are
+  // gathered as the frame is drawn and written together at its end, since they are drawn first, into the depth alone.
+  const hiding = [];
+  const hide = (li, x, y, lx, ly, wide, tall, rank = NEAR, kind = 0) => { hiding.push(li, x, y, lx, ly, wide, tall, rank, kind); };
+  // written lobe by lobe (each lobe's are drawn with that lobe), then those in front of every lobe
+  const hideOf = Array.from({ length: 40 }, () => [0, 0]), writeOne = (i) => { if (w.count < ROOM - 8) w.solid(hiding[i + 1], hiding[i + 2], hiding[i + 3], hiding[i + 4], hiding[i + 5], hiding[i + 6], 1, hiding[i + 7], 1, hiding[i], HIDE, hiding[i + 8]); };
+  const lobeLayer = (li) => li >= LAYER.lobe && li < LAYER.ground;
+  const writeHides = () => {
+    for (let li = LAYER.lobe; li < LAYER.ground; li++) { const first = w.count; for (let i = 0; i < hiding.length; i += 9) if (hiding[i] === li) writeOne(i); hideOf[li][0] = first; hideOf[li][1] = w.count - first; }
+    const first = w.count; for (let i = 0; i < hiding.length; i += 9) if (!lobeLayer(hiding[i])) writeOne(i); ranges.hidesFront[0] = first; ranges.hidesFront[1] = w.count - first;
+  };
   const section = (name, draw) => { const first = w.count; draw(); ranges[name][0] = first; ranges[name][1] = w.count - first; };
 
   function spring(p, [stiff, zeta, far, reach, most, share], held = 1) {
@@ -177,7 +187,7 @@ export function makeLive(gl, model, view, scene, cards) {
   // --- the flag on the summit ---
   // The flag is cloth: a rectangle of pixels with a figure on it, a column at a time, each column riding the wind a little
   // behind the one nearer the pole. The wind up here is hard, so it snaps more than it sways.
-  const flagAt = stops.findIndex((q) => q.mark === 'flag'), INKS = { w: colour('snow'), '.': colour('snow'), k: SKY, g: colour('lime'), p: colour('mauve') };
+  const flagAt = stops.findIndex((q) => q.mark === 'flag'), INKS = { w: colour('snow'), '.': colour('snow'), k: colour('black'), g: colour('lime'), p: colour('mauve') };
   const PAD = 9, banner = FLAG.map((row) => '.'.repeat(PAD) + row + '.'.repeat(PAD));   // cloth either side of the figure: a flag is wider than it is tall
   const cloth = Array.from({ length: banner[0].length }, (_, i) => { const runs = []; for (let j = 0; j < banner.length; j++) { const c = INKS[banner[j][i]], last = runs[runs.length - 1]; if (last && last[2] === c) last[1]++; else runs.push([j, 1, c]); } return runs; });
   const blown = new Float32Array(cloth.length), blowing = new Float32Array(cloth.length);   // how far the pointer has knocked each column, and how fast it is going
@@ -193,7 +203,7 @@ export function makeLive(gl, model, view, scene, cards) {
       const near = over ? Math.max(0, 1 - Math.abs(ptr.x - cx) / (0.35 * wide)) : 0, knock = near * (14 * ptr.vy + 40 * Math.sign(y0 + tall / 2 - ptr.y) * Math.min(1, Math.abs(ptr.vx) / 6)), held = i ? 0.9 * blown[i - 1] : 0;
       blowing[i] += (-90 * (blown[i] - held) - 9 * blowing[i] + 60 * knock * far) * dt; blown[i] = clamp(blown[i] + blowing[i] * dt, -1.2 * tall, 1.2 * tall) * (i ? 1 : 0);
       const ride = gust * far * (1.5 * Math.sin(phase) + 0.6 * Math.sin(2.3 * phase + 1)) * px + 0.7 * far * far * px + blown[i], shade = 0.84 + 0.16 * Math.cos(phase + 0.6);
-      for (const [j, n, c] of runs) w.solid(cx / cellW, top + (y0 + j * px + ride) / cellH, 0, 0, 1.04 * px / cellW, (n * px + 0.4) / cellH, 1, c, c === SKY ? 1 : shade, PAGE, 0);
+      for (const [j, n, c] of runs) w.solid(cx / cellW, top + (y0 + j * px + ride) / cellH, 0, 0, 1.04 * px / cellW, (n * px + 0.4) / cellH, 1, c, c === INKS.k ? 1 : shade, PAGE, 0);
     });
   }
 
@@ -217,8 +227,8 @@ export function makeLive(gl, model, view, scene, cards) {
   function drawBridges(litPass) {
     if (!litPass) { findBridges(); plankCount = 0; }
     for (const [x0, y0, x1, y1, uB, vis, count, sag, len] of spans) {
-      // a bridge hangs in front of whatever is behind it: clear its own strip of the picture first, so it reads over rock and trees
-      if (!litPass) for (let j = 0; j <= count; j++) { const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt); if (w.count < ROOM - 8) w.solid(x / cellW, top + y / cellH, -0.4 * uB / cellW, -1.5 * uB / cellH, 0.8 * uB / cellW, 2.1 * uB / cellH, 1, SKY, 0.9 * vis, PAGE, SOFT_Y); }
+      // a bridge hangs in front of whatever is behind it: the ink behind its own strip is not drawn, so it reads over rock and trees
+      if (!litPass) for (let j = 0; j <= count; j++) { const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt); if (vis > 0.5) hide(AIR, x / cellW, top + y / cellH, -0.4 * uB / cellW, -1.35 * uB / cellH, 0.8 * uB / cellW, 1.8 * uB / cellH); }
       for (let j = 0; j <= count; j++) {
         const tt = j / count, x = x0 + (x1 - x0) * tt, y = y0 + (y1 - y0) * tt + sag * 4 * tt * (1 - tt);
         if (litPass) { ink('=', 'ember', x, y, 0.95 * uB, vis, KIND.route); ink('=', 'emberHot', x, y, 0.95 * uB, vis, KIND.route, HOT); ink('·', 'ember', x, y - 0.95 * uB, uB, 0.8 * vis, KIND.route); ink('·', 'emberHot', x, y - 0.95 * uB, uB, 0.8 * vis, KIND.route, HOT); continue; }
@@ -238,8 +248,8 @@ export function makeLive(gl, model, view, scene, cards) {
     for (let j = 0; j < n; j++) {
       const lamp = candidates[Math.floor((j + 0.5) / n * candidates.length)]; if (!lamp) continue;
       const [i, c, r] = lamp; if (!state.pose[i].on || state.pose[i].vis < 0.1) continue;
-      w.solid(c + 0.5, r + 0.5, -bw / 2, -bh / 2, bw, bh, 1, SKY, 1, LAYER.lobe + i);
-      on(LAYER.lobe + i, c + 0.5, r + 0.5, 'o', 'ember', 0, 0, 1, twinkle(time, 2.4 * j, 0.4, 3.1));
+      hide(LAYER.lobe + i, c + 0.5, r + 0.5, -bw / 2, -bh / 2, bw, bh);
+      on(LAYER.lobe + i, c + 0.5, r + 0.5, 'o', 'ember', 0, 0, 1, twinkle(time, 2.4 * j, 0.4, 3.1), 0, 0, 0, NEAR);
     }
   }
   const P = [0, 0];
@@ -254,17 +264,21 @@ export function makeLive(gl, model, view, scene, cards) {
       if (hut) { x = ground.hutLeft - 1.6; y = G - 0.45; spots[n][0] = x * cellW * ground.k; spots[n][1] = view.h / 2 + (y - state.centreRow) * cellH * ground.k; }
       else { const p = state.pose[s.lobe]; [x, y] = lobes[s.lobe].mark; place(s.lobe, x, y, P); spots[n][0] = P[0]; spots[n][1] = p.on && p.vis >= 0.05 ? P[1] : -1e4; if (spots[n][1] < -1e3) return; }
       if (spots[n][1] < -80 || spots[n][1] > view.h + 80) return;
-      if (!hut) { const rx = 2.6 * typeSize / cellW, ry = 3.2 * typeSize / cellH; w.solid(x, y, -rx, -ry - 0.5 * lift * typeSize / cellH, 2 * rx, 2 * ry, 1, SKY, 1, li, DISC); }   // a small hollow, so it reads against rock and trees
-      const lamp = (ch, dx, dy, k) => { on(li, x, y, ch, 'dim', dx, dy, k, 1); on(li, x, y, ch, 'wood', dx, dy, k, lit); };
-      for (const [ch, dx, dy, k, own] of parts) if (own) on(li, x, y, ch, own, dx, dy, k, 1); else lamp(ch, dx, dy, k);
+      // the ink behind it is not drawn, so it reads against rock and trees: the lantern, and each part of what it hangs from
+      const em = typeSize / cellW, eh = typeSize / cellH, veil = (dx, dy, k) => hide(li, x, y, (dx - 0.38 * k) * em, (dy - 0.62 * k) * eh, 0.76 * k * em, 1.24 * k * eh);
+      veil(0, -lift, 1.5); for (const [, dx, dy, k] of parts) veil(dx, dy, k);
+      const lay = (ch, name, dx, dy, k, a) => on(li, x, y, ch, name, dx, dy, k, a, 0, 0, 0, NEAR);   // in front of its layer's trees
+      const lamp = (ch, dx, dy, k) => { lay(ch, 'dim', dx, dy, k, 1); lay(ch, 'wood', dx, dy, k, lit); };
+      for (const [ch, dx, dy, k, own] of parts) if (own) lay(ch, own, dx, dy, k, 1); else lamp(ch, dx, dy, k);
       // the lantern: a narrow frame under a cap. It is dark until you come to it; then the fire inside is lit, and it glows
       const h = -lift;
       lamp('[', -0.3, h, 0.9); lamp(']', 0.3, h, 0.9); lamp('_', 0, h - 0.7, 0.8);
       if (lit > 0.02) {
-        on(li, x, y, 'o', 'leaf', 0, h, 5.2, 0.15 * live); on(li, x, y, 'o', 'leaf', 0, h, 3.1, 0.27 * live); on(li, x, y, 'o', 'ember', 0, h, 1.9, 0.34 * live);
-        const flame = FLAME[Math.floor(7 * time + 1.7 * n) % FLAME.length]; on(li, x, y, flame, 'leaf', 0, h + 0.1, 0.8, lit); on(li, x, y, flame, 'emberHot', 0, h + 0.1, 0.8, lit * lit);
-        for (const [a, b] of [[1.3, 0], [-1.3, 0], [0, 1.35], [0, -1.35], [0.95, 0.95], [-0.95, 0.95], [0.95, -0.95], [-0.95, -0.95]]) on(li, x, y, '·', 'leaf', a, h + b, 1, 0.8 * live);
+        lay('o', 'leaf', 0, h, 5.2, 0.15 * live); lay('o', 'leaf', 0, h, 3.1, 0.27 * live); lay('o', 'ember', 0, h, 1.9, 0.34 * live);
+        const flame = FLAME[Math.floor(7 * time + 1.7 * n) % FLAME.length]; lay(flame, 'leaf', 0, h + 0.1, 0.8, lit); lay(flame, 'emberHot', 0, h + 0.1, 0.8, lit * lit);
+        for (const [a, b] of [[1.3, 0], [-1.3, 0], [0, 1.35], [0, -1.35], [0.95, 0.95], [-0.95, 0.95], [0.95, -0.95], [-0.95, -0.95]]) lay('·', 'leaf', a, h + b, 1, 0.8 * live);
       }
+      if (s.mark === 'snowman') sprite(AIR, P[0] / cellW, top + P[1] / cellH, HAT, Math.max(1.2, typeSize / 7), false, false, 0, -1.75 * em, -1.86 * eh);   // its hat: black, filled, on its head
       if (hut) { const wx = ground.window[0], wy = G + 1 + ground.window[1]; w.put(wx - 1, wy - 0.5, 0, 0, 0, 0, 1, g('['), colour('emberHot'), live, li); w.put(wx, wy - 0.5, 0, 0, 0, 0, 1, g(']'), colour('emberHot'), live, li); }   // the window lights up too
     });
   }
@@ -289,18 +303,21 @@ export function makeLive(gl, model, view, scene, cards) {
     if (!flock) return;
     const f = flock, long = (Math.ceil(f.n / 2) * 2.1 + 3) * cellW, at = H / 2 + (f.y - state.centreRow) * cellH * k; f.x += f.dir * f.v * dt; f.y += f.drift * dt;
     if ((f.dir > 0 ? f.x - long > W + 20 : f.x + long < L - 20) || at < -0.3 * H || at > 1.3 * H) { flock = null; flockIn = 1 + 2 * RA(); return; }   // gone across, or left behind by the scroll: the next is not long coming
-    for (const [dx, dy, phase] of f.birds) { const y = at + (dy * (1 + 0.08 * Math.sin(0.7 * time + phase)) + 0.3 * Math.sin(1.1 * time + phase)) * cellH; ink(Math.sin(5.5 * time + phase) > 0.1 ? 'v' : '-', 'bird', f.x + dx * cellW, y, typeSize * f.far, (0.3 + 0.45 * f.far) * smooth(clouds, clouds + 40, y)); }
+    for (const [dx, dy, phase] of f.birds) { const y = at + (dy * (1 + 0.08 * Math.sin(0.7 * time + phase)) + 0.3 * Math.sin(1.1 * time + phase)) * cellH; ink(Math.sin(5.5 * time + phase) > 0.1 ? 'v' : '-', 'bird', f.x + dx * cellW, y, typeSize * f.far, (0.3 + 0.45 * f.far) * smooth(clouds, clouds + 40, y), 0, 0, AIR); }
   }
 
   // a beast with its feet at (x, y) of a layer, in type z of the page's size
   function beast(li, x, y, name, z, left = false, pose = null, shut = false, lx = 0, ly = 0) {
-    const b = BEASTS[name], alt = pose && b[pose], rows = alt ? [...b.rows.slice(0, b.rows.length - alt.length), ...alt] : b.rows, n = rows[0].length;
-    rows.forEach((text, i) => { for (let j = 0; j < n; j++) {
-      let ch = text[left ? n - 1 - j : j]; if (!ch || ch === ' ') continue; if (left) ch = TURNED[ch] ?? ch;
-      const eye = ch === b.eyes; on(li, x, y, eye && shut ? '-' : ch, eye ? 'ember' : b.tint, (j - (n - 1) / 2) * 0.6 * z, (i - rows.length + 0.5) * z, z, 1, KIND.tree, lx, ly);   // as a tree is, so it grows as the trees about it do
-    } });
+    const b = BEASTS[name], alt = pose && b[pose], rows = alt ? [...b.rows.slice(0, b.rows.length - alt.length), ...alt] : b.rows, n = rows[0].length, em = typeSize / cellW, eh = typeSize / cellH;
+    rows.forEach((text, i) => {
+      let first = n, last = -1;
+      for (let j = 0; j < n; j++) {
+        let ch = text[left ? n - 1 - j : j]; if (!ch || ch === ' ') continue; if (left) ch = TURNED[ch] ?? ch; first = Math.min(first, j); last = j;
+        const eye = ch === b.eyes; on(li, x, y, eye && shut ? '-' : ch, eye ? 'ember' : b.tint, (j - (n - 1) / 2) * 0.6 * z, (i - rows.length + 0.5) * z, z, 1, KIND.tree, lx, ly, NEAR - 1);   // as a tree is, so it grows as the trees about it do
+      }
+      if (last >= 0) hide(li, x, y, lx + (first - (n - 1) / 2 - 0.6) * 0.6 * z * em, ly + (i - rows.length) * z * eh, (last - first + 1.2) * 0.6 * z * em, z * eh, NEAR - 1, KIND.tree);   // the ink behind this row of it is not drawn
+    });
   }
-  const hollow = (li, x, y, rx, ry, lx = 0, ly = 0) => w.solid(x, y, lx - rx * typeSize / cellW, ly - 1.7 * ry * typeSize / cellH, 2 * rx * typeSize / cellW, 2 * ry * typeSize / cellH, 1, SKY, 1, li, DISC, KIND.tree);
   // one that wanders: it stands a while, picks somewhere within its stretch, walks there
   const roamer = (reach, pace, rest, from = 0) => ({ x: from, to: from, facing: RA() < 0.5 ? 1 : -1, wait: 1 + rest * RA(), reach, pace, rest, from, moving: false });
   function wander(q) {
@@ -360,29 +377,39 @@ export function makeLive(gl, model, view, scene, cards) {
     for (let i = hearts.length - 1; i >= 0; i--) { const h = hearts[i], age = time - h.born; if (age > 1.7) { hearts.splice(i, 1); continue; }
       on(h.li, h.c, h.r, '♥', 'heart', h.from + h.lean * age + 0.2 * Math.sin(5 * age + h.lean), -1.6 - 1.9 * age, h.size * Math.min(1, 0.4 + 2 * age), Math.min(1, 3 * age) * (1 - smooth(1, 1.7, age)), KIND.tree); }
   }
-  // the clearing an animal stands in, so it reads against rock and trees: as wide and as tall as its drawing
-  const clear = (li, x, y, kind, z) => { const rows = BEASTS[kind].rows; hollow(li, x, y, 0.36 * rows[0].length * z, 0.62 * rows.length * z); };
-  // --- the cats by the hut: black, in pixels, each with a thin pale edge. One sits awake at the door, one sleeps beside it, one is at the leaves. ---
+  // --- pixel drawings: the cats by the hut and the snowman's hat. Black, each with a thin pale edge so it is not lost in the dark. ---
   const PIXEL = { k: colour('black'), e: colour('lime'), o: colour('dim') };
   const pixels = (grid) => { const h = grid.length, wd = grid[0].length, at = (x, y) => (y >= 0 && y < h && x >= 0 && x < wd ? grid[y][x] : '.'), rows = [];
     for (let y = -1; y <= h; y++) { const runs = []; for (let x = -1; x <= wd; x++) { let c = at(x, y); if (c === '.' && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => at(x + a, y + b) !== '.')) c = 'o'; if (c === '.') continue; const last = runs[runs.length - 1]; if (last && last[2] === c && last[0] + last[1] === x) last[1]++; else runs.push([x, 1, c]); } rows.push(runs); }
     return { rows, h: h + 2, w: wd }; };
-  const CAT = { sit: pixels(CATS.sit), sleep: pixels(CATS.sleep), play: pixels(CATS.play) };
-  // a pixel drawing with its feet at (x, y) of a layer; `shut` closes its eyes, `left` turns it round
-  function sprite(li, x, y, art, px, left = false, shut = false, up = 0) {
+  const CAT = { sit: pixels(CATS.sit), sleep: pixels(CATS.sleep), play: pixels(CATS.play) }, HAT = pixels(['..kkkkk..', '..kkkkk..', '..kkkkk..', '..kkkkk..', 'kkkkkkkkk']);
+  // a pixel drawing with its feet at (x, y) of a layer, moved (ox, oy) cells; `shut` closes its eyes, `left` turns it round, `up` lifts it by pixels
+  function sprite(li, x, y, art, px, left = false, shut = false, up = 0, ox = 0, oy = 0) {
     const pw = px / cellW, ph = px / cellH;
-    art.rows.forEach((runs, j) => { for (const [x0, n, c] of runs) { const from = left ? art.w - x0 - n : x0; w.solid(x, y, (from - art.w / 2) * pw, (j - art.h + 1 - up) * ph, n * pw, 1.05 * ph, 1, PIXEL[c === 'e' && shut ? 'k' : c], 1, li, 0); } });
+    art.rows.forEach((runs, j) => { for (const [x0, n, c] of runs) { const from = left ? art.w - x0 - n : x0; if (w.count < ROOM - 8) w.solid(x, y, ox + (from - art.w / 2) * pw, oy + (j - art.h + 1 - up) * ph, n * pw, 1.05 * ph, 1, PIXEL[c === 'e' && shut ? 'k' : c], 1, li, 0); } });
   }
+  // Two cats. One sleeps by the door. The other has a round of about a minute: it sits at the door, walks to the leaves and
+  // plays in them, walks back, jumps onto the roof and sits there a while, and jumps down again.
+  const ROUND = [[9, 'sit'], [10, 'out'], [14, 'play'], [6, 'back'], [2, 'up'], [12, 'roof'], [2, 'down'], [5, 'sit']];   // seconds each, 60 in all
   function drawCats() {
     if ((G - state.centreRow) * ground.k * cellH > view.h) return;
-    const li = LAYER.ground, px = Math.max(1.2, typeSize / 8) / ground.k, sx = (x) => x * cellW * ground.k, sy = view.h / 2 + (G - state.centreRow) * cellH * ground.k, door = ground.hutLeft + 13.2, y = G + 0.02;
-    stroke('cat0', li, door, y, 2 * typeSize, sx(door), sy); sprite(li, door, y, CAT.sit, px, false, (0.19 * time + 0.5) % 1 > 0.95);
-    stroke('cat1', li, door + 3.4, y, 2 * typeSize, sx(door + 3.4), sy); sprite(li, door + 3.4, y, CAT.sleep, px);
-    for (let n = 0; n < 2; n++) { const age = (0.35 * time + 0.5 * n) % 1; on(li, door + 4.6, y, 'z', 'dim', 0.3 + 0.5 * age, -1.1 - 1.1 * age, 0.45 + 0.25 * age, 1 - age); }   // it is asleep
-    // the third is at the leaves, a little way off: it crouches, springs, and the leaves fly
-    const play = ground.hutLeft - 7.5, beat = (0.9 * time) % 1, spring = beat < 0.3 ? Math.sin(beat / 0.3 * Math.PI) : 0;
-    stroke('cat2', li, play, y, 2.2 * typeSize, sx(play), sy); sprite(li, play, y, CAT.play, px, true, false, 2.2 * spring);
-    for (let n = 0; n < 4; n++) { const t = (beat + 0.23 * n) % 1, side = n % 2 ? 1 : -1; on(li, play - 1.3, y, n % 2 ? ',' : '~', n % 3 ? 'leaf' : 'leafOlive', side * (0.2 + 1.3 * t), -0.3 - 2.2 * t * (1 - t) * 2, 0.8, 1 - t); }
+    const li = FRONT, px = Math.max(1.2, typeSize / 8) / ground.k, sx = (x) => x * cellW * ground.k, sy = (y) => view.h / 2 + (y - state.centreRow) * cellH * ground.k, y = G + 0.02;
+    const door = ground.hutLeft + 13.2, leaves = ground.hutLeft - 7.5, wall = ground.hutLeft + 0.2, roof = [ground.hutLeft + 6.5, G - 5.2];
+    // the sleeper
+    stroke('cat1', li, door + 3.4, y, 2 * typeSize, sx(door + 3.4), sy(y)); sprite(li, door + 3.4, y, CAT.sleep, px);
+    for (let n = 0; n < 2; n++) { const age = (0.35 * time + 0.5 * n) % 1; on(li, door + 4.6, y, 'z', 'dim', 0.3 + 0.5 * age, -1.1 - 1.1 * age, 0.45 + 0.25 * age, 1 - age); }
+    // the other: where it is in its round
+    let t = time % 60, act = 'sit', u = 0; for (const [long, name] of ROUND) { if (t < long) { act = name; u = t / long; break; } t -= long; }
+    const ease = u * u * (3 - 2 * u), hop = Math.abs(Math.sin(7 * time)) * 0.6, leap = (from, to) => [from[0] + (to[0] - from[0]) * ease, from[1] + (to[1] - from[1]) * ease - 2.2 * Math.sin(Math.PI * u)];
+    let x = door, cy = y, art = CAT.sit, left = false, up = 0, shut = (0.19 * time + 0.5) % 1 > 0.95;
+    if (act === 'out') { x = door + (leaves - door) * u; art = CAT.play; up = hop; }
+    else if (act === 'play') { x = leaves; art = CAT.play; left = true; const beat = (0.9 * time) % 1; up = beat < 0.3 ? 2.2 * Math.sin(beat / 0.3 * Math.PI) : 0;
+      for (let n = 0; n < 4; n++) { const f = (beat + 0.23 * n) % 1, side = n % 2 ? 1 : -1; on(li, x - 1.3, y, n % 2 ? ',' : '~', n % 3 ? 'leaf' : 'leafOlive', side * (0.2 + 1.3 * f), -0.3 - 4.4 * f * (1 - f), 0.8, 1 - f); } }   // the leaves fly
+    else if (act === 'back') { x = leaves + (wall - leaves) * u; art = CAT.play; left = true; up = hop; }
+    else if (act === 'up') { [x, cy] = leap([wall, y], roof); art = CAT.play; left = true; }
+    else if (act === 'roof') { [x, cy] = roof; }
+    else if (act === 'down') { [x, cy] = leap(roof, [door, y]); art = CAT.play; left = true; }
+    stroke('cat0', li, x, cy, 2 * typeSize, sx(x), sy(cy)); sprite(li, x, cy, art, px, left, shut && art === CAT.sit, up);
   }
   // --- squirrels in the pines above the hut: each keeps to one tree, at its foot or up its trunk ---
   const trees3 = homes.squirrels = { found: false, at: [] };
@@ -404,9 +431,9 @@ export function makeLive(gl, model, view, scene, cards) {
     settle();
     drawCats(); drawSquirrels();
     const s = homes.sheep, o = homes.owl, dr = homes.deer;
-    if (s && seen(s[0])) { const li = LAYER.lobe + s[0], [, c, r] = s; herd.forEach(([q, dy, z, kind], n) => { wander(q); stroke('sheep' + n, li, c + q.x, r + 1 + dy, 3 * typeSize * z / 0.3); clear(li, c + q.x, r + 1 + dy, kind, z); beast(li, c + q.x, r + 1 + dy, kind, z, q.facing < 0, pose(q, n)); }); }
-    if (o?.length && seen(o[0])) { const li = LAYER.lobe + o[0], [, c, r, k, tall] = o, lx = 1.3 * k, ly = -(tall - 2.4) * k; stroke('owl', li, c + lx, r + ly + 0.4, 2.2 * typeSize); hollow(li, c, r, 0.36 * 6 * 0.44, 0.62 * 4 * 0.44, lx, ly); beast(li, c, r, 'owl', 0.44, false, null, (0.31 * time + 0.2) % 1 > 0.95, lx, ly); }   // on a bough of its pine, and it grows as the pine does
-    if (dr?.length && seen(dr[0])) { const li = LAYER.lobe + dr[0], [, c, r] = dr; deer.forEach(([q, dy, z, kind], n) => { wander(q); stroke('deer' + n, li, c + q.x, r + 1 + dy, 3.2 * typeSize * z / 0.34); clear(li, c + q.x, r + 1 + dy, kind, z); beast(li, c + q.x, r + 1 + dy, kind, z, q.facing < 0, pose(q, n + 5)); }); }
+    if (s && seen(s[0])) { const li = LAYER.lobe + s[0], [, c, r] = s; herd.forEach(([q, dy, z, kind], n) => { wander(q); stroke('sheep' + n, li, c + q.x, r + 1 + dy, 3 * typeSize * z / 0.3); beast(li, c + q.x, r + 1 + dy, kind, z, q.facing < 0, pose(q, n)); }); }
+    if (o?.length && seen(o[0])) { const li = LAYER.lobe + o[0], [, c, r, k, tall] = o, lx = 1.3 * k, ly = -(tall - 2.4) * k; stroke('owl', li, c + lx, r + ly + 0.4, 2.2 * typeSize); beast(li, c, r, 'owl', 0.44, false, null, (0.31 * time + 0.2) % 1 > 0.95, lx, ly); }   // on a bough of its pine, and it grows as the pine does
+    if (dr?.length && seen(dr[0])) { const li = LAYER.lobe + dr[0], [, c, r] = dr; deer.forEach(([q, dy, z, kind], n) => { wander(q); stroke('deer' + n, li, c + q.x, r + 1 + dy, 3.2 * typeSize * z / 0.34); beast(li, c + q.x, r + 1 + dy, kind, z, q.facing < 0, pose(q, n + 5)); }); }
   }
 
   // One frame of everything alive. → how many instances were written
@@ -424,7 +451,7 @@ export function makeLive(gl, model, view, scene, cards) {
       state.span += (want - state.span) * Math.min(1, 4 * dt);
     }
     const lower = state.centre > 4.02 && state.centre < 10.6;
-    w.count = 0;
+    w.count = 0; hiding.length = 0;
     section('sky', () => { drawName(); drawLights(); drawShots(); });
     section('birds', () => { if (lower) drawFlock(); });
     section('smoke', drawSmoke);
@@ -435,8 +462,9 @@ export function makeLive(gl, model, view, scene, cards) {
     section('lamps', drawLamps);
     section('waypoints', drawWaypoints);
     section('tethers', () => { drawTethers(); drawHearts(); });
+    section('hides', writeHides);
     return w.count;
   }
   const uniforms = (set) => { set.f('uHush', cards.presence[0]); set.fv4('uQuiet', cards.quiet); set.v2('uLean', 0, lean); set.fv3('uTrail', trail); };
-  return { step, uniforms, bytes: new Uint8Array(buffer), ranges, planks, spots, homes, setLamps: (n) => { lamps = n; } };
+  return { step, uniforms, bytes: new Uint8Array(buffer), ranges, hideOf, planks, spots, homes, setLamps: (n) => { lamps = n; } };
 }

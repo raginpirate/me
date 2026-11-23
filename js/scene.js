@@ -9,7 +9,7 @@ import { CARD } from './art.js';
 
 const FAR = 0.9, nearness = (i) => 0.6 - 0.02 * i;   // depths: everything not a lobe is behind them all; a later lobe is nearer
 const PLAIN = {}, TEST = { test: true }, LIT = { lit: true }, LIT_TEST = { lit: true, test: true }, MASK = { mask: true };
-const ALIVE = new Map([PLAIN, TEST, LIT, LIT_TEST].map((o) => [o, { ...o, live: true }]));   // the same, from what is alive this frame
+const ALIVE = new Map([PLAIN, TEST, LIT, LIT_TEST, MASK].map((o) => [o, { ...o, live: true }]));   // the same, from what is alive this frame
 
 export function makeScene(gl, model, view, flags = {}) {
   const d = model.dims, { lobes, turn, air, ground } = model, { layers: T, set, glyph } = gl, { S, cellW, cellH, cols, groundRow: G } = d;
@@ -17,9 +17,11 @@ export function makeScene(gl, model, view, flags = {}) {
   COLOURS.forEach((n, i) => palette.set(rgb(n).map((v) => v / 255), i * 3));
   const tones = new Float32Array(['rockDark', 'pineDark', 'dim'].flatMap((n) => rgb(n).map((v) => v / 255)));   // the ground under a skyline, bare and wooded, and the mist over one
   const add = (name, bytes) => { R[name] = [gl.append(bytes), bytes.byteLength / 24]; };
-  const [peak, rope] = packPeak(model, glyph);
-  add('stars', packSky(model, glyph)); add('peak', peak); add('rope', rope); add('ground', packGround(model, glyph));
-  CLOUDS.forEach((_, n) => add('clouds' + n, packClouds(model, n, glyph)));
+  // a run that begins with what only hides: R[name] is all of it, R[name + 'Hides'] the part that hides
+  const addHiding = (name, bytes, hides) => { add(name, bytes); R[name + 'Hides'] = [R[name][0], hides]; };
+  const [peak, rope, peakHides] = packPeak(model, glyph), [earth, earthHides] = packGround(model, glyph);
+  add('stars', packSky(model, glyph)); addHiding('peak', peak, peakHides); add('rope', rope); addHiding('ground', earth, earthHides());
+  CLOUDS.forEach((_, n) => { const [bytes, hides] = packClouds(model, n, glyph); addHiding('clouds' + n, bytes, hides()); });
   add('snow0', packSnow(model, [0], glyph)); add('snow12', packSnow(model, [1, 2], glyph)); add('leaves', packLeaves(model, glyph));
 
   // each lobe as it is made: its instances, its ground, where it stands this frame
@@ -27,7 +29,7 @@ export function makeScene(gl, model, view, flags = {}) {
   function addLobe(i) {
     const p = packLobe(lobes[i], i, d, glyph), first = gl.append(p.bytes);
     gl.wash(i, p.wash.w, p.wash.h, p.wash.rgba); gl.form(i, p.form);
-    made[i] = { first, total: p.route[0], cover: p.cover, solids: p.solids, last: p.last, route: p.route[1] && [first + p.route[0], p.route[1]], draw: { test: true, wash: [i, 0, p.wash.y0, p.wash.w, p.wash.h] } };
+    made[i] = { strips: p.strips.map((st) => ({ ...st, at: first + st.at })), last: p.last, route: p.route[1] && [first + p.route[0], p.route[1]], draw: { test: true, wash: [i, 0, p.wash.y0, p.wash.w, p.wash.h] } };
   }
   lobes.forEach((l, i) => { if (l.cover) addLobe(i); });
 
@@ -75,8 +77,9 @@ export function makeScene(gl, model, view, flags = {}) {
       p.on = !!made[i] && p.vis >= 0.02 && h / 2 + (l.apex - 24 - centreRow) * cellH * p.s < h && p.X - (l.cx + 1) * p.s < cols && p.X + (l.W - l.cx) * p.s > 0;   // made, to be seen, and on the screen
       layer(LAYER.lobe + i, p.X, p.s, centreRow, p.vis, p.tone, p.ref, ridge ? l.apex : -1e9, ridge ? l.apex + l.span : 1e9, nearness(i), l.cx + 0.5);
     });
-    layer(LAYER.ground, 0, ground.k, centreRow);
-    CLOUDS.forEach((c, n) => layer(LAYER.cloud + n, 0, c.k, centreRow, 1, 1, 0, 0, 0, FAR, 40, c.drift, cloudSpan(cols, n)));
+    // depths: the far clouds are behind every ridge; the ground, the air and the near clouds are in front of them all, in that order
+    layer(LAYER.ground, 0, ground.k, centreRow, 1, 1, 0, 0, 0, 0.1); layer(LAYER.air, 0, 1, centreRow, 1, 1, 0, 0, 0, 0.08); layer(LAYER.front, 0, ground.k, centreRow, 1, 1, 0, 0, 0, 0.09);
+    CLOUDS.forEach((c, n) => layer(LAYER.cloud + n, 0, c.k, centreRow, 1, 1, 0, 0, 0, n === 0 ? 0.93 : 0.06 - 0.01 * n, 40, c.drift, cloudSpan(cols, n)));
     SNOW.tiers.forEach((tier, n) => layer(LAYER.snow + n, 0, tier[0], centreRow));
     LEAVES.depths.forEach((depth, n) => layer(LAYER.leaf + n, 0, depth[0], centreRow));
 
@@ -89,27 +92,58 @@ export function makeScene(gl, model, view, flags = {}) {
     set.v4('uFall', SNOW.z[0] * S, SNOW.z[1] * S, LEAVES.from * S, G); set.v3('uLeaf', glyph(','), glyph("'"), glyph('~')); set.fv3('uGround', tones); set.v2('uWood', 5.55, LAYOUT.forest); set.f('uAltStar', glyph('*'));
     if (live) live.uniforms(set); else { set.f('uHush', 0); set.v2('uLean', 0, 0); }
 
-    // draw, back to front
     gl.begin(sky, live?.bytes, count);
     const snowing = centre > SNOW.z[0] - 0.8 && centre < SNOW.z[1] + 0.8, L = live?.ranges, drawLive = (name, o) => { if (L && L[name][1]) gl.draw(L[name][0], L[name][1], ALIVE.get(o)); };
-    if (flags.prepass !== false) for (let i = lobes.length - 1; i >= 0; i--) if (pose[i].on && pose[i].vis >= 0.995) gl.draw(made[i].first, made[i].cover, MASK);
-    if (top < LAYOUT.deck[1] * S) gl.draw(...R.stars, TEST);
-    drawLive('sky', TEST);
-    if (top + S > 2.9 * S) {
-      if (snowing) gl.draw(...R.snow0, TEST); drawLive('birds', TEST);
-      if (Math.abs(air.deckRow - centreRow) * CLOUDS[0].k < 1.5 * S) gl.draw(...R.clouds0, TEST);
+    const groundOn = (G - 7 - centreRow) * ground.k < S / 2, peakOn = top < d.seamRow + 4, cloudsOn = CLOUDS.map((c) => Math.abs(air.deckRow - centreRow) * c.k < 1.5 * S);
+    // which strips of which lobes are on the screen (a tree may stand a little out of its strip, so a margin)
+    const lo = view.ox / cellW - 10, hi = (view.ox + view.seen) / cellW + 10, shown = [];
+    for (let i = 0; i < lobes.length; i++) if (pose[i].on) for (const st of made[i].strips) { const p = pose[i], x0 = p.X + (st.c0 - lobes[i].cx - 0.5) * p.s, x1 = p.X + (st.c1 - lobes[i].cx - 0.5) * p.s; if (x1 > lo && x0 < hi) shown.push([i, st]); }
+
+    // How anything hides what is behind it. Nothing is painted to stand for "what is behind": there are surfaces, which have
+    // a colour of their own, and ink; and what hides has no colour at all. A lobe's body hides everything behind it (it is in
+    // the depth). What stands on a lobe, or in front of it, hides only the INK behind it: farther surfaces are drawn whole,
+    // so what shows through a tree, a cloud or a hut is whatever is really behind it.
+    const solid = (i) => pose[i].vis >= 0.995, hideOf = live?.hideOf, liveHides = (i, mark) => { const r = hideOf?.[LAYER.lobe + i]; if (r && r[1]) gl.draw(r[0], r[1], ALIVE.get(MASK), mark); };
+    // 1. the depth: every solid lobe's body; and what hides the far sky (the peak, the far clouds)
+    for (const [i, st] of shown) if (solid(i)) gl.draw(st.at, st.cover, MASK);
+    if (peakOn) gl.draw(...R.peakHides, MASK);
+    if (cloudsOn[0]) gl.draw(...R.clouds0Hides, MASK);
+    // 2. marks: where each thing that hides is, numbered by how near it is. Ink is drawn only where nothing nearer is marked.
+    for (const [i, st] of shown) if (solid(i)) gl.draw(st.at + st.cover, st.hides - st.cover, MASK, i + 2);
+    for (let i = 0; i < lobes.length; i++) if (pose[i].on && solid(i)) liveHides(i, i + 2);
+    if (groundOn) gl.draw(...R.groundHides, MASK, 250);
+    for (const n of [1, 2]) if (cloudsOn[n]) gl.draw(...R['clouds' + n + 'Hides'], MASK, 250 + n);
+    if (L && L.hidesFront[1]) gl.draw(L.hidesFront[0], L.hidesFront[1], ALIVE.get(MASK), 253);
+
+    // 3. the far sky
+    if (top < LAYOUT.deck[1] * S) gl.draw(...R.stars, TEST, 0, 1);
+    if (L && L.sky[1]) gl.draw(L.sky[0], L.sky[1], ALIVE.get(TEST), 0, 1);
+    if (top + S > 2.9 * S) { if (snowing) gl.draw(...R.snow0, TEST, 0, 1); if (cloudsOn[0]) gl.draw(...R.clouds0, TEST, 0, 1); }
+    // 4. each lobe, back to front: its body; then what hides on it goes into the depth, so that its own things hide one another in order; then its ink
+    for (let i = 0; i < lobes.length; i++) {
+      if (!pose[i].on) continue;
+      const inked = (made[i].last + 3 - centreRow) * pose[i].s > -S / 2;   // above the screen it is only a dark body
+      for (const [j, st] of shown) if (j === i) gl.draw(st.at, st.cover, made[i].draw);
+      if (!inked) continue;
+      if (solid(i)) { for (const [j, st] of shown) if (j === i) gl.draw(st.at + st.cover, st.hides - st.cover, MASK); liveHides(i, 0); }
+      for (const [j, st] of shown) if (j === i) gl.draw(st.at + st.hides, st.total - st.hides, made[i].draw, 0, i + 2);
     }
-    for (let i = 0; i < lobes.length; i++) if (pose[i].on && flags.try !== 'nolobes') gl.draw(made[i].first, flags.try === 'cover' ? made[i].cover : flags.try !== 'solids' && (made[i].last + 3 - centreRow) * pose[i].s > -S / 2 ? made[i].total : made[i].solids, made[i].draw);   // above the screen it is only a dark body
-    if ((G - 7 - centreRow) * ground.k < S / 2) gl.draw(...R.ground, PLAIN);
-    if (top < d.seamRow + 4) gl.draw(...R.peak, PLAIN);
-    drawLive('smoke', PLAIN); if (snowing) gl.draw(...R.snow12, PLAIN); drawLive('animals', PLAIN);
+    // 5. what hides in front of every lobe goes into the depth too, for what is drawn from here on
+    if (groundOn) gl.draw(...R.groundHides, MASK);
+    for (const n of [1, 2]) if (cloudsOn[n]) gl.draw(...R['clouds' + n + 'Hides'], MASK);
+    if (L && L.hidesFront[1]) gl.draw(L.hidesFront[0], L.hidesFront[1], ALIVE.get(MASK));
+    // 6. the rest, back to front
+    drawLive('birds', TEST);
+    if (groundOn) gl.draw(...R.ground, PLAIN);
+    if (peakOn) gl.draw(...R.peak, PLAIN);
+    drawLive('smoke', PLAIN); if (snowing) gl.draw(...R.snow12, PLAIN); drawLive('animals', TEST);
     drawLive('bridges', LIT);
     for (const i of routeLobes) if (pose[i].on && made[i].route) gl.draw(...made[i].route, LIT_TEST);
     if (top < d.bodyTop) gl.draw(...R.rope, LIT);
     drawLive('litBridges', LIT);
     if (centre > LEAVES.from - 0.75) gl.draw(...R.leaves, LIT);
-    drawLive('flag', LIT); drawLive('lamps', LIT_TEST); drawLive('waypoints', LIT);
-    for (const n of [1, 2]) if (Math.abs(air.deckRow - centreRow) * CLOUDS[n].k < 1.5 * S) gl.draw(...R['clouds' + n], LIT);
+    drawLive('flag', LIT); drawLive('lamps', LIT_TEST); drawLive('waypoints', LIT_TEST);
+    for (const n of [1, 2]) if (cloudsOn[n]) gl.draw(...R['clouds' + n], LIT_TEST);
     drawLive('tethers', LIT);
   }
   return { frame, addLobe, state, hidden, behind, place, made, ranges: R };
